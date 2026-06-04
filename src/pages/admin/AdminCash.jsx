@@ -1,82 +1,123 @@
-import React from 'react';
-import { IndianRupee, CheckCircle, AlertTriangle, Clock } from 'lucide-react';
+import React, { useState } from 'react';
+import { IndianRupee, CheckCircle, AlertTriangle, Clock, Search } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
-import { RIDERS, ADMIN_STATS } from '@/lib/mockData';
-
-const reconciliationLog = [
-  { id: 1, rider: 'Suraj Kumar', collected: 4200, deposited: 3000, pending: 1200, lastDeposit: '2025-05-30 9:00 PM', status: 'pending' },
-  { id: 2, rider: 'Vikash Yadav', collected: 3600, deposited: 2800, pending: 800, lastDeposit: '2025-05-30 9:30 PM', status: 'pending' },
-  { id: 3, rider: 'Amit Singh', collected: 1800, deposited: 1800, pending: 0, lastDeposit: '2025-05-30 8:00 PM', status: 'reconciled' },
-];
+import { useStore } from '@/lib/store';
+import { RIDERS } from '@/lib/mockData';
 
 export default function AdminCash() {
+  const { state } = useStore();
+  const [tab, setTab]     = useState('outstanding');
+  const [query, setQuery] = useState('');
+  const [confirming, setConfirming] = useState(null);
+  const [deposits, setDeposits]     = useState({});
+
+  const codOrders = state.orders.filter(o => (o.paymentMethod === 'COD' || o.paymentMethod === 'cod') && o.status === 'delivered');
+  const totalCOD   = codOrders.reduce((s, o) => s + (o.total || 0), 0);
+  const collected  = RIDERS.reduce((s, r) => s + r.codBalance, 0);
+  const totalRiderBalance = RIDERS.reduce((s, r) => s + r.codBalance, 0);
+
+  const riderRows = RIDERS.filter(r =>
+    !query || r.name.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const handleConfirmDeposit = (riderId) => {
+    setConfirming(riderId);
+    setTimeout(() => {
+      setDeposits(d => ({ ...d, [riderId]: true }));
+      setConfirming(null);
+    }, 600);
+  };
+
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold font-heading mb-1">COD & Cash Reconciliation</h1>
-      <p className="text-sm text-muted-foreground mb-6">Daily cash reconciliation — every rupee must be accounted for</p>
+    <div className="flex-1 overflow-auto">
+      <AppHeader title="COD & Cash" subtitle="Daily reconciliation" />
+      <div className="p-4 space-y-4">
 
-      <div className="grid grid-cols-4 gap-3 mb-6">
-        <StatCard title="COD Collected Today" value={`₹${ADMIN_STATS.codCollected.toLocaleString()}`} icon={IndianRupee} />
-        <StatCard title="COD Pending Deposit" value={`₹${ADMIN_STATS.codPending.toLocaleString()}`} icon={Clock} className={ADMIN_STATS.codPending > 3000 ? 'border-amber-300' : ''} />
-        <StatCard title="Deposited Today" value={`₹${(ADMIN_STATS.codCollected - ADMIN_STATS.codPending).toLocaleString()}`} icon={CheckCircle} />
-        <StatCard title="Discrepancy" value="₹0" subtitle="All reconciled" icon={AlertTriangle} />
-      </div>
-
-      <Card className="border-border mb-6">
-        <div className="p-4 border-b border-border">
-          <h3 className="font-semibold text-sm">Rider Cash Status — {new Date().toLocaleDateString('en-IN')}</h3>
+        {/* Stats */}
+        <div className="grid grid-cols-2 gap-2">
+          <StatCard title="Today's COD Total" value={`₹${totalCOD.toLocaleString()}`}    icon={IndianRupee} />
+          <StatCard title="Pending Deposit"   value={`₹${totalRiderBalance.toLocaleString()}`} icon={Clock} />
         </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="text-xs">Rider</TableHead>
-              <TableHead className="text-xs">COD Collected</TableHead>
-              <TableHead className="text-xs">Deposited</TableHead>
-              <TableHead className="text-xs">Pending</TableHead>
-              <TableHead className="text-xs">Last Deposit</TableHead>
-              <TableHead className="text-xs">Status</TableHead>
-              <TableHead className="text-xs">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {reconciliationLog.map(row => (
-              <TableRow key={row.id}>
-                <TableCell className="text-sm font-medium">{row.rider}</TableCell>
-                <TableCell className="text-sm">₹{row.collected.toLocaleString()}</TableCell>
-                <TableCell className="text-sm">₹{row.deposited.toLocaleString()}</TableCell>
-                <TableCell className={`text-sm font-bold ${row.pending > 0 ? 'text-amber-600' : 'text-accent'}`}>₹{row.pending.toLocaleString()}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{row.lastDeposit}</TableCell>
-                <TableCell>
-                  <Badge variant="outline" className={`text-[9px] ${row.status === 'reconciled' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
-                    {row.status === 'reconciled' ? '✓ Reconciled' : '⏳ Pending'}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  {row.status !== 'reconciled' && (
-                    <Button size="sm" className="h-7 text-xs">Confirm Deposit</Button>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
 
-      <Card className="p-5 border-border bg-destructive/5 border-destructive/20">
-        <h3 className="font-semibold text-sm text-destructive mb-2 flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4" /> Cash Rules (SETU Constitution)
-        </h3>
-        <ul className="text-xs text-muted-foreground space-y-1">
-          <li>• Daily reconciliation must complete before rider leaves for the night</li>
-          <li>• Zero tolerance for discrepancies — investigate every ₹10 difference</li>
-          <li>• Photo-proof of cash deposit required for amounts &gt; ₹2,000</li>
-          <li>• Auto-alert if any rider has &gt; ₹5,000 undeposited</li>
-        </ul>
-      </Card>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input placeholder="Search riders..." className="pl-9" value={query} onChange={e => setQuery(e.target.value)} />
+        </div>
+
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList className="w-full grid grid-cols-2">
+            <TabsTrigger value="outstanding" className="text-xs">Outstanding</TabsTrigger>
+            <TabsTrigger value="settled"     className="text-xs">Settled</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {/* Rider COD rows */}
+        <div className="space-y-2">
+          {riderRows.map(rider => {
+            const riderCOD    = state.orders.filter(o => o.riderId === rider.id && o.status === 'delivered' && o.paymentMethod === 'COD');
+            const riderTotal  = riderCOD.reduce((s, o) => s + (o.total || 0), 0);
+            const isDeposited = deposits[rider.id];
+            if (tab === 'settled'     && !isDeposited) return null;
+            if (tab === 'outstanding' &&  isDeposited) return null;
+            return (
+              <Card key={rider.id} className={`p-4 border ${!isDeposited && rider.codBalance > 0 ? 'border-amber-200 bg-amber-50/30' : 'border-border'}`}>
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <p className="text-sm font-semibold">{rider.name}</p>
+                    <p className="text-xs text-muted-foreground">{rider.zone} · {riderCOD.length} COD deliveries</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-base font-bold text-amber-600">₹{rider.codBalance.toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground">on hand</p>
+                  </div>
+                </div>
+
+                {isDeposited ? (
+                  <Badge className="w-full justify-center bg-green-100 text-green-700 border-0 py-1">
+                    <CheckCircle className="w-3 h-3 mr-1" /> Deposited
+                  </Badge>
+                ) : (
+                  <div className="flex gap-2">
+                    <Button size="sm" className="flex-1 h-8 text-xs"
+                      disabled={confirming === rider.id}
+                      onClick={() => handleConfirmDeposit(rider.id)}>
+                      <CheckCircle className="w-3 h-3 mr-1" />
+                      {confirming === rider.id ? 'Confirming...' : `Confirm ₹${rider.codBalance}`}
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-8 text-xs text-destructive border-destructive/30">
+                      Flag Discrepancy
+                    </Button>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+
+        {/* COD order detail */}
+        {codOrders.length > 0 && (
+          <div>
+            <h3 className="font-semibold text-sm mb-2">COD Orders Today</h3>
+            <div className="space-y-1.5">
+              {codOrders.map(o => (
+                <Card key={o.id} className="px-3 py-2 border-border flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-mono">{o.orderNumber}</p>
+                    <p className="text-xs text-muted-foreground">{o.customerName} · {o.riderName || 'Unassigned'}</p>
+                  </div>
+                  <p className="text-sm font-bold">₹{o.total}</p>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

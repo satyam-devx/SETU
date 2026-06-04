@@ -1,73 +1,78 @@
-import React, { useState } from 'react';
-import { MapPin, Users, TrendingUp, Search, AlertTriangle } from 'lucide-react';
+import React from 'react';
+import { MapPin, Users, Store, TrendingUp, ChevronRight } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import AppHeader from '@/components/shared/AppHeader';
-import StatCard from '@/components/shared/StatCard';
-
-const villages = [
-  { name: 'Rampur', block: 'Block A', households: 240, activeUsers: 180, orders: 312, revenue: 48000, anchor: 'Meera Devi', health: 92 },
-  { name: 'Bhojpur', block: 'Block A', households: 185, activeUsers: 120, orders: 198, revenue: 31200, anchor: 'Ravi Kumar', health: 78 },
-  { name: 'Madhopur', block: 'Block B', households: 310, activeUsers: 85, orders: 104, revenue: 15600, anchor: 'None', health: 45 },
-  { name: 'Sitapur', block: 'Block B', households: 150, activeUsers: 98, orders: 176, revenue: 28800, anchor: 'Asha Singh', health: 85 },
-];
+import { useStore } from '@/lib/store';
+import { VILLAGES, VENDORS } from '@/lib/mockData';
 
 export default function AdminVillages() {
-  const [search, setSearch] = useState('');
-  const filtered = villages.filter(v => v.name.toLowerCase().includes(search.toLowerCase()) || v.block.toLowerCase().includes(search.toLowerCase()));
+  const { state } = useStore();
 
-  const healthColor = (h) => h >= 80 ? 'text-green-600' : h >= 60 ? 'text-amber-600' : 'text-red-500';
+  const villageStats = VILLAGES.map(v => {
+    const vOrders  = state.orders.filter(o => o.village === v.name).length;
+    const vVendors = VENDORS.filter(vn => vn.village === v.name).length;
+    const health   = v.isActive ? Math.min(100, 40 + vVendors * 8 + vOrders * 2) : 0;
+    return { ...v, orders: vOrders, vendors: vVendors, health };
+  });
 
   return (
-    <div className="pb-6">
-      <AppHeader title="Villages" subtitle="Village health & activity" />
-      <div className="p-4 space-y-4">
-        <div className="grid grid-cols-2 gap-2">
-          <StatCard title="Total Villages" value="4" icon={MapPin} />
-          <StatCard title="Active Users" value="483" trend="14% growth" trendUp icon={Users} />
+    <div className="flex-1 overflow-auto">
+      <AppHeader title="Villages" subtitle={`${VILLAGES.filter(v => v.isActive).length} active`} />
+      <div className="p-4 space-y-3">
+
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <Card className="p-2 border-border">
+            <p className="text-xl font-bold">{VILLAGES.length}</p>
+            <p className="text-[10px] text-muted-foreground">Total</p>
+          </Card>
+          <Card className="p-2 border-border">
+            <p className="text-xl font-bold text-green-600">{VILLAGES.filter(v => v.isActive).length}</p>
+            <p className="text-[10px] text-muted-foreground">Active</p>
+          </Card>
+          <Card className="p-2 border-border">
+            <p className="text-xl font-bold text-muted-foreground">{VILLAGES.filter(v => !v.isActive).length}</p>
+            <p className="text-[10px] text-muted-foreground">Inactive</p>
+          </Card>
         </div>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Search villages..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <div className="space-y-3">
-          {filtered.map(v => (
-            <Card key={v.name} className="p-4 border-border">
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <p className="font-semibold text-sm">{v.name}</p>
-                  <p className="text-xs text-muted-foreground">{v.block} · {v.households} households</p>
-                </div>
-                <span className={`text-sm font-bold ${healthColor(v.health)}`}>{v.health}%</span>
-              </div>
-              <Progress value={v.health} className="h-1.5 mb-3" />
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div>
-                  <p className="text-xs font-bold">{v.activeUsers}</p>
-                  <p className="text-[10px] text-muted-foreground">Active Users</p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold">{v.orders}</p>
-                  <p className="text-[10px] text-muted-foreground">Orders</p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold">₹{(v.revenue/1000).toFixed(0)}k</p>
-                  <p className="text-[10px] text-muted-foreground">Revenue</p>
-                </div>
-              </div>
-              <div className="mt-2 pt-2 border-t border-border flex items-center justify-between">
-                <p className="text-xs text-muted-foreground">Anchor: <span className="text-foreground font-medium">{v.anchor}</span></p>
-                {v.anchor === 'None' && (
-                  <Badge className="text-[10px] bg-red-100 text-red-700 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" /> No Anchor
+
+        {villageStats.map(v => (
+          <Card key={v.id} className={`p-4 border ${v.isActive ? 'border-border' : 'border-border opacity-60'}`}>
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-bold">{v.name}</p>
+                  <Badge className={`text-[9px] border-0 ${v.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                    {v.isActive ? 'Active' : 'Inactive'}
                   </Badge>
-                )}
+                </div>
+                <p className="text-xs text-muted-foreground">{v.block} Block · {v.district}</p>
               </div>
-            </Card>
-          ))}
-        </div>
+              <div className="text-right">
+                <p className="text-sm font-bold text-primary">{v.health}%</p>
+                <p className="text-[10px] text-muted-foreground">health</p>
+              </div>
+            </div>
+
+            <Progress value={v.health} className="h-1.5 mb-3" />
+
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="bg-muted/40 rounded-lg p-1.5">
+                <p className="font-bold">{(v.population / 1000).toFixed(0)}k</p>
+                <p className="text-muted-foreground">People</p>
+              </div>
+              <div className="bg-muted/40 rounded-lg p-1.5">
+                <p className="font-bold">{v.vendors}</p>
+                <p className="text-muted-foreground">Vendors</p>
+              </div>
+              <div className="bg-muted/40 rounded-lg p-1.5">
+                <p className="font-bold">{v.orders}</p>
+                <p className="text-muted-foreground">Orders</p>
+              </div>
+            </div>
+          </Card>
+        ))}
       </div>
     </div>
   );

@@ -1,148 +1,162 @@
-import React, { useState, useEffect } from 'react';
-import { Mic, MicOff, Volume2, ChevronRight, Globe } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Mic, MicOff, Volume2, Search, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
+import { AIAPI } from '@/lib/api';
 
-const LANGUAGES = [
-  { code: 'hi', label: 'हिंदी', sublabel: 'Hindi' },
-  { code: 'mai', label: 'मैथिली', sublabel: 'Maithili' },
-  { code: 'bho', label: 'भोजपुरी', sublabel: 'Bhojpuri' },
-  { code: 'en', label: 'English', sublabel: 'English' },
-];
-
-const VOICE_COMMANDS = [
-  { phrase: '"Chawal mangao"', translation: 'Order Rice', icon: '🌾', action: 'SEARCH: Rice' },
-  { phrase: '"Mera order kahan hai"', translation: 'Track my order', icon: '📦', action: 'TRACK ORDER' },
-  { phrase: '"Kul kitna paisa"', translation: 'My wallet balance', icon: '💰', action: 'OPEN WALLET' },
-  { phrase: '"Nearest dukan"', translation: 'Nearest vendor', icon: '🏪', action: 'NEARBY VENDORS' },
-  { phrase: '"Complaint karo"', translation: 'Raise complaint', icon: '📣', action: 'SUPPORT' },
-  { phrase: '"Credit baaki hai kitna"', translation: 'Check credit balance', icon: '💳', action: 'CREDIT BALANCE' },
-];
-
-const RESPONSES = [
-  { trigger: 'SEARCH: Rice', response: 'Chawal ke 12 products mile. Ramesh Kirana Store mein Basmati Rice ₹450 mein available hai. Order karein?' },
-  { trigger: 'TRACK ORDER', response: 'Aapka order SETU-2025-0002 raste mein hai. Vikash 15 minute mein pohonchenge.' },
-  { trigger: 'OPEN WALLET', response: 'Aapke SETU Wallet mein ₹1,250 hai. SETU Credit available: ₹3,800.' },
-  { trigger: 'NEARBY VENDORS', response: 'Aapke paas 6 dukaan hain. Sabse paas Ramesh Kirana Store hai — sirf 0.3 km.' },
+const SUGGESTED_PHRASES = [
+  { hi: 'चावल और तेल चाहिए', en: 'Rice and oil' },
+  { hi: 'मखाना कितने का है', en: 'Price of makhana' },
+  { hi: 'दूध मिलेगा', en: 'Is milk available' },
+  { hi: 'ताजी सब्जी चाहिए', en: 'Need fresh vegetables' },
+  { hi: 'मेरा ऑर्डर कहाँ है', en: 'Where is my order' },
 ];
 
 export default function CustomerVoice() {
-  const [lang, setLang] = useState('hi');
-  const [isListening, setIsListening] = useState(false);
+  const navigate = useNavigate();
+  const [state, setState]           = useState('idle'); // idle | listening | processing | result
   const [transcript, setTranscript] = useState('');
-  const [response, setResponse] = useState('');
-  const [pulse, setPulse] = useState(0);
+  const [result, setResult]         = useState(null);
+  const [pulseSize, setPulseSize]   = useState(1);
+  const animRef = useRef(null);
 
-  useEffect(() => {
-    if (!isListening) return;
-    const iv = setInterval(() => setPulse(p => (p + 1) % 4), 400);
-    return () => clearInterval(iv);
-  }, [isListening]);
+  const startListening = () => {
+    setState('listening');
+    // Animate pulse
+    let growing = true;
+    animRef.current = setInterval(() => {
+      setPulseSize(p => {
+        if (p >= 1.3) growing = false;
+        if (p <= 1.0) growing = true;
+        return growing ? p + 0.02 : p - 0.02;
+      });
+    }, 50);
 
-  const handleListen = () => {
-    if (isListening) {
-      setIsListening(false);
-      setTranscript('Chawal mangao');
-      setResponse('Chawal ke 12 products mile. Ramesh Kirana Store mein Basmati Rice ₹450 mein available hai. Order karein?');
-    } else {
-      setTranscript('');
-      setResponse('');
-      setIsListening(true);
-    }
+    // Simulate 2.5s recording then process
+    setTimeout(stopListening, 2500);
   };
 
-  const speak = (text) => {
-    if ('speechSynthesis' in window) {
-      const utt = new SpeechSynthesisUtterance(text);
-      utt.lang = lang === 'hi' ? 'hi-IN' : 'en-IN';
-      window.speechSynthesis.speak(utt);
-    }
+  const stopListening = () => {
+    clearInterval(animRef.current);
+    setPulseSize(1);
+    setState('processing');
+    AIAPI.transcribeVoice(null).then(({ data }) => {
+      if (data) {
+        setTranscript(data.transcript);
+        setResult(data);
+        setState('result');
+      }
+    });
+  };
+
+  const handleSearch = () => {
+    if (result) navigate(`/customer/search?q=${encodeURIComponent(result.query || result.transcript)}`);
+  };
+
+  const handlePhrase = (phrase) => {
+    setState('processing');
+    setTranscript(phrase.hi);
+    setTimeout(() => {
+      setResult({ transcript: phrase.hi, query: phrase.en, intent: 'search', confidence: 0.99 });
+      setState('result');
+    }, 800);
   };
 
   return (
-    <div className="pb-24">
-      <AppHeader title="Voice Assistant" subtitle="Bolkar kharido · बोलकर खरीदो" showBack />
+    <div className="pb-6 min-h-screen bg-gradient-to-b from-background to-primary/5">
+      <AppHeader title="Voice Search" showBack />
+      <div className="px-6 py-8 flex flex-col items-center">
 
-      {/* Language selector */}
-      <div className="px-4 py-3">
-        <div className="flex gap-2">
-          {LANGUAGES.map(l => (
-            <button key={l.code} onClick={() => setLang(l.code)} className={`flex-1 py-2 text-center rounded-xl border text-sm font-medium transition-all ${lang === l.code ? 'bg-primary text-white border-primary' : 'border-border text-muted-foreground hover:border-primary'}`}>
-              <p>{l.label}</p>
-              <p className="text-[9px] opacity-70">{l.sublabel}</p>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Main mic UI */}
-      <div className="px-4 py-6 flex flex-col items-center">
-        <div className="relative mb-6">
-          {isListening && (
+        {/* Mic button */}
+        <div className="relative mb-8">
+          {state === 'listening' && (
             <>
-              <div className="absolute inset-0 rounded-full bg-primary/20 animate-ping" style={{ animationDuration: '1s' }} />
-              <div className="absolute -inset-4 rounded-full bg-primary/10 animate-ping" style={{ animationDuration: '1.5s' }} />
-              <div className="absolute -inset-8 rounded-full bg-primary/5 animate-ping" style={{ animationDuration: '2s' }} />
+              <div className="absolute inset-0 rounded-full bg-primary/20 animate-ping" />
+              <div className="absolute inset-0 rounded-full bg-primary/10" style={{ transform: `scale(${pulseSize})`, transition: 'transform 0.05s' }} />
             </>
           )}
-          <button onClick={handleListen}
-            className={`relative w-28 h-28 rounded-full flex items-center justify-center transition-all shadow-xl ${isListening ? 'bg-destructive scale-110' : 'bg-primary hover:bg-primary/90 hover:scale-105'}`}>
-            {isListening ? <MicOff className="w-12 h-12 text-white" /> : <Mic className="w-12 h-12 text-white" />}
+          <button
+            onClick={state === 'idle' || state === 'result' ? startListening : stopListening}
+            className={`relative w-28 h-28 rounded-full flex items-center justify-center transition-all shadow-lg ${
+              state === 'listening'
+                ? 'bg-destructive text-white scale-110'
+                : 'bg-primary text-white hover:scale-105'
+            }`}
+          >
+            {state === 'processing'
+              ? <Loader2 className="w-12 h-12 animate-spin" />
+              : state === 'listening'
+              ? <MicOff className="w-12 h-12" />
+              : <Mic className="w-12 h-12" />
+            }
           </button>
         </div>
 
-        {isListening && (
-          <div className="flex items-end gap-1 mb-4 h-8">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <div key={i} className="w-1.5 bg-primary rounded-full transition-all" style={{ height: `${Math.random() * 28 + 4}px`, opacity: 0.7 + Math.random() * 0.3 }} />
-            ))}
+        {/* Status text */}
+        <div className="text-center mb-8">
+          {state === 'idle'       && <p className="text-lg font-semibold">Tap to speak</p>}
+          {state === 'listening'  && <p className="text-lg font-semibold text-primary animate-pulse">Listening...</p>}
+          {state === 'processing' && <p className="text-lg font-semibold text-muted-foreground">Understanding...</p>}
+          {state === 'result'     && <p className="text-lg font-semibold text-green-600">Got it!</p>}
+          <p className="text-sm text-muted-foreground mt-1">बोलिए हिंदी या मैथिली में</p>
+        </div>
+
+        {/* Transcript & result */}
+        {(transcript || state === 'result') && (
+          <Card className="w-full p-4 border-border mb-4">
+            {transcript && (
+              <div className="flex items-start gap-3 mb-3">
+                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                  <Volume2 className="w-4 h-4 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">{transcript}</p>
+                  {result?.query && <p className="text-xs text-muted-foreground mt-0.5">Searching: "{result.query}"</p>}
+                </div>
+              </div>
+            )}
+            {result && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge className="text-[9px] bg-green-100 text-green-700 border-0">
+                  {Math.round((result.confidence || 0.9) * 100)}% confidence
+                </Badge>
+                <Badge className="text-[9px] bg-blue-100 text-blue-700 border-0">
+                  {result.detectedLanguage || 'hi'} detected
+                </Badge>
+              </div>
+            )}
+            {state === 'result' && (
+              <Button className="w-full mt-3 gap-2" onClick={handleSearch}>
+                <Search className="w-4 h-4" /> Search Products
+              </Button>
+            )}
+          </Card>
+        )}
+
+        {/* Suggested phrases */}
+        {(state === 'idle' || state === 'result') && (
+          <div className="w-full">
+            <p className="text-xs text-muted-foreground text-center mb-3">Try saying...</p>
+            <div className="space-y-2">
+              {SUGGESTED_PHRASES.map((phrase, i) => (
+                <button
+                  key={i}
+                  onClick={() => handlePhrase(phrase)}
+                  className="w-full text-left p-3 rounded-xl border border-border bg-card hover:bg-muted/40 transition-colors flex items-center gap-3"
+                >
+                  <Mic className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium">{phrase.hi}</p>
+                    <p className="text-xs text-muted-foreground">{phrase.en}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         )}
-
-        <p className="text-sm text-center text-muted-foreground mb-2">
-          {isListening ? '🎙️ Bol rahe hain... (Speaking...)' : 'Mic dabao aur bolo (Tap mic and speak)'}
-        </p>
-
-        {transcript && (
-          <Card className="p-3 border-border w-full mb-3">
-            <p className="text-xs text-muted-foreground mb-1">Aapne kaha / You said:</p>
-            <p className="text-sm font-medium">"{transcript}"</p>
-          </Card>
-        )}
-
-        {response && (
-          <Card className="p-4 border-primary/30 bg-primary/5 w-full">
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-sm">{response}</p>
-              <Button size="icon" variant="ghost" className="shrink-0 h-8 w-8" onClick={() => speak(response)}>
-                <Volume2 className="w-4 h-4 text-primary" />
-              </Button>
-            </div>
-            <div className="flex gap-2 mt-3">
-              <Button size="sm" className="flex-1 text-xs h-8">Haan / Yes</Button>
-              <Button size="sm" variant="outline" className="flex-1 text-xs h-8">Nahi / No</Button>
-            </div>
-          </Card>
-        )}
-      </div>
-
-      {/* Sample commands */}
-      <div className="px-4">
-        <p className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wide">Aap yeh bol sakte hain (You can say):</p>
-        <div className="space-y-2">
-          {VOICE_COMMANDS.map((cmd, i) => (
-            <Card key={i} className="p-3 border-border flex items-center gap-3 cursor-pointer hover:border-primary transition-colors active:bg-muted" onClick={() => { setTranscript(cmd.phrase.replace(/"/g, '')); setResponse(RESPONSES.find(r => r.trigger === cmd.action)?.response || 'Processing...'); }}>
-              <span className="text-xl">{cmd.icon}</span>
-              <div className="flex-1">
-                <p className="text-sm font-medium">{cmd.phrase}</p>
-                <p className="text-xs text-muted-foreground">{cmd.translation}</p>
-              </div>
-              <Volume2 className="w-4 h-4 text-muted-foreground" />
-            </Card>
-          ))}
-        </div>
       </div>
     </div>
   );

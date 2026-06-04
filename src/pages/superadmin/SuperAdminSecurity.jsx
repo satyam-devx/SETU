@@ -1,133 +1,132 @@
-import React from 'react';
-import { Shield, AlertTriangle, Eye, Lock, Activity, CheckCircle, XCircle, Clock } from 'lucide-react';
+import React, { useState } from 'react';
+import { Shield, AlertTriangle, Eye, Ban, CheckCircle, Search, TrendingUp } from 'lucide-react';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
-import { SUPER_ADMIN_STATS, AUDIT_LOG } from '@/lib/mockData';
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 
-const fraudAlerts = [
-  { id: 'f1', type: 'Suspicious Order Pattern', severity: 'high', entity: 'Order SETU-2025-0007', detail: 'Same customer placed 5 orders in 20 min, all cancelled', time: '2025-05-29T14:10:00', status: 'investigating' },
-  { id: 'f2', type: 'COD Discrepancy', severity: 'medium', entity: 'Rider Suraj Kumar', detail: '₹300 discrepancy in daily reconciliation', time: '2025-05-30T22:00:00', status: 'resolved' },
-  { id: 'f3', type: 'Fake Review Suspected', severity: 'low', entity: 'Vendor Mithila Sweets', detail: '15 reviews from same IP in 1 hour', time: '2025-05-31T08:30:00', status: 'open' },
+const FRAUD_EVENTS = [
+  { id: 'f1', type: 'Multiple accounts',    user: 'Device ID: A8F2...',   risk: 0.92, status: 'blocked',    time: '10 min ago',  village: 'Laxmipur'  },
+  { id: 'f2', type: 'Unusual order pattern', user: 'Customer cu-4821',    risk: 0.78, status: 'flagged',    time: '45 min ago',  village: 'Madhepur'  },
+  { id: 'f3', type: 'COD manipulation',      user: 'Rider r-0042',        risk: 0.85, status: 'under_review', time: '2 hr ago',  village: 'Parsad'    },
+  { id: 'f4', type: 'Fake KYC document',     user: 'Vendor vn-0091',      risk: 0.95, status: 'blocked',    time: '4 hr ago',   village: 'Madhepur'  },
+  { id: 'f5', type: 'Price manipulation',    user: 'Vendor vn-0034',      risk: 0.61, status: 'monitoring', time: '6 hr ago',   village: 'Jhanjharpur'},
 ];
 
-const severityConfig = {
-  high: 'bg-red-100 text-red-800',
-  medium: 'bg-amber-100 text-amber-800',
-  low: 'bg-yellow-100 text-yellow-800',
-};
-
-const statusConfig = {
-  investigating: 'bg-blue-100 text-blue-800',
-  resolved: 'bg-green-100 text-green-800',
-  open: 'bg-gray-100 text-gray-800',
-};
-
-const securityChecks = [
-  { label: '2FA on all admin accounts', status: true },
-  { label: 'End-to-end encryption (payments)', status: true },
-  { label: 'HTTPS / TLS 1.3', status: true },
-  { label: 'Automated fraud detection', status: true },
-  { label: 'Daily audit log review', status: true },
-  { label: 'Penetration test (last: Q1 2025)', status: true },
-  { label: 'DPDP Act 2023 compliance', status: true },
-  { label: 'Data residency in India', status: true },
+const FRAUD_TREND = [
+  { day: 'Mon', events: 2 }, { day: 'Tue', events: 5 }, { day: 'Wed', events: 3 },
+  { day: 'Thu', events: 7 }, { day: 'Fri', events: 4 }, { day: 'Sat', events: 8 }, { day: 'Sun', events: 5 },
 ];
+
+const riskColor   = (r) => r >= 0.85 ? 'text-red-600' : r >= 0.7 ? 'text-amber-600' : 'text-yellow-600';
+const statusStyle = {
+  blocked:       'bg-red-100 text-red-700',
+  flagged:       'bg-amber-100 text-amber-700',
+  under_review:  'bg-blue-100 text-blue-700',
+  monitoring:    'bg-yellow-100 text-yellow-700',
+  cleared:       'bg-green-100 text-green-700',
+};
 
 export default function SuperAdminSecurity() {
+  const [tab, setTab]       = useState('all');
+  const [query, setQuery]   = useState('');
+  const [events, setEvents] = useState(FRAUD_EVENTS);
+  const [acting, setActing] = useState(null);
+
+  const filtered = events.filter(e => {
+    const matchQ = !query || e.type.toLowerCase().includes(query.toLowerCase()) || e.user.toLowerCase().includes(query.toLowerCase());
+    if (tab === 'blocked')  return matchQ && e.status === 'blocked';
+    if (tab === 'flagged')  return matchQ && (e.status === 'flagged' || e.status === 'under_review');
+    return matchQ;
+  });
+
+  const act = (id, newStatus) => {
+    setActing(id + newStatus);
+    setTimeout(() => {
+      setEvents(es => es.map(e => e.id === id ? { ...e, status: newStatus } : e));
+      setActing(null);
+    }, 500);
+  };
+
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold font-heading mb-1">Fraud & Security</h1>
-      <p className="text-sm text-muted-foreground mb-6">Zero tolerance for fraud. Every exception investigated.</p>
+    <div className="flex-1 overflow-auto">
+      <AppHeader title="Fraud & Security" />
+      <div className="p-4 space-y-4">
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <StatCard title="Fraud Alerts" value={`${SUPER_ADMIN_STATS.fraudAlerts}`} icon={AlertTriangle} className="border-destructive/30" />
-        <StatCard title="API Uptime" value={`${SUPER_ADMIN_STATS.apiUptime}%`} icon={Activity} />
-        <StatCard title="Compliance Score" value={`${SUPER_ADMIN_STATS.complianceScore}%`} icon={Shield} />
-        <StatCard title="Security Checks" value={`${securityChecks.filter(c => c.status).length}/${securityChecks.length}`} subtitle="All green" icon={Lock} />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-        <div className="col-span-2">
-          <Card className="border-border">
-            <div className="p-4 border-b border-border">
-              <h3 className="font-semibold text-sm flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-destructive" /> Active Fraud Alerts</h3>
-            </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-xs">Type</TableHead>
-                  <TableHead className="text-xs">Severity</TableHead>
-                  <TableHead className="text-xs">Entity</TableHead>
-                  <TableHead className="text-xs">Detail</TableHead>
-                  <TableHead className="text-xs">Time</TableHead>
-                  <TableHead className="text-xs">Status</TableHead>
-                  <TableHead className="text-xs">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {fraudAlerts.map(alert => (
-                  <TableRow key={alert.id}>
-                    <TableCell className="text-xs font-medium">{alert.type}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={`text-[9px] ${severityConfig[alert.severity]}`}>{alert.severity}</Badge>
-                    </TableCell>
-                    <TableCell className="text-xs">{alert.entity}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground max-w-[180px] truncate">{alert.detail}</TableCell>
-                    <TableCell className="text-[10px] text-muted-foreground">{new Date(alert.time).toLocaleString('en-IN')}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={`text-[9px] ${statusConfig[alert.status]}`}>{alert.status}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      {alert.status !== 'resolved' && <Button size="sm" variant="outline" className="h-6 text-[10px]">Review</Button>}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
+        <div className="grid grid-cols-2 gap-2">
+          <StatCard title="Active Threats" value={String(events.filter(e => e.status !== 'cleared').length)} icon={AlertTriangle} />
+          <StatCard title="Blocked Today"  value={String(events.filter(e => e.status === 'blocked').length)} icon={Ban} />
         </div>
 
-        <Card className="p-5 border-border">
-          <h3 className="font-semibold text-sm mb-4 flex items-center gap-2"><CheckCircle className="w-4 h-4 text-accent" /> Security Checklist</h3>
-          <div className="space-y-2">
-            {securityChecks.map((check, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <CheckCircle className="w-3.5 h-3.5 text-accent shrink-0" />
-                <span className="text-xs">{check.label}</span>
-              </div>
-            ))}
+        <Card className="p-4 border-border">
+          <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-primary" /> Fraud Events (7 days)
+          </h3>
+          <div className="h-28">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={FRAUD_TREND} barSize={16}>
+                <XAxis dataKey="day" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} />
+                <YAxis hide />
+                <Tooltip formatter={v => [v, 'Events']} />
+                <Bar dataKey="events" fill="hsl(var(--destructive))" radius={[3,3,0,0]} opacity={0.7} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </Card>
-      </div>
 
-      <Card className="border-border">
-        <div className="p-4 border-b border-border">
-          <h3 className="font-semibold text-sm">Full Audit Log</h3>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input placeholder="Search events..." className="pl-9" value={query} onChange={e => setQuery(e.target.value)} />
         </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="text-xs">Actor</TableHead>
-              <TableHead className="text-xs">Action</TableHead>
-              <TableHead className="text-xs">Entity</TableHead>
-              <TableHead className="text-xs">Timestamp</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {AUDIT_LOG.map(log => (
-              <TableRow key={log.id}>
-                <TableCell className="text-xs font-medium">{log.actor}</TableCell>
-                <TableCell className="text-xs">{log.action}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{log.entity}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{new Date(log.timestamp).toLocaleString('en-IN')}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList className="w-full grid grid-cols-3">
+            <TabsTrigger value="all"     className="text-xs">All ({events.length})</TabsTrigger>
+            <TabsTrigger value="flagged" className="text-xs">Flagged</TabsTrigger>
+            <TabsTrigger value="blocked" className="text-xs">Blocked</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <div className="space-y-2">
+          {filtered.map(e => (
+            <Card key={e.id} className="p-4 border-border">
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold">{e.type}</p>
+                  <p className="text-xs text-muted-foreground">{e.user} · {e.village} · {e.time}</p>
+                </div>
+                <div className="text-right shrink-0 ml-2">
+                  <p className={`text-sm font-bold ${riskColor(e.risk)}`}>{Math.round(e.risk * 100)}% risk</p>
+                  <Badge className={`text-[9px] border-0 ${statusStyle[e.status]}`}>{e.status}</Badge>
+                </div>
+              </div>
+              {e.status !== 'blocked' && e.status !== 'cleared' && (
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" className="flex-1 h-7 text-xs gap-1 text-destructive border-destructive/30"
+                    disabled={acting === e.id + 'blocked'}
+                    onClick={() => act(e.id, 'blocked')}>
+                    <Ban className="w-3 h-3" />
+                    {acting === e.id + 'blocked' ? '...' : 'Block'}
+                  </Button>
+                  <Button size="sm" variant="outline" className="flex-1 h-7 text-xs gap-1"
+                    disabled={acting === e.id + 'cleared'}
+                    onClick={() => act(e.id, 'cleared')}>
+                    <CheckCircle className="w-3 h-3" />
+                    {acting === e.id + 'cleared' ? '...' : 'Clear'}
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 w-7 p-0">
+                    <Eye className="w-3 h-3" />
+                  </Button>
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

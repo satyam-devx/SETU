@@ -1,249 +1,191 @@
-import React, { useState } from 'react';
-import { Shield, ChevronRight, CheckCircle, Clock, AlertTriangle, IndianRupee, CreditCard, TrendingUp, Calendar } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { CreditCard, ArrowUpRight, ArrowDownLeft, TrendingUp, CheckCircle, Clock, AlertCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import AppHeader from '@/components/shared/AppHeader';
-import { WALLET } from '@/lib/mockData';
+import { CreditAPI } from '@/lib/api';
+import { useStore } from '@/lib/store';
 
-const repaymentSchedule = [
-  { id: 'r1', dueDate: '2025-06-07', amount: 400, status: 'upcoming', description: 'Order SETU-2025-0002' },
-  { id: 'r2', dueDate: '2025-06-14', amount: 300, status: 'upcoming', description: 'Order SETU-2025-0003' },
-  { id: 'r3', dueDate: '2025-05-31', amount: 500, status: 'overdue', description: 'Order SETU-2025-0001' },
-];
-
-const creditHistory = [
-  { date: '2025-05-01', type: 'disbursed', amount: 1000, desc: 'Credit for order SETU-2025-0001' },
-  { date: '2025-05-07', type: 'repaid', amount: 500, desc: 'Repayment via UPI' },
-  { date: '2025-05-15', type: 'disbursed', amount: 700, desc: 'Credit for order SETU-2025-0003' },
-  { date: '2025-05-21', type: 'repaid', amount: 700, desc: 'Repayment via SETU Wallet' },
-];
-
-const TABS = ['Overview', 'Apply', 'Repay', 'History'];
+const REPAY_AMOUNTS = [200, 500, 1000, 1200];
 
 export default function CustomerCredit() {
-  const [tab, setTab] = useState('Overview');
-  const [applyStep, setApplyStep] = useState(1);
-  const available = WALLET.creditLimit - WALLET.creditUsed;
+  const { state } = useStore();
+  const [account, setAccount] = useState(null);
+  const [applying, setApplying] = useState(false);
+  const [applyAmt, setApplyAmt] = useState('');
+  const [applyPurpose, setApplyPurpose] = useState('');
+  const [applySubmitted, setApplySubmitted] = useState(false);
+  const [repayAmt, setRepayAmt] = useState('');
+  const [repaying, setRepaying] = useState(false);
+  const [repaid, setRepaid]     = useState(false);
+  const [showApply, setShowApply] = useState(false);
+  const [showRepay, setShowRepay] = useState(false);
+
+  useEffect(() => {
+    CreditAPI.getAccount('u1').then(({ data }) => data && setAccount(data));
+  }, []);
+
+  const handleApply = () => {
+    if (!applyAmt) return;
+    setApplying(true);
+    CreditAPI.applyCredit('u1', parseInt(applyAmt), applyPurpose).then(({ data }) => {
+      setApplying(false);
+      if (data) { setApplySubmitted(true); setShowApply(false); }
+    });
+  };
+
+  const handleRepay = () => {
+    if (!repayAmt) return;
+    setRepaying(true);
+    CreditAPI.repay('u1', parseInt(repayAmt)).then(({ data }) => {
+      setRepaying(false);
+      if (data) { setRepaid(true); setShowRepay(false); setTimeout(() => setRepaid(false), 3000); }
+    });
+  };
+
+  const score = state.currentUser.setuScore;
+
+  const TRANSACTIONS = [
+    { type: 'debit',  label: 'Used at checkout',          amount: 450,  date: '2 days ago',  status: 'outstanding' },
+    { type: 'debit',  label: 'Used at checkout',          amount: 320,  date: '5 days ago',  status: 'outstanding' },
+    { type: 'credit', label: 'Repayment',                 amount: 1000, date: '1 week ago',  status: 'completed'   },
+    { type: 'debit',  label: 'Used at checkout',          amount: 280,  date: '2 weeks ago', status: 'paid'        },
+  ];
 
   return (
-    <div className="pb-24">
-      <AppHeader title="SETU Credit" subtitle="Buy Now, Pay Later" showBack />
+    <div className="pb-6">
+      <AppHeader title="SETU Credit" showBack />
+      <div className="px-4 py-4 space-y-4">
 
-      {/* Tab bar */}
-      <div className="flex border-b border-border sticky top-0 bg-card z-10">
-        {TABS.map(t => (
-          <button key={t} onClick={() => setTab(t)} className={`flex-1 py-3 text-xs font-medium transition-colors border-b-2 ${tab === t ? 'border-primary text-primary' : 'border-transparent text-muted-foreground'}`}>{t}</button>
-        ))}
-      </div>
-
-      <div className="px-4 py-4">
-        {tab === 'Overview' && (
-          <div className="space-y-4">
-            {/* Credit card */}
-            <Card className="bg-gradient-to-br from-foreground to-foreground/80 text-background p-5 rounded-2xl border-0">
-              <p className="text-xs opacity-60 uppercase tracking-wide mb-1">SETU Credit Account</p>
-              <div className="flex items-end justify-between">
-                <div>
-                  <p className="text-xs opacity-70">Available Credit</p>
-                  <h2 className="text-3xl font-bold">₹{available.toLocaleString()}</h2>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs opacity-70">Used</p>
-                  <p className="text-xl font-bold">₹{WALLET.creditUsed.toLocaleString()}</p>
-                </div>
+        {/* Credit summary */}
+        {account && (
+          <Card className="p-5 border-primary/20 bg-gradient-to-br from-primary/10 to-background">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Available Credit</p>
+            <p className="text-4xl font-bold text-primary mt-1">₹{account.available.toLocaleString()}</p>
+            <div className="mt-3">
+              <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                <span>Used: ₹{account.outstanding.toLocaleString()}</span>
+                <span>Limit: ₹{account.limit.toLocaleString()}</span>
               </div>
-              <Progress value={(WALLET.creditUsed / WALLET.creditLimit) * 100} className="h-1.5 mt-3 bg-white/20" />
-              <div className="flex justify-between text-[10px] opacity-60 mt-1">
-                <span>₹0</span>
-                <span>Limit: ₹{WALLET.creditLimit.toLocaleString()}</span>
-              </div>
-            </Card>
-
-            {/* SETU Score */}
-            <Card className="p-4 border-border">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-sm">SETU Credit Score</h3>
-                <span className={`text-2xl font-bold ${WALLET.creditScore >= 700 ? 'text-accent' : WALLET.creditScore >= 600 ? 'text-amber-600' : 'text-destructive'}`}>{WALLET.creditScore}</span>
-              </div>
-              <Progress value={(WALLET.creditScore / 900) * 100} className="h-3 mb-2" />
-              <div className="flex justify-between text-[10px] text-muted-foreground mb-3">
-                <span>300 (Poor)</span><span>600 (Fair)</span><span>750 (Good)</span><span>900 (Excellent)</span>
-              </div>
-              <div className="space-y-2">
-                {[
-                  { label: 'Order History', score: 95, max: 100 },
-                  { label: 'Repayment Rate', score: 100, max: 100 },
-                  { label: 'Anchor Endorsement', score: 80, max: 100 },
-                  { label: 'Active on SETU', score: 85, max: 100 },
-                ].map(item => (
-                  <div key={item.label} className="flex items-center gap-3 text-xs">
-                    <span className="text-muted-foreground w-32">{item.label}</span>
-                    <Progress value={(item.score / item.max) * 100} className="flex-1 h-1.5" />
-                    <span className="font-medium w-8 text-right">{item.score}</span>
-                  </div>
-                ))}
-              </div>
-            </Card>
-
-            {/* Upcoming repayments */}
-            {repaymentSchedule.some(r => r.status === 'overdue') && (
-              <Card className="p-4 border-destructive/30 bg-destructive/5">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertTriangle className="w-4 h-4 text-destructive" />
-                  <h3 className="font-semibold text-sm text-destructive">Overdue Repayment</h3>
-                </div>
-                {repaymentSchedule.filter(r => r.status === 'overdue').map(r => (
-                  <div key={r.id} className="flex items-center justify-between">
-                    <p className="text-sm">{r.description} — ₹{r.amount}</p>
-                    <Button size="sm" className="h-7 text-xs bg-destructive hover:bg-destructive/90" onClick={() => setTab('Repay')}>Pay Now</Button>
-                  </div>
-                ))}
-              </Card>
-            )}
-
-            <Card className="p-4 border-border">
-              <h3 className="font-semibold text-sm mb-3">Upcoming Repayments</h3>
-              {repaymentSchedule.filter(r => r.status === 'upcoming').map(r => (
-                <div key={r.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                  <div>
-                    <p className="text-sm">{r.description}</p>
-                    <p className="text-xs text-muted-foreground flex items-center gap-1"><Calendar className="w-3 h-3" /> Due: {r.dueDate}</p>
-                  </div>
-                  <span className="font-bold">₹{r.amount}</span>
-                </div>
-              ))}
-            </Card>
-
-            <Button className="w-full" onClick={() => setTab('Apply')}>Increase Credit Limit <ChevronRight className="w-4 h-4 ml-1" /></Button>
-          </div>
-        )}
-
-        {tab === 'Apply' && (
-          <div className="space-y-4">
-            {applyStep === 1 && (
-              <>
-                <div>
-                  <h2 className="text-xl font-bold mb-1">Apply for Credit</h2>
-                  <p className="text-sm text-muted-foreground">SETU Credit is based on your purchase history and trust in the community — not a CIBIL score.</p>
-                </div>
-                <Card className="p-4 border-border space-y-3">
-                  <h3 className="font-semibold text-sm">How much do you need?</h3>
-                  <div className="grid grid-cols-3 gap-2">
-                    {['₹1,000', '₹2,000', '₹5,000', '₹10,000', '₹15,000', '₹20,000'].map(amt => (
-                      <button key={amt} className="text-sm py-2.5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-colors font-medium">{amt}</button>
-                    ))}
-                  </div>
-                  <Input placeholder="Or enter custom amount" />
-                </Card>
-                <Card className="p-4 border-border space-y-2">
-                  <h3 className="font-semibold text-sm">Purpose of Credit</h3>
-                  <Select>
-                    <SelectTrigger><SelectValue placeholder="What will you use it for?" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="groceries">Groceries & Daily Needs</SelectItem>
-                      <SelectItem value="festival">Festival Shopping</SelectItem>
-                      <SelectItem value="farming">Farm Inputs</SelectItem>
-                      <SelectItem value="education">Child Education</SelectItem>
-                      <SelectItem value="medical">Medical Expenses</SelectItem>
-                      <SelectItem value="home">Home Repair</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Card>
-                <Card className="p-3 bg-muted/50 border-border">
-                  <p className="text-xs text-muted-foreground">
-                    <strong>No Interest for 7 days.</strong> After that, <strong>1% per week</strong> on outstanding balance. 
-                    SETU Credit is designed to help, not trap you in debt. Your Village Anchor is here if you need help.
-                  </p>
-                </Card>
-                <Button className="w-full" onClick={() => setApplyStep(2)}>Check Eligibility</Button>
-              </>
-            )}
-            {applyStep === 2 && (
-              <>
-                <div className="text-center py-4">
-                  <div className="w-16 h-16 bg-accent/20 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <CheckCircle className="w-8 h-8 text-accent" />
-                  </div>
-                  <h2 className="text-xl font-bold mb-1">You're Eligible!</h2>
-                  <p className="text-sm text-muted-foreground">Based on your SETU score of {WALLET.creditScore} and 24 orders.</p>
-                </div>
-                <Card className="p-4 border-border space-y-3">
-                  <div className="flex justify-between"><span className="text-sm text-muted-foreground">Credit Amount</span><span className="font-bold">₹5,000</span></div>
-                  <div className="flex justify-between"><span className="text-sm text-muted-foreground">Interest-Free Period</span><span className="font-bold text-accent">7 days</span></div>
-                  <div className="flex justify-between"><span className="text-sm text-muted-foreground">After 7 days</span><span className="font-bold">1% / week</span></div>
-                  <div className="flex justify-between"><span className="text-sm text-muted-foreground">Repayment via</span><span className="font-bold">UPI / Wallet / Cash</span></div>
-                </Card>
-                <div className="bg-muted/50 rounded-xl p-3">
-                  <p className="text-xs text-muted-foreground">By accepting, I agree to repay on time. I understand that non-repayment affects my entire village's credit access and my SETU trust score.</p>
-                </div>
-                <Button className="w-full">Accept & Activate Credit ✓</Button>
-                <Button variant="outline" className="w-full" onClick={() => setApplyStep(1)}>Go Back</Button>
-              </>
-            )}
-          </div>
-        )}
-
-        {tab === 'Repay' && (
-          <div className="space-y-4">
-            <h2 className="text-xl font-bold mb-1">Make a Repayment</h2>
-            <Card className="p-4 border-destructive/30 bg-destructive/5">
-              <p className="text-sm font-medium text-destructive">Outstanding: ₹{WALLET.creditUsed}</p>
-              <p className="text-xs text-muted-foreground">Overdue: ₹500 — Pay immediately to avoid late fees</p>
-            </Card>
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">Amount to Pay</p>
-              <div className="flex gap-2 flex-wrap">
-                {['₹500', '₹700', '₹1,000', 'Full Amount'].map(a => (
-                  <button key={a} className="text-sm px-4 py-2 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-colors">{a}</button>
-                ))}
-              </div>
-              <Input placeholder="Enter custom amount" />
+              <Progress value={Math.round((account.outstanding / account.limit) * 100)} className="h-2" />
             </div>
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">Payment Method</p>
-              {[
-                { label: 'UPI', icon: '📱', desc: 'Instant settlement' },
-                { label: 'SETU Wallet', icon: '💰', desc: `Balance: ₹${WALLET.balance}` },
-                { label: 'Cash at Village Point', icon: '💵', desc: 'Give cash to Village Anchor' },
-              ].map(m => (
-                <Card key={m.label} className="p-3 border-border flex items-center gap-3 cursor-pointer hover:border-primary transition-colors">
-                  <span className="text-xl">{m.icon}</span>
-                  <div>
-                    <p className="text-sm font-medium">{m.label}</p>
-                    <p className="text-xs text-muted-foreground">{m.desc}</p>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground ml-auto" />
-                </Card>
+            <div className="mt-3 flex items-center gap-3">
+              <Badge className="bg-green-100 text-green-700 border-0 text-xs">Active</Badge>
+              <span className="text-xs text-muted-foreground">Repayment rate: {account.repaymentRate}%</span>
+            </div>
+          </Card>
+        )}
+
+        {repaid && (
+          <Card className="p-3 border-green-200 bg-green-50 flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-green-600" />
+            <p className="text-sm text-green-700 font-medium">Repayment recorded successfully!</p>
+          </Card>
+        )}
+        {applySubmitted && (
+          <Card className="p-3 border-blue-200 bg-blue-50 flex items-center gap-2">
+            <Clock className="w-4 h-4 text-blue-600" />
+            <p className="text-sm text-blue-700 font-medium">Application submitted — decision within 24 hours</p>
+          </Card>
+        )}
+
+        {/* Action buttons */}
+        <div className="grid grid-cols-2 gap-2">
+          <Button className="h-11 gap-2" onClick={() => { setShowApply(s => !s); setShowRepay(false); }}>
+            <ArrowUpRight className="w-4 h-4" /> Use Credit
+          </Button>
+          <Button variant="outline" className="h-11 gap-2" onClick={() => { setShowRepay(s => !s); setShowApply(false); }}>
+            <ArrowDownLeft className="w-4 h-4" /> Repay
+          </Button>
+        </div>
+
+        {/* Apply panel */}
+        {showApply && (
+          <Card className="p-4 border-primary/30 bg-primary/5">
+            <h3 className="font-semibold text-sm mb-3">Apply for Credit</h3>
+            <div className="flex gap-2 flex-wrap mb-3">
+              {[500, 1000, 2000, 3000].map(a => (
+                <button key={a} onClick={() => setApplyAmt(String(a))}
+                  className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${applyAmt === String(a) ? 'bg-primary text-white border-primary' : 'border-border bg-card'}`}>
+                  ₹{a.toLocaleString()}
+                </button>
               ))}
             </div>
-            <Button className="w-full">Pay ₹500 Now</Button>
-          </div>
+            <Input placeholder="Or enter amount" type="number" className="mb-2" value={applyAmt} onChange={e => setApplyAmt(e.target.value)} />
+            <Input placeholder="Purpose (e.g. groceries, medicine)" className="mb-3" value={applyPurpose} onChange={e => setApplyPurpose(e.target.value)} />
+            <p className="text-xs text-muted-foreground mb-3">Repayment due within 15 days · No interest</p>
+            <Button className="w-full" onClick={handleApply} disabled={applying || !applyAmt}>
+              {applying ? 'Applying...' : 'Apply Now'}
+            </Button>
+          </Card>
         )}
 
-        {tab === 'History' && (
+        {/* Repay panel */}
+        {showRepay && (
+          <Card className="p-4 border-accent/30 bg-accent/5">
+            <h3 className="font-semibold text-sm mb-3">Repay Credit</h3>
+            <div className="flex gap-2 flex-wrap mb-3">
+              {REPAY_AMOUNTS.map(a => (
+                <button key={a} onClick={() => setRepayAmt(String(a))}
+                  className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${repayAmt === String(a) ? 'bg-accent text-white border-accent' : 'border-border bg-card'}`}>
+                  ₹{a}
+                </button>
+              ))}
+            </div>
+            <Input placeholder="Or enter amount" type="number" className="mb-3" value={repayAmt} onChange={e => setRepayAmt(e.target.value)} />
+            <Button className="w-full bg-accent hover:bg-accent/90" onClick={handleRepay} disabled={repaying || !repayAmt}>
+              {repaying ? 'Processing...' : `Repay ₹${repayAmt || '0'}`}
+            </Button>
+          </Card>
+        )}
+
+        {/* Credit score */}
+        <Card className="p-4 border-border">
+          <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-primary" /> Your SETU Score
+          </h3>
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 rounded-full border-4 border-primary flex items-center justify-center shrink-0">
+              <span className="text-lg font-bold text-primary">{score}</span>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-green-600">Good Standing</p>
+              <p className="text-xs text-muted-foreground">Eligible for up to ₹5,000</p>
+              <Badge className="mt-1 text-[9px] bg-primary/10 text-primary border-0">Top 30% customers</Badge>
+            </div>
+          </div>
+        </Card>
+
+        {/* Transactions */}
+        <div>
+          <h3 className="font-semibold text-sm mb-2">Credit History</h3>
           <div className="space-y-2">
-            {creditHistory.map((h, i) => (
-              <Card key={i} className="p-3 border-border">
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${h.type === 'repaid' ? 'bg-green-100' : 'bg-primary/10'}`}>
-                    {h.type === 'repaid' ? <CheckCircle className="w-4 h-4 text-accent" /> : <CreditCard className="w-4 h-4 text-primary" />}
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{h.desc}</p>
-                    <p className="text-[10px] text-muted-foreground">{h.date}</p>
-                  </div>
-                  <span className={`font-bold text-sm ${h.type === 'repaid' ? 'text-accent' : 'text-foreground'}`}>
-                    {h.type === 'repaid' ? '-' : '+'}₹{h.amount}
-                  </span>
+            {TRANSACTIONS.map((t, i) => (
+              <Card key={i} className="p-3 border-border flex items-center gap-3">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${t.type === 'credit' ? 'bg-green-100' : 'bg-primary/10'}`}>
+                  {t.type === 'credit'
+                    ? <ArrowDownLeft className="w-4 h-4 text-green-600" />
+                    : <ArrowUpRight className="w-4 h-4 text-primary" />}
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium">{t.label}</p>
+                  <p className="text-xs text-muted-foreground">{t.date}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className={`text-sm font-bold ${t.type === 'credit' ? 'text-green-600' : 'text-primary'}`}>
+                    {t.type === 'credit' ? '-' : '+'}₹{t.amount}
+                  </p>
+                  <Badge variant="outline" className={`text-[9px] ${t.status === 'outstanding' ? 'bg-amber-50 text-amber-700' : ''}`}>
+                    {t.status}
+                  </Badge>
                 </div>
               </Card>
             ))}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

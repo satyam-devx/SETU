@@ -1,175 +1,123 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Users, Newspaper, Star, IndianRupee, CheckCircle, AlertTriangle, MessageSquare, TrendingUp, ChevronRight, Award } from 'lucide-react';
+import { Users, MessageSquare, Newspaper, BarChart3, ChevronRight, UserCheck, AlertTriangle, TrendingUp } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import AppHeader from '@/components/shared/AppHeader';
+import StatCard from '@/components/shared/StatCard';
+import { useStore } from '@/lib/store';
+import { VILLAGES, VENDORS, RIDERS } from '@/lib/mockData';
 
-const anchor = {
-  name: 'Ramkali Devi',
-  village: 'Madhepur',
-  block: 'Madhepur',
-  tier: 'Gold Anchor',
-  rating: 4.9,
-  villageScore: 82,
-  monthlyCommission: 3240,
-  totalEarned: 28600,
-  usersOnboarded: 47,
-  activeUsers: 38,
-  disputesResolved: 12,
-  ordersThisMonth: 325,
-  pendingVerifications: 3,
-};
-
-const recentActivity = [
-  { type: 'onboard', text: 'Mohan Lal joined via your referral', time: '2h ago', icon: '👤' },
-  { type: 'order', text: 'Village placed 12 orders today', time: '4h ago', icon: '📦' },
-  { type: 'dispute', text: 'Priya Singh dispute resolved', time: '1d ago', icon: '✅' },
-  { type: 'news', text: 'Your notice on PM Kisan was viewed 34 times', time: '2d ago', icon: '📰' },
-];
-
-const tasks = [
-  { label: 'Verify Anita Devi\'s KYC documents', priority: 'high', link: '/anchor/village' },
-  { label: 'Post weekly village news update', priority: 'medium', link: '/anchor/noticeboard' },
-  { label: 'Resolve open dispute #D-004', priority: 'high', link: '/anchor/disputes' },
-];
+const ANCHOR = { name: 'Ramkali Devi', village: 'Madhepur', since: 'Jan 2024', score: 91 };
 
 export default function AnchorDashboard() {
+  const { state } = useStore();
+
+  const village       = VILLAGES[0];
+  const activeVendors = VENDORS.filter(v => v.isOpen).length;
+  const activeOrders  = state.orders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length;
+  const pendingKYC    = 4;
+  const openDisputes  = 2;
+
+  const quickLinks = [
+    { label: 'KYC Management',  path: '/anchor/kyc',         icon: UserCheck,    badge: pendingKYC,   color: 'text-blue-600'   },
+    { label: 'Disputes',        path: '/anchor/disputes',    icon: MessageSquare, badge: openDisputes, color: 'text-amber-600' },
+    { label: 'Noticeboard',     path: '/anchor/noticeboard', icon: Newspaper,     badge: null,         color: 'text-purple-600' },
+    { label: 'Village Reports', path: '/anchor/reports',     icon: BarChart3,     badge: null,         color: 'text-green-600'  },
+    { label: 'Escalations',     path: '/anchor/escalations', icon: AlertTriangle, badge: 1,            color: 'text-red-600'    },
+    { label: 'Village Map',     path: '/anchor/village',     icon: Users,         badge: null,         color: 'text-primary'    },
+  ];
+
   return (
-    <div className="pb-24">
-      <AppHeader title="Anchor Portal" subtitle={`${anchor.village} · ${anchor.tier}`} notificationCount={3} />
+    <div className="pb-20">
+      <AppHeader
+        title={`Namaskar, ${ANCHOR.name.split(' ')[0]}`}
+        subtitle={`${village.name} Village Anchor`}
+      />
+      <div className="px-4 py-4 space-y-4">
 
-      {/* Anchor profile card */}
-      <div className="px-4 py-4">
-        <Card className="bg-gradient-to-br from-primary to-primary/80 text-white p-5 rounded-2xl border-0">
-          <div className="flex items-start justify-between mb-3">
+        {/* Score card */}
+        <Card className="p-4 border-border bg-gradient-to-br from-primary/5 to-background">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs opacity-70 uppercase tracking-wide">Village Anchor</p>
-              <h2 className="text-xl font-bold">{anchor.name}</h2>
-              <p className="text-sm opacity-80">{anchor.village}, {anchor.block} Block</p>
+              <p className="text-xs text-muted-foreground">Anchor Performance Score</p>
+              <p className="text-3xl font-bold text-primary">{ANCHOR.score}</p>
+              <p className="text-xs text-muted-foreground">Active since {ANCHOR.since}</p>
             </div>
-            <div className="flex flex-col items-end">
-              <Badge className="bg-white/20 text-white border-0 text-xs mb-1">
-                <Award className="w-3 h-3 mr-1" /> {anchor.tier}
-              </Badge>
-              <span className="text-xs opacity-70">⭐ {anchor.rating} rating</span>
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3 mt-2">
-            <div className="text-center bg-white/10 rounded-xl p-2">
-              <p className="text-lg font-bold">₹{anchor.monthlyCommission.toLocaleString()}</p>
-              <p className="text-[10px] opacity-70">This Month</p>
-            </div>
-            <div className="text-center bg-white/10 rounded-xl p-2">
-              <p className="text-lg font-bold">{anchor.usersOnboarded}</p>
-              <p className="text-[10px] opacity-70">Users Onboarded</p>
-            </div>
-            <div className="text-center bg-white/10 rounded-xl p-2">
-              <p className="text-lg font-bold">{anchor.villageScore}</p>
-              <p className="text-[10px] opacity-70">Village Score</p>
+            <div className="text-right">
+              <Badge className="bg-green-100 text-green-700 border-0">Top 10%</Badge>
+              <p className="text-xs text-muted-foreground mt-1">{village.name} Block</p>
             </div>
           </div>
         </Card>
-      </div>
 
-      {/* Village Score */}
-      <div className="px-4 mb-4">
-        <Card className="p-4 border-border">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold text-sm">Village SETU Score</h3>
-            <span className="text-lg font-bold text-primary">{anchor.villageScore}/100</span>
-          </div>
-          <Progress value={anchor.villageScore} className="h-3" />
-          <div className="grid grid-cols-3 gap-2 mt-3 text-center">
-            <div>
-              <p className="text-xs font-bold text-accent">92%</p>
-              <p className="text-[10px] text-muted-foreground">Delivery Rate</p>
-            </div>
-            <div>
-              <p className="text-xs font-bold text-primary">78%</p>
-              <p className="text-[10px] text-muted-foreground">Credit Health</p>
-            </div>
-            <div>
-              <p className="text-xs font-bold text-chart-3">85%</p>
-              <p className="text-[10px] text-muted-foreground">Engagement</p>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Pending tasks */}
-      {tasks.length > 0 && (
-        <div className="px-4 mb-4">
-          <h3 className="font-semibold text-sm mb-2 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-500" /> Action Required
-          </h3>
-          <div className="space-y-2">
-            {tasks.map((task, i) => (
-              <Link key={i} to={task.link}>
-                <Card className={`p-3 border flex items-center justify-between mb-2 ${task.priority === 'high' ? 'border-destructive/30 bg-destructive/5' : 'border-border'}`}>
-                  <p className="text-sm flex-1">{task.label}</p>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className={`text-[9px] ${task.priority === 'high' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
-                      {task.priority}
-                    </Badge>
-                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                  </div>
-                </Card>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Quick actions */}
-      <div className="px-4 mb-4">
-        <h3 className="font-semibold text-sm mb-2">Quick Actions</h3>
+        {/* Stats */}
         <div className="grid grid-cols-2 gap-2">
-          <Link to="/anchor/noticeboard">
-            <Card className="p-4 border-border text-center hover:bg-muted/50 cursor-pointer transition-colors">
-              <Newspaper className="w-6 h-6 text-primary mx-auto mb-2" />
-              <p className="text-xs font-medium">Post Notice</p>
-            </Card>
-          </Link>
-          <Link to="/anchor/village">
-            <Card className="p-4 border-border text-center hover:bg-muted/50 cursor-pointer transition-colors">
-              <Users className="w-6 h-6 text-accent mx-auto mb-2" />
-              <p className="text-xs font-medium">Village Members</p>
-            </Card>
-          </Link>
-          <Link to="/anchor/disputes">
-            <Card className="p-4 border-border text-center hover:bg-muted/50 cursor-pointer transition-colors">
-              <MessageSquare className="w-6 h-6 text-chart-3 mx-auto mb-2" />
-              <p className="text-xs font-medium">Resolve Dispute</p>
-            </Card>
-          </Link>
-          <Link to="/anchor/reports">
-            <Card className="p-4 border-border text-center hover:bg-muted/50 cursor-pointer transition-colors">
-              <TrendingUp className="w-6 h-6 text-chart-4 mx-auto mb-2" />
-              <p className="text-xs font-medium">My Reports</p>
-            </Card>
-          </Link>
+          <StatCard title="Active Orders"   value={String(activeOrders)}  icon={TrendingUp}   subtitle="in Madhepur" />
+          <StatCard title="Active Vendors"  value={String(activeVendors)} icon={Users}         subtitle={`of ${VENDORS.length} total`} />
         </div>
-      </div>
+        <div className="grid grid-cols-2 gap-2">
+          <StatCard title="Pending KYC"    value={String(pendingKYC)}    icon={UserCheck}     />
+          <StatCard title="Open Disputes"  value={String(openDisputes)}  icon={MessageSquare} />
+        </div>
 
-      {/* Recent Activity */}
-      <div className="px-4">
-        <h3 className="font-semibold text-sm mb-2">Recent Activity</h3>
-        <div className="space-y-2">
-          {recentActivity.map((a, i) => (
-            <Card key={i} className="p-3 border-border">
-              <div className="flex items-center gap-3">
-                <span className="text-xl">{a.icon}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm">{a.text}</p>
-                  <p className="text-[10px] text-muted-foreground">{a.time}</p>
+        {/* Alerts */}
+        {(pendingKYC > 0 || openDisputes > 0) && (
+          <Card className="p-3 border-amber-200 bg-amber-50/40">
+            <p className="text-xs font-semibold text-amber-800 mb-2">⚡ Needs Your Attention</p>
+            {pendingKYC > 0 && (
+              <Link to="/anchor/kyc">
+                <div className="flex items-center justify-between py-1.5">
+                  <p className="text-xs text-amber-700">{pendingKYC} KYC applications pending review</p>
+                  <ChevronRight className="w-3.5 h-3.5 text-amber-600" />
                 </div>
-              </div>
-            </Card>
+              </Link>
+            )}
+            {openDisputes > 0 && (
+              <Link to="/anchor/disputes">
+                <div className="flex items-center justify-between py-1.5 border-t border-amber-200">
+                  <p className="text-xs text-amber-700">{openDisputes} disputes need resolution</p>
+                  <ChevronRight className="w-3.5 h-3.5 text-amber-600" />
+                </div>
+              </Link>
+            )}
+          </Card>
+        )}
+
+        {/* Quick links */}
+        <div className="grid grid-cols-2 gap-2">
+          {quickLinks.map(item => (
+            <Link key={item.path} to={item.path}>
+              <Card className="p-3 border-border flex items-center gap-2 hover:bg-muted/40 transition-colors">
+                <item.icon className={`w-4 h-4 shrink-0 ${item.color}`} />
+                <span className="text-sm font-medium flex-1 leading-tight">{item.label}</span>
+                {item.badge > 0 && (
+                  <Badge className="text-[9px] bg-primary text-white border-0 h-4 min-w-4 px-1 shrink-0">
+                    {item.badge}
+                  </Badge>
+                )}
+              </Card>
+            </Link>
           ))}
         </div>
+
+        {/* Village vitals */}
+        <Card className="p-4 border-border">
+          <h3 className="font-semibold text-sm mb-3">{village.name} Vitals</h3>
+          <div className="space-y-2">
+            {[
+              { label: 'Population',      value: `${(village.population / 1000).toFixed(0)}k` },
+              { label: 'Active Riders',   value: String(RIDERS.filter(r => r.isOnline).length) },
+              { label: 'Platform Orders', value: String(state.orders.length) + ' total' },
+              { label: 'Block',           value: village.block },
+            ].map(row => (
+              <div key={row.label} className="flex justify-between text-sm">
+                <span className="text-muted-foreground">{row.label}</span>
+                <span className="font-medium">{row.value}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
       </div>
     </div>
   );

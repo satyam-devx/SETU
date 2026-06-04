@@ -2,11 +2,10 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
 import ScrollToTop from './components/ScrollToTop';
 import { CartProvider } from '@/lib/cartContext';
+import { SetuStoreProvider } from '@/lib/store';
 
-// Role select
+// Role select & Onboarding
 import RoleSelect from '@/pages/RoleSelect';
-
-// Onboarding
 import VendorOnboarding from '@/pages/onboarding/VendorOnboarding';
 import RiderOnboarding from '@/pages/onboarding/RiderOnboarding';
 import SevaVerification from '@/pages/onboarding/SevaVerification';
@@ -35,6 +34,8 @@ import CustomerCart from '@/pages/customer/CustomerCart';
 import CustomerCheckout from '@/pages/customer/CustomerCheckout';
 import CustomerVendors from '@/pages/customer/CustomerVendors';
 import CustomerAddresses from '@/pages/customer/CustomerAddresses';
+import CustomerReferral from '@/pages/customer/CustomerReferral';
+import CustomerReorder from '@/pages/customer/CustomerReorder';
 
 // Vendor
 import VendorLayout from '@/pages/vendor/VendorLayout';
@@ -47,6 +48,7 @@ import VendorAnalytics from '@/pages/vendor/VendorAnalytics';
 import VendorSettings from '@/pages/vendor/VendorSettings';
 import VendorCredit from '@/pages/vendor/VendorCredit';
 import VendorCustomers from '@/pages/vendor/VendorCustomers';
+import VendorAddProduct from '@/pages/vendor/VendorAddProduct';
 
 // Rider
 import RiderLayout from '@/pages/rider/RiderLayout';
@@ -121,127 +123,130 @@ function NotFound() {
 
 function App() {
   return (
-    <CartProvider>
-      <Router>
-        <ScrollToTop />
-        <Routes>
-          <Route path="/" element={<RoleSelect />} />
+    <SetuStoreProvider>
+      <CartProvider>
+        <Router>
+          <ScrollToTop />
+          <Routes>
+            <Route path="/" element={<RoleSelect />} />
+            <Route path="/onboarding/vendor" element={<VendorOnboarding />} />
+            <Route path="/onboarding/rider"  element={<RiderOnboarding />} />
+            <Route path="/onboarding/seva"   element={<SevaVerification />} />
 
-          {/* Onboarding */}
-          <Route path="/onboarding/vendor" element={<VendorOnboarding />} />
-          <Route path="/onboarding/rider"  element={<RiderOnboarding />} />
-          <Route path="/onboarding/seva"   element={<SevaVerification />} />
+            {/* Customer */}
+            <Route path="/customer" element={<CustomerLayout />}>
+              <Route index                          element={<CustomerHome />} />
+              <Route path="orders"                  element={<CustomerOrders />} />
+              <Route path="orders/:orderId"         element={<CustomerOrderDetail />} />
+              <Route path="wallet"                  element={<CustomerWallet />} />
+              <Route path="credit"                  element={<CustomerCredit />} />
+              <Route path="schemes"                 element={<CustomerSchemes />} />
+              <Route path="voice"                   element={<CustomerVoice />} />
+              <Route path="offline"                 element={<CustomerOffline />} />
+              <Route path="language"                element={<CustomerLanguage />} />
+              <Route path="fraud"                   element={<CustomerFraudReport />} />
+              <Route path="trust"                   element={<CustomerTrust />} />
+              <Route path="profile"                 element={<CustomerProfile />} />
+              <Route path="notifications"           element={<CustomerNotifications />} />
+              <Route path="support"                 element={<CustomerSupport />} />
+              <Route path="settings"                element={<CustomerSettings />} />
+              <Route path="search"                  element={<CustomerSearch />} />
+              <Route path="product/:productId"      element={<CustomerProductDetail />} />
+              <Route path="vendor/:vendorId"        element={<CustomerVendorProfile />} />
+              <Route path="vendors"                 element={<CustomerVendors />} />
+              <Route path="cart"                    element={<CustomerCart />} />
+              <Route path="checkout"                element={<CustomerCheckout />} />
+              <Route path="addresses"               element={<CustomerAddresses />} />
+              <Route path="referral"                element={<CustomerReferral />} />
+              <Route path="reorder/:orderId"        element={<CustomerReorder />} />
+            </Route>
 
-          {/* Customer */}
-          <Route path="/customer" element={<CustomerLayout />}>
-            <Route index                          element={<CustomerHome />} />
-            <Route path="orders"                  element={<CustomerOrders />} />
-            <Route path="orders/:orderId"         element={<CustomerOrderDetail />} />
-            <Route path="wallet"                  element={<CustomerWallet />} />
-            <Route path="credit"                  element={<CustomerCredit />} />
-            <Route path="schemes"                 element={<CustomerSchemes />} />
-            <Route path="voice"                   element={<CustomerVoice />} />
-            <Route path="offline"                 element={<CustomerOffline />} />
-            <Route path="language"                element={<CustomerLanguage />} />
-            <Route path="fraud"                   element={<CustomerFraudReport />} />
-            <Route path="trust"                   element={<CustomerTrust />} />
-            <Route path="profile"                 element={<CustomerProfile />} />
-            <Route path="notifications"           element={<CustomerNotifications />} />
-            <Route path="support"                 element={<CustomerSupport />} />
-            <Route path="settings"                element={<CustomerSettings />} />
-            <Route path="search"                  element={<CustomerSearch />} />
-            <Route path="product/:productId"      element={<CustomerProductDetail />} />
-            <Route path="vendor/:vendorId"        element={<CustomerVendorProfile />} />
-            <Route path="vendors"                 element={<CustomerVendors />} />
-            <Route path="cart"                    element={<CustomerCart />} />
-            <Route path="checkout"                element={<CustomerCheckout />} />
-            <Route path="addresses"               element={<CustomerAddresses />} />
-          </Route>
+            {/* Vendor */}
+            <Route path="/vendor" element={<VendorLayout />}>
+              <Route index                element={<VendorDashboard />} />
+              <Route path="orders"        element={<VendorOrders />} />
+              <Route path="products"      element={<VendorProducts />} />
+              <Route path="products/new"  element={<VendorAddProduct />} />
+              <Route path="earnings"      element={<VendorEarnings />} />
+              <Route path="analytics"     element={<VendorAnalytics />} />
+              <Route path="credit"        element={<VendorCredit />} />
+              <Route path="customers"     element={<VendorCustomers />} />
+              <Route path="settings"      element={<VendorSettings />} />
+              <Route path="profile"       element={<VendorProfile />} />
+            </Route>
 
-          {/* Vendor */}
-          <Route path="/vendor" element={<VendorLayout />}>
-            <Route index                element={<VendorDashboard />} />
-            <Route path="orders"        element={<VendorOrders />} />
-            <Route path="products"      element={<VendorProducts />} />
-            <Route path="earnings"      element={<VendorEarnings />} />
-            <Route path="analytics"     element={<VendorAnalytics />} />
-            <Route path="credit"        element={<VendorCredit />} />
-            <Route path="customers"     element={<VendorCustomers />} />
-            <Route path="settings"      element={<VendorSettings />} />
-            <Route path="profile"       element={<VendorProfile />} />
-          </Route>
+            {/* Rider */}
+            <Route path="/rider" element={<RiderLayout />}>
+              <Route index                element={<RiderDashboard />} />
+              <Route path="deliveries"    element={<RiderDeliveries />} />
+              <Route path="earnings"      element={<RiderEarnings />} />
+              <Route path="cod"           element={<RiderCOD />} />
+              <Route path="safety"        element={<RiderSafety />} />
+              <Route path="incentives"    element={<RiderIncentives />} />
+              <Route path="settings"      element={<RiderSettings />} />
+              <Route path="profile"       element={<RiderProfile />} />
+            </Route>
 
-          {/* Rider */}
-          <Route path="/rider" element={<RiderLayout />}>
-            <Route index                element={<RiderDashboard />} />
-            <Route path="deliveries"    element={<RiderDeliveries />} />
-            <Route path="earnings"      element={<RiderEarnings />} />
-            <Route path="cod"           element={<RiderCOD />} />
-            <Route path="safety"        element={<RiderSafety />} />
-            <Route path="incentives"    element={<RiderIncentives />} />
-            <Route path="settings"      element={<RiderSettings />} />
-            <Route path="profile"       element={<RiderProfile />} />
-          </Route>
+            {/* Seva */}
+            <Route path="/seva" element={<SevaLayout />}>
+              <Route index                    element={<SevaDashboard />} />
+              <Route path="jobs"              element={<SevaJobs />} />
+              <Route path="jobs/:jobId"       element={<SevaJobDetail />} />
+              <Route path="schedule"          element={<SevaSchedule />} />
+              <Route path="earnings"          element={<SevaEarnings />} />
+              <Route path="settings"          element={<SevaSettings />} />
+              <Route path="profile"           element={<SevaProfile />} />
+            </Route>
 
-          {/* Seva */}
-          <Route path="/seva" element={<SevaLayout />}>
-            <Route index                    element={<SevaDashboard />} />
-            <Route path="jobs"              element={<SevaJobs />} />
-            <Route path="jobs/:jobId"       element={<SevaJobDetail />} />
-            <Route path="schedule"          element={<SevaSchedule />} />
-            <Route path="earnings"          element={<SevaEarnings />} />
-            <Route path="settings"          element={<SevaSettings />} />
-            <Route path="profile"           element={<SevaProfile />} />
-          </Route>
+            {/* Anchor */}
+            <Route path="/anchor" element={<AnchorLayout />}>
+              <Route index                    element={<AnchorDashboard />} />
+              <Route path="village"           element={<AnchorVillage />} />
+              <Route path="noticeboard"       element={<AnchorNoticeboard />} />
+              <Route path="disputes"          element={<AnchorDisputes />} />
+              <Route path="reports"           element={<AnchorReports />} />
+              <Route path="kyc"               element={<AnchorKYC />} />
+              <Route path="escalations"       element={<AnchorEscalations />} />
+            </Route>
 
-          {/* Anchor */}
-          <Route path="/anchor" element={<AnchorLayout />}>
-            <Route index                    element={<AnchorDashboard />} />
-            <Route path="village"           element={<AnchorVillage />} />
-            <Route path="noticeboard"       element={<AnchorNoticeboard />} />
-            <Route path="disputes"          element={<AnchorDisputes />} />
-            <Route path="reports"           element={<AnchorReports />} />
-            <Route path="kyc"               element={<AnchorKYC />} />
-            <Route path="escalations"       element={<AnchorEscalations />} />
-          </Route>
+            {/* Admin */}
+            <Route path="/admin" element={<AdminLayout />}>
+              <Route index                      element={<AdminDashboard />} />
+              <Route path="orders"              element={<AdminOrders />} />
+              <Route path="vendors"             element={<AdminVendors />} />
+              <Route path="vendor-approval"     element={<AdminVendorApproval />} />
+              <Route path="riders"              element={<AdminRiders />} />
+              <Route path="cash"                element={<AdminCash />} />
+              <Route path="support"             element={<AdminSupport />} />
+              <Route path="seva-providers"      element={<AdminSevaProviders />} />
+              <Route path="villages"            element={<AdminVillages />} />
+              <Route path="settings"            element={<AdminSettings />} />
+              <Route path="customers"           element={<AdminCustomers />} />
+              <Route path="incidents"           element={<AdminIncidents />} />
+              <Route path="monitoring"          element={<AdminMonitoring />} />
+            </Route>
 
-          {/* Admin */}
-          <Route path="/admin" element={<AdminLayout />}>
-            <Route index                      element={<AdminDashboard />} />
-            <Route path="orders"              element={<AdminOrders />} />
-            <Route path="vendors"             element={<AdminVendors />} />
-            <Route path="vendor-approval"     element={<AdminVendorApproval />} />
-            <Route path="riders"              element={<AdminRiders />} />
-            <Route path="cash"                element={<AdminCash />} />
-            <Route path="support"             element={<AdminSupport />} />
-            <Route path="seva-providers"      element={<AdminSevaProviders />} />
-            <Route path="villages"            element={<AdminVillages />} />
-            <Route path="settings"            element={<AdminSettings />} />
-            <Route path="customers"           element={<AdminCustomers />} />
-            <Route path="incidents"           element={<AdminIncidents />} />
-            <Route path="monitoring"          element={<AdminMonitoring />} />
-          </Route>
+            {/* Super Admin */}
+            <Route path="/superadmin" element={<SuperAdminLayout />}>
+              <Route index                    element={<SuperAdminDashboard />} />
+              <Route path="analytics"         element={<SuperAdminAnalytics />} />
+              <Route path="credit"            element={<SuperAdminCredit />} />
+              <Route path="blocks"            element={<SuperAdminBlocks />} />
+              <Route path="security"          element={<SuperAdminSecurity />} />
+              <Route path="audit"             element={<SuperAdminAuditLog />} />
+              <Route path="config"            element={<SuperAdminConfig />} />
+              <Route path="expansion"         element={<SuperAdminExpansion />} />
+              <Route path="compliance"        element={<SuperAdminCompliance />} />
+              <Route path="health"            element={<SuperAdminHealth />} />
+              <Route path="ai"                element={<SuperAdminAI />} />
+            </Route>
 
-          {/* Super Admin */}
-          <Route path="/superadmin" element={<SuperAdminLayout />}>
-            <Route index                    element={<SuperAdminDashboard />} />
-            <Route path="analytics"         element={<SuperAdminAnalytics />} />
-            <Route path="credit"            element={<SuperAdminCredit />} />
-            <Route path="blocks"            element={<SuperAdminBlocks />} />
-            <Route path="security"          element={<SuperAdminSecurity />} />
-            <Route path="audit"             element={<SuperAdminAuditLog />} />
-            <Route path="config"            element={<SuperAdminConfig />} />
-            <Route path="expansion"         element={<SuperAdminExpansion />} />
-            <Route path="compliance"        element={<SuperAdminCompliance />} />
-            <Route path="health"            element={<SuperAdminHealth />} />
-            <Route path="ai"                element={<SuperAdminAI />} />
-          </Route>
-
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-        <Toaster />
-      </Router>
-    </CartProvider>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+          <Toaster />
+        </Router>
+      </CartProvider>
+    </SetuStoreProvider>
   );
 }
 

@@ -1,100 +1,96 @@
-import React from 'react';
-import { TrendingUp, IndianRupee, Users, Package, Star, Download } from 'lucide-react';
+import React, { useState } from 'react';
+import { BarChart2, Download, TrendingUp, Users, ShoppingBag, IndianRupee } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, LineChart, Line } from 'recharts';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import { useStore } from '@/lib/store';
 
-const weeklyData = [
-  { week: 'W1', orders: 42, commission: 840 },
-  { week: 'W2', orders: 58, commission: 1160 },
-  { week: 'W3', orders: 71, commission: 1420 },
-  { week: 'W4', orders: 88, commission: 1760 },
-];
-
-const commissionBreakdown = [
-  { source: 'Order commissions (1%)', amount: 3240, desc: '324 orders × avg ₹10' },
-  { source: 'Onboarding bonus (3 users)', amount: 300, desc: '₹100 per new verified user' },
-  { source: 'Dispute resolution bonus', amount: 120, desc: '4 disputes resolved ×₹30' },
-  { source: 'Village score bonus', amount: 200, desc: 'Score >80 milestone bonus' },
+const weekOrders = [
+  { day: 'Mon', orders: 12 }, { day: 'Tue', orders: 18 }, { day: 'Wed', orders: 9  },
+  { day: 'Thu', orders: 22 }, { day: 'Fri', orders: 16 }, { day: 'Sat', orders: 28 },
+  { day: 'Sun', orders: 11 },
 ];
 
 export default function AnchorReports() {
-  const totalMonthly = commissionBreakdown.reduce((s, c) => s + c.amount, 0);
+  const { state } = useStore();
+  const [period, setPeriod] = useState('week');
+
+  const totalOrders = state.orders.length;
+  const delivered   = state.orders.filter(o => o.status === 'delivered').length;
+  const totalGMV    = state.orders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + (o.total || 0), 0);
 
   return (
-    <div className="pb-24">
-      <AppHeader title="My Reports" subtitle="May 2025" showBack backTo="/anchor" rightAction={
-        <Button size="sm" variant="outline" className="text-xs h-8"><Download className="w-3 h-3 mr-1" /> Export</Button>
-      } />
-
+    <div className="pb-6">
+      <AppHeader title="Village Reports" showBack={false} />
       <div className="px-4 py-4 space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <StatCard title="This Month" value={`₹${totalMonthly.toLocaleString()}`} subtitle="Commission earned" icon={IndianRupee} />
-          <StatCard title="Village Orders" value="325" subtitle="↑ 24% vs last month" icon={Package} trendUp trend="24%" />
-          <StatCard title="Active Members" value="38/47" subtitle="Members ordering" icon={Users} />
-          <StatCard title="Anchor Rating" value="4.9" subtitle="By village members" icon={Star} />
+
+        <Tabs value={period} onValueChange={setPeriod}>
+          <TabsList className="w-full grid grid-cols-3">
+            <TabsTrigger value="week"  className="text-xs">This Week</TabsTrigger>
+            <TabsTrigger value="month" className="text-xs">This Month</TabsTrigger>
+            <TabsTrigger value="year"  className="text-xs">This Year</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <div className="grid grid-cols-2 gap-2">
+          <StatCard title="Total Orders" value={String(totalOrders)} icon={ShoppingBag} trend="↑14%" trendUp />
+          <StatCard title="Village GMV"  value={`₹${totalGMV.toLocaleString()}`} icon={IndianRupee} trend="↑21%" trendUp />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <StatCard title="Active Users" value="284" icon={Users} subtitle="in Madhepur" />
+          <StatCard title="Delivery Rate" value={`${totalOrders > 0 ? Math.round(delivered / totalOrders * 100) : 0}%`} icon={TrendingUp} trend="On-time" trendUp />
         </div>
 
-        <Card className="p-5 border-border">
-          <h3 className="font-semibold text-sm mb-4">Weekly Orders from My Village</h3>
-          <div className="h-44">
+        <Card className="p-4 border-border">
+          <h3 className="font-semibold text-sm mb-3">Orders This Week</h3>
+          <div className="h-36">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={weeklyData}>
-                <XAxis dataKey="week" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip />
-                <Bar dataKey="orders" fill="hsl(24, 80%, 50%)" radius={[4, 4, 0, 0]} name="Orders" />
+              <BarChart data={weekOrders} barSize={18}>
+                <XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis hide />
+                <Tooltip formatter={v => [v, 'Orders']} />
+                <Bar dataKey="orders" fill="hsl(var(--primary))" radius={[4,4,0,0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </Card>
 
-        <Card className="p-5 border-border">
-          <h3 className="font-semibold text-sm mb-4">Weekly Commission Earned</h3>
-          <div className="h-36">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={weeklyData}>
-                <XAxis dataKey="week" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${v}`} />
-                <Tooltip formatter={v => [`₹${v}`, 'Commission']} />
-                <Line type="monotone" dataKey="commission" stroke="hsl(150, 40%, 40%)" strokeWidth={2} dot={{ r: 4 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-
+        {/* Village health */}
         <Card className="p-4 border-border">
-          <h3 className="font-semibold text-sm mb-3">Commission Breakdown</h3>
-          <div className="space-y-3">
-            {commissionBreakdown.map((item, i) => (
-              <div key={i} className="flex items-start justify-between py-2 border-b border-border last:border-0">
-                <div>
-                  <p className="text-sm font-medium">{item.source}</p>
-                  <p className="text-xs text-muted-foreground">{item.desc}</p>
+          <h3 className="font-semibold text-sm mb-3">Madhepur Village Health</h3>
+          <div className="space-y-2">
+            {[
+              { metric: 'Active Vendors',     value: '8/12',  pct: 67, good: true  },
+              { metric: 'Active Riders',       value: '3/4',   pct: 75, good: true  },
+              { metric: 'KYC Completion',      value: '91%',   pct: 91, good: true  },
+              { metric: 'Dispute Resolution',  value: '88%',   pct: 88, good: true  },
+              { metric: 'COD Collection Rate', value: '96%',   pct: 96, good: true  },
+            ].map(item => (
+              <div key={item.metric}>
+                <div className="flex justify-between text-xs mb-0.5">
+                  <span className="text-muted-foreground">{item.metric}</span>
+                  <span className={`font-bold ${item.good ? 'text-green-600' : 'text-amber-600'}`}>{item.value}</span>
                 </div>
-                <span className="font-bold text-accent">₹{item.amount}</span>
+                <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full ${item.good ? 'bg-green-500' : 'bg-amber-500'}`} style={{ width: `${item.pct}%` }} />
+                </div>
               </div>
             ))}
-            <div className="flex justify-between pt-2 font-bold">
-              <span>Total This Month</span>
-              <span className="text-primary">₹{totalMonthly.toLocaleString()}</span>
-            </div>
           </div>
         </Card>
 
-        <Card className="p-4 bg-primary/5 border-primary/20">
-          <h3 className="font-semibold text-sm mb-2">Payment Schedule</h3>
-          <p className="text-xs text-muted-foreground mb-3">Commission paid monthly on 1st. UPI or bank transfer.</p>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Next Payment: 1 June 2025</p>
-              <p className="text-xs text-muted-foreground">₹{totalMonthly.toLocaleString()} → SBI ****3421</p>
-            </div>
-            <Button size="sm" variant="outline" className="text-xs">Change Account</Button>
-          </div>
-        </Card>
+        <div className="flex gap-2">
+          <Button variant="outline" className="flex-1 gap-2 text-xs">
+            <Download className="w-3 h-3" /> Export PDF
+          </Button>
+          <Button variant="outline" className="flex-1 gap-2 text-xs">
+            <Download className="w-3 h-3" /> Export CSV
+          </Button>
+        </div>
       </div>
     </div>
   );

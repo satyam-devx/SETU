@@ -1,148 +1,124 @@
-import React, { useState, useEffect } from 'react';
-import { WifiOff, Wifi, RefreshCw, Package, Clock, AlertTriangle, CheckCircle, Download } from 'lucide-react';
+import React, { useState } from 'react';
+import { WifiOff, Download, CheckCircle, Package, Map, Smartphone, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import AppHeader from '@/components/shared/AppHeader';
 
-const cachedData = {
-  lastSync: '2025-05-31 11:30 AM',
-  vendors: 6,
-  products: 42,
-  cartItems: 2,
-};
-
-const pendingActions = [
-  { id: 'a1', type: 'order', desc: 'Order for Basmati Rice — queued for sync', time: '11:45 AM', status: 'queued' },
-  { id: 'a2', type: 'rating', desc: 'Rating for SETU-2025-0001 — queued', time: '11:50 AM', status: 'queued' },
+const OFFLINE_FEATURES = [
+  { icon: Package, label: 'Browse saved catalog',    desc: 'View products saved during last sync',       available: true  },
+  { icon: Map,     label: 'Offline map navigation',  desc: 'Navigate without internet',                  available: true  },
+  { icon: Package, label: 'Place COD orders',        desc: 'Orders sync when back online',               available: true  },
+  { icon: Smartphone, label: 'Voice order (offline)', desc: 'Basic voice commands without cloud AI',    available: false },
 ];
 
 export default function CustomerOffline() {
-  const [isOnline, setIsOnline] = useState(false);
-  const [reconnecting, setReconnecting] = useState(false);
-  const [reconnectProgress, setReconnectProgress] = useState(0);
+  const [syncing, setSyncing]     = useState(false);
+  const [synced, setSynced]       = useState(false);
+  const [syncProgress, setSyncProg] = useState(0);
+  const [isOnline]                = useState(navigator.onLine ?? true);
 
-  const tryReconnect = () => {
-    setReconnecting(true);
-    setReconnectProgress(0);
-    const iv = setInterval(() => {
-      setReconnectProgress(p => {
-        if (p >= 100) {
-          clearInterval(iv);
-          setReconnecting(false);
-          setIsOnline(true);
-          return 100;
-        }
+  const handleSync = () => {
+    setSyncing(true);
+    setSyncProg(0);
+    const interval = setInterval(() => {
+      setSyncProg(p => {
+        if (p >= 100) { clearInterval(interval); setSyncing(false); setSynced(true); return 100; }
         return p + 10;
       });
-    }, 200);
+    }, 150);
   };
 
   return (
-    <div className="pb-24 min-h-screen">
-      <AppHeader title="Offline Mode" subtitle="Limited connectivity detected" />
+    <div className="pb-6">
+      <AppHeader title="Offline Mode" showBack />
+      <div className="px-4 py-4 space-y-4">
 
-      {/* Status hero */}
-      <div className={`px-4 py-6 ${isOnline ? 'bg-accent/5' : 'bg-amber-50'} border-b border-border`}>
-        <div className="flex flex-col items-center text-center">
-          <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-4 ${isOnline ? 'bg-accent/20' : 'bg-amber-100'}`}>
-            {isOnline ? <Wifi className="w-10 h-10 text-accent" /> : <WifiOff className="w-10 h-10 text-amber-600" />}
+        {/* Status */}
+        <Card className={`p-4 border ${isOnline ? 'border-green-200 bg-green-50/40' : 'border-amber-200 bg-amber-50/40'}`}>
+          <div className="flex items-center gap-3">
+            {isOnline
+              ? <CheckCircle className="w-8 h-8 text-green-600 shrink-0" />
+              : <WifiOff className="w-8 h-8 text-amber-600 shrink-0" />
+            }
+            <div>
+              <p className="text-sm font-semibold">{isOnline ? 'You are Online' : 'You are Offline'}</p>
+              <p className="text-xs text-muted-foreground">
+                {isOnline ? 'All features available. Tap sync to update offline cache.' : 'Offline features active. Orders will sync when connected.'}
+              </p>
+            </div>
           </div>
-          <h2 className="text-xl font-bold mb-1">{isOnline ? 'Back Online!' : 'No Internet Connection'}</h2>
-          <p className="text-sm text-muted-foreground max-w-xs">
-            {isOnline ? 'Syncing your queued actions...' : 'SETU is working in offline mode. Some features are limited but your cart and cached products are available.'}
-          </p>
-          {!isOnline && !reconnecting && (
-            <Button className="mt-4" onClick={tryReconnect}>
-              <RefreshCw className="w-4 h-4 mr-2" /> Try to Reconnect
+        </Card>
+
+        {/* Sync button */}
+        <Card className="p-4 border-border">
+          <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+            <Download className="w-4 h-4 text-primary" /> Sync for Offline Use
+          </h3>
+          {syncing ? (
+            <div>
+              <Progress value={syncProgress} className="h-2 mb-2" />
+              <p className="text-xs text-muted-foreground text-center">Syncing data... {syncProgress}%</p>
+            </div>
+          ) : synced ? (
+            <div className="flex items-center gap-2 text-green-600">
+              <CheckCircle className="w-4 h-4" />
+              <p className="text-sm font-medium">Synced successfully!</p>
+            </div>
+          ) : (
+            <Button className="w-full gap-2" onClick={handleSync} disabled={!isOnline}>
+              <RefreshCw className="w-4 h-4" />
+              Sync Now
             </Button>
           )}
-          {reconnecting && (
-            <div className="mt-4 w-full max-w-xs">
-              <p className="text-xs text-muted-foreground mb-2">Connecting to SETU servers...</p>
-              <Progress value={reconnectProgress} className="h-2" />
+          {synced && (
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="bg-muted/40 rounded-lg p-2">
+                <p className="font-bold">10</p>
+                <p className="text-muted-foreground">Products</p>
+              </div>
+              <div className="bg-muted/40 rounded-lg p-2">
+                <p className="font-bold">6</p>
+                <p className="text-muted-foreground">Vendors</p>
+              </div>
+              <div className="bg-muted/40 rounded-lg p-2">
+                <p className="font-bold">3</p>
+                <p className="text-muted-foreground">Villages</p>
+              </div>
             </div>
           )}
-        </div>
-      </div>
-
-      <div className="px-4 py-4 space-y-4">
-        {/* Cached data */}
-        <Card className="p-4 border-border">
-          <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-            <Download className="w-4 h-4 text-primary" /> Cached Data (Available Offline)
-          </h3>
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <div className="bg-muted rounded-xl p-3">
-              <p className="text-xl font-bold text-primary">{cachedData.vendors}</p>
-              <p className="text-[10px] text-muted-foreground">Vendors</p>
-            </div>
-            <div className="bg-muted rounded-xl p-3">
-              <p className="text-xl font-bold text-primary">{cachedData.products}</p>
-              <p className="text-[10px] text-muted-foreground">Products</p>
-            </div>
-            <div className="bg-muted rounded-xl p-3">
-              <p className="text-xl font-bold text-primary">{cachedData.cartItems}</p>
-              <p className="text-[10px] text-muted-foreground">Cart Items</p>
-            </div>
-          </div>
-          <p className="text-[10px] text-muted-foreground mt-2">Last synced: {cachedData.lastSync}</p>
         </Card>
 
-        {/* Pending actions */}
+        {/* Features */}
         <Card className="p-4 border-border">
-          <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-            <Clock className="w-4 h-4 text-amber-500" /> Queued Actions ({pendingActions.length})
-          </h3>
-          <p className="text-xs text-muted-foreground mb-3">These will be sent automatically when you reconnect:</p>
-          {pendingActions.map(action => (
-            <div key={action.id} className="flex items-center gap-3 py-2 border-b border-border last:border-0">
-              <Badge variant="outline" className="bg-amber-100 text-amber-800 text-[9px] shrink-0">{action.type}</Badge>
-              <p className="text-xs flex-1">{action.desc}</p>
-              <span className="text-[10px] text-muted-foreground">{action.time}</span>
-            </div>
-          ))}
-        </Card>
-
-        {/* What's available offline */}
-        <Card className="p-4 border-border">
-          <h3 className="font-semibold text-sm mb-3">What you can do offline:</h3>
-          {[
-            { label: 'Browse cached products & vendors', available: true },
-            { label: 'View your cart', available: true },
-            { label: 'Place orders (queued for sync)', available: true },
-            { label: 'View past orders', available: true },
-            { label: 'Read village noticeboard (cached)', available: true },
-            { label: 'Check government schemes', available: true },
-            { label: 'Track live order status', available: false },
-            { label: 'UPI / Digital payments', available: false },
-            { label: 'Real-time rider tracking', available: false },
-          ].map((item, i) => (
-            <div key={i} className="flex items-center gap-3 py-1.5">
-              {item.available ? <CheckCircle className="w-4 h-4 text-accent shrink-0" /> : <AlertTriangle className="w-4 h-4 text-muted-foreground/40 shrink-0" />}
-              <span className={`text-sm ${item.available ? '' : 'text-muted-foreground line-through'}`}>{item.label}</span>
-            </div>
-          ))}
-        </Card>
-
-        {/* SMS fallback */}
-        <Card className="p-4 bg-primary/5 border-primary/20">
-          <h3 className="font-semibold text-sm mb-2">📱 No internet? Use SMS!</h3>
-          <p className="text-xs text-muted-foreground mb-3">Send an SMS to <strong>+91 9876543000</strong> in Hindi or English:</p>
-          <div className="space-y-1.5">
-            {[
-              { cmd: 'ORDER P1 1', desc: 'Order 1 Basmati Rice' },
-              { cmd: 'STATUS O1', desc: 'Check order status' },
-              { cmd: 'BALANCE', desc: 'Check wallet balance' },
-              { cmd: 'CANCEL O1', desc: 'Cancel order' },
-            ].map(c => (
-              <div key={c.cmd} className="flex gap-3 items-center">
-                <Badge variant="outline" className="font-mono text-[9px] shrink-0">{c.cmd}</Badge>
-                <span className="text-xs text-muted-foreground">{c.desc}</span>
+          <h3 className="font-semibold text-sm mb-3">Offline Capabilities</h3>
+          <div className="space-y-3">
+            {OFFLINE_FEATURES.map(f => (
+              <div key={f.label} className="flex items-start gap-3">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${f.available ? 'bg-primary/10' : 'bg-muted'}`}>
+                  <f.icon className={`w-4 h-4 ${f.available ? 'text-primary' : 'text-muted-foreground'}`} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium">{f.label}</p>
+                    {!f.available && <Badge className="text-[9px] bg-muted text-muted-foreground border-0">Soon</Badge>}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{f.desc}</p>
+                </div>
+                {f.available
+                  ? <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />
+                  : <div className="w-4 h-4 rounded-full border-2 border-border shrink-0" />
+                }
               </div>
             ))}
           </div>
+        </Card>
+
+        {/* Low bandwidth tip */}
+        <Card className="p-3 border-blue-100 bg-blue-50/40">
+          <p className="text-xs text-blue-800 font-medium mb-1">💡 Low Data Mode</p>
+          <p className="text-xs text-blue-700">SETU uses less than 2MB per session in low-bandwidth mode. Text-only browsing uses under 500KB.</p>
         </Card>
       </div>
     </div>

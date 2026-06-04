@@ -1,124 +1,135 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { IndianRupee, Navigation, Star, FileText, HelpCircle, Settings, ChevronRight, LogOut, Shield, Award, Bell, Bike } from 'lucide-react';
+import { Star, Bike, IndianRupee, Phone, MapPin, Edit2, Shield, TrendingUp, ChevronRight, CheckCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import AppHeader from '@/components/shared/AppHeader';
 import { RIDERS } from '@/lib/mockData';
 
 const rider = RIDERS[0];
 
-const menuItems = [
-  { label: 'Earnings History', icon: IndianRupee, path: '/rider/earnings', desc: 'Detailed payouts & incentives' },
-  { label: 'Delivery History', icon: Navigation, path: '/rider/deliveries', desc: 'Past deliveries & performance' },
-  { label: 'COD Deposit History', icon: FileText, path: '/rider/cod', desc: 'Cash deposit records' },
-  { label: 'Documents', icon: Shield, path: '/rider/documents', desc: 'License, ID, vehicle registration' },
-  { label: 'Notifications', icon: Bell, path: '/rider/notifications', desc: 'Alerts and updates' },
-  { label: 'Support', icon: HelpCircle, path: '/rider/support', desc: 'Report issues, get help' },
-  { label: 'Settings', icon: Settings, path: '/rider/settings', desc: 'Zone preference, vehicle, language' },
-];
-
 export default function RiderProfile() {
-  const completionPct = Math.round((rider.todayDeliveries / 15) * 100);
+  const [editing, setEditing]   = useState(false);
+  const [phone, setPhone]       = useState(rider.phone);
+  const [saved, setSaved]       = useState(false);
+
+  const handleSave = () => { setSaved(true); setEditing(false); setTimeout(() => setSaved(false), 2000); };
 
   return (
     <div className="pb-20">
-      <AppHeader title="Profile" />
+      <AppHeader title="My Profile" />
+      <div className="px-4 py-4 space-y-4">
 
-      {/* Identity card */}
-      <div className="px-4 py-4">
+        {/* Profile hero */}
+        <Card className="p-5 border-border">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary">
+                {rider.name.split(' ').map(n => n[0]).join('')}
+              </div>
+              <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-2 border-background" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-lg font-bold">{rider.name}</h2>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <MapPin className="w-3 h-3" /><span>{rider.zone}</span>
+              </div>
+              {saved && <p className="text-xs text-green-600 mt-0.5">✓ Saved</p>}
+            </div>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditing(s => !s)}>
+              <Edit2 className="w-4 h-4" />
+            </Button>
+          </div>
+
+          {editing ? (
+            <div className="flex gap-2 mb-4">
+              <Input value={phone} onChange={e => setPhone(e.target.value)} className="flex-1 h-8 text-sm" />
+              <Button size="sm" className="h-8" onClick={handleSave}>Save</Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
+              <Phone className="w-3.5 h-3.5" /><span>{phone}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="p-2 bg-muted/40 rounded-xl">
+              <p className="text-lg font-bold">{rider.totalDeliveries}</p>
+              <p className="text-[10px] text-muted-foreground">Deliveries</p>
+            </div>
+            <div className="p-2 bg-muted/40 rounded-xl">
+              <div className="flex items-center justify-center gap-0.5">
+                <p className="text-lg font-bold">{rider.rating}</p>
+                <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
+              </div>
+              <p className="text-[10px] text-muted-foreground">Rating</p>
+            </div>
+            <div className="p-2 bg-muted/40 rounded-xl">
+              <p className="text-lg font-bold text-primary">₹{(rider.totalEarnings/1000).toFixed(0)}k</p>
+              <p className="text-[10px] text-muted-foreground">Earned</p>
+            </div>
+          </div>
+        </Card>
+
+        {/* Vehicle info */}
         <Card className="p-4 border-border">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-              <Bike className="w-8 h-8 text-primary" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <h2 className="font-bold text-lg">{rider.name}</h2>
-              <p className="text-sm text-muted-foreground">{rider.zone}</p>
-              <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <Badge className="bg-accent/10 text-accent text-[9px] border-0">✓ Verified</Badge>
-                <Badge className="bg-primary/10 text-primary text-[9px] border-0">{rider.vehicleType}</Badge>
-                <div className="flex items-center gap-0.5">
-                  <Star className="w-3 h-3 text-primary fill-primary" />
-                  <span className="text-xs font-medium">{rider.rating}</span>
-                </div>
+          <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+            <Bike className="w-4 h-4 text-primary" /> Vehicle Details
+          </h3>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            {[
+              { label: 'Vehicle Type',   value: rider.vehicleType    },
+              { label: 'Vehicle Number', value: rider.vehicleNumber || 'BR01-AB-1234' },
+              { label: 'Zone',           value: rider.zone           },
+              { label: 'Member Since',   value: 'Jan 2024'           },
+            ].map(row => (
+              <div key={row.label}>
+                <p className="text-xs text-muted-foreground">{row.label}</p>
+                <p className="font-medium">{row.value}</p>
               </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* Verification status */}
+        <Card className="p-4 border-border">
+          <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+            <Shield className="w-4 h-4 text-primary" /> Verification
+          </h3>
+          {[
+            { label: 'Aadhaar',          done: true  },
+            { label: 'Driving License',  done: true  },
+            { label: 'Vehicle RC',       done: true  },
+            { label: 'Background Check', done: true  },
+            { label: 'Training',         done: rider.rating >= 4.5 },
+          ].map(item => (
+            <div key={item.label} className="flex items-center gap-2 py-1.5">
+              <CheckCircle className={`w-4 h-4 shrink-0 ${item.done ? 'text-green-500' : 'text-muted-foreground'}`} />
+              <span className="text-sm">{item.label}</span>
+              {!item.done && <Badge className="text-[9px] bg-amber-100 text-amber-700 border-0 ml-auto">Pending</Badge>}
             </div>
-          </div>
-          <p className="text-xs text-muted-foreground mt-3">{rider.phone}</p>
+          ))}
         </Card>
-      </div>
 
-      {/* Stats */}
-      <div className="px-4 mb-4 grid grid-cols-3 gap-2">
-        <Card className="p-3 text-center border-border">
-          <p className="text-xl font-bold text-primary">{rider.totalDeliveries}</p>
-          <p className="text-[10px] text-muted-foreground">Deliveries</p>
-        </Card>
-        <Card className="p-3 text-center border-border">
-          <p className="text-xl font-bold text-accent">₹{(rider.totalEarnings/1000).toFixed(0)}k</p>
-          <p className="text-[10px] text-muted-foreground">Earned</p>
-        </Card>
-        <Card className="p-3 text-center border-border">
-          <p className="text-xl font-bold text-foreground">{rider.rating}</p>
-          <p className="text-[10px] text-muted-foreground">Rating</p>
-        </Card>
-      </div>
-
-      {/* Daily target progress */}
-      <div className="px-4 mb-4">
-        <Card className="p-4 border-border bg-primary/5 border-primary/20">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-semibold flex items-center gap-2">
-              <Award className="w-4 h-4 text-primary" /> Today's Target
-            </h3>
-            <span className="text-xs text-primary font-bold">{rider.todayDeliveries}/15 deliveries</span>
-          </div>
-          <div className="w-full h-2 bg-primary/20 rounded-full overflow-hidden">
-            <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${Math.min(completionPct, 100)}%` }} />
-          </div>
-          <p className="text-xs text-muted-foreground mt-1.5">Complete 15 deliveries to earn ₹200 bonus</p>
-        </Card>
-      </div>
-
-      {/* COD balance */}
-      <div className="px-4 mb-4">
-        <Card className="p-4 border-border border-amber-200 bg-amber-50/50">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground">COD Balance Pending</p>
-              <p className="text-xl font-bold text-amber-700">₹{rider.codBalance.toLocaleString()}</p>
-              <p className="text-xs text-amber-600">Deposit before 8 PM tonight</p>
-            </div>
-            <Badge className="bg-amber-100 text-amber-800 border-0">⏳ Due Today</Badge>
-          </div>
-        </Card>
-      </div>
-
-      {/* Menu */}
-      <div className="px-4">
-        {menuItems.map(item => (
-          <Link key={item.label} to={item.path}>
-            <div className="flex items-center gap-3 py-3 px-1 hover:bg-muted/50 rounded-lg transition-colors">
-              <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center shrink-0">
-                <item.icon className="w-4 h-4 text-muted-foreground" />
+        {/* Quick links */}
+        <Card className="border-border divide-y divide-border">
+          {[
+            { label: 'Earnings & Payouts', path: '/rider/earnings',   icon: IndianRupee },
+            { label: 'Incentives',         path: '/rider/incentives', icon: TrendingUp  },
+            { label: 'Safety Center',      path: '/rider/safety',     icon: Shield      },
+            { label: 'Settings',           path: '/rider/settings',   icon: Edit2       },
+          ].map(item => (
+            <Link key={item.path} to={item.path}>
+              <div className="flex items-center gap-3 p-4 hover:bg-muted/30 transition-colors">
+                <item.icon className="w-4 h-4 text-muted-foreground shrink-0" />
+                <span className="text-sm font-medium flex-1">{item.label}</span>
+                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">{item.label}</p>
-                <p className="text-[10px] text-muted-foreground">{item.desc}</p>
-              </div>
-              <ChevronRight className="w-4 h-4 text-muted-foreground" />
-            </div>
-          </Link>
-        ))}
-        <Separator className="my-3" />
-        <button className="flex items-center gap-3 py-3 px-1 text-destructive w-full">
-          <div className="w-9 h-9 rounded-xl bg-destructive/10 flex items-center justify-center">
-            <LogOut className="w-4 h-4" />
-          </div>
-          <span className="text-sm font-medium">Log Out</span>
-        </button>
+            </Link>
+          ))}
+        </Card>
       </div>
     </div>
   );

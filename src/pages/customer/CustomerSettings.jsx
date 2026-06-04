@@ -1,126 +1,123 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
-import { Globe, Lock, Bell, Eye, Trash2, Info, Mic, WifiOff, Shield, Award, ChevronRight, FileText } from 'lucide-react';
+import React, { useState } from 'react';
+import { Bell, Globe, Moon, Shield, Trash2, LogOut, ChevronRight, Smartphone } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
-
-const sections = [
-  {
-    title: 'Language & Voice',
-    icon: Globe,
-    items: [
-      { type: 'link', label: 'Language Preferences', sublabel: 'हिन्दी · Maithili · Voice settings', path: '/customer/language', icon: Globe },
-      { type: 'link', label: 'Voice Assistant', sublabel: 'Bolkar kharido · बोलकर खरीदो', path: '/customer/voice', icon: Mic },
-    ],
-  },
-  {
-    title: 'Notifications',
-    icon: Bell,
-    items: [
-      { type: 'toggle', label: 'Order Updates', defaultVal: true },
-      { type: 'toggle', label: 'SETU Credit Reminders', defaultVal: true },
-      { type: 'toggle', label: 'Promotions & Offers', defaultVal: true },
-      { type: 'toggle', label: 'Scheme Updates', defaultVal: false },
-      { type: 'toggle', label: 'WhatsApp Messages (Hindi)', defaultVal: true },
-      { type: 'toggle', label: 'SMS Alerts', defaultVal: true },
-    ],
-  },
-  {
-    title: 'Trust & Safety',
-    icon: Shield,
-    items: [
-      { type: 'link', label: 'My Trust Score', sublabel: 'SETU Score: 720 · Silver Tier', path: '/customer/trust', icon: Award, badge: '720' },
-      { type: 'link', label: 'Report Fraud / Misconduct', sublabel: 'Zero tolerance policy', path: '/customer/fraud', icon: Shield },
-    ],
-  },
-  {
-    title: 'Connectivity',
-    icon: WifiOff,
-    items: [
-      { type: 'link', label: 'Offline Mode Settings', sublabel: 'Manage cached data & queued actions', path: '/customer/offline', icon: WifiOff },
-      { type: 'toggle', label: 'Auto-cache for offline use', defaultVal: true },
-      { type: 'toggle', label: 'SMS fallback when no internet', defaultVal: true },
-    ],
-  },
-  {
-    title: 'Privacy',
-    icon: Lock,
-    items: [
-      { type: 'toggle', label: 'Share data for recommendations', defaultVal: true },
-      { type: 'toggle', label: 'Show profile to vendors', defaultVal: false },
-      { type: 'link', label: 'Data & Privacy Policy', sublabel: 'DPDP Act 2023 compliant', path: '#', icon: FileText },
-    ],
-  },
-  {
-    title: 'About SETU',
-    icon: Info,
-    items: [
-      { type: 'info', label: 'Version', value: 'v1.0 MVP' },
-      { type: 'info', label: 'Location', value: 'Madhepur, Madhubani, Bihar' },
-      { type: 'info', label: 'Compliance', value: 'DPDP Act 2023 · PCI-DSS' },
-      { type: 'info', label: '© 2025', value: 'SETU Platform · बिहार में बना' },
-    ],
-  },
-];
+import { useStore } from '@/lib/store';
 
 export default function CustomerSettings() {
-  return (
-    <div className="pb-24">
-      <AppHeader title="Settings" subtitle="सेटिंग्स" showBack />
-      <div className="px-4 py-4 space-y-4">
-        {sections.map(section => {
-          const SectionIcon = section.icon;
-          return (
-            <Card key={section.title} className="p-4 border-border">
-              <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-                <SectionIcon className="w-4 h-4 text-primary" /> {section.title}
-              </h3>
-              <div className="space-y-2">
-                {section.items.map((item, i) => {
-                  if (item.type === 'toggle') {
-                    return (
-                      <div key={i} className="flex items-center justify-between py-1">
-                        <span className="text-sm">{item.label}</span>
-                        <Switch defaultChecked={item.defaultVal} />
-                      </div>
-                    );
-                  }
-                  if (item.type === 'link') {
-                    const ItemIcon = item.icon;
-                    return (
-                      <Link key={i} to={item.path} className="flex items-center gap-3 py-2 hover:bg-muted/50 rounded-lg -mx-2 px-2 transition-colors">
-                        {ItemIcon && <ItemIcon className="w-4 h-4 text-muted-foreground shrink-0" />}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium">{item.label}</p>
-                          {item.sublabel && <p className="text-xs text-muted-foreground">{item.sublabel}</p>}
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {item.badge && <Badge variant="outline" className="text-[9px]">{item.badge}</Badge>}
-                          <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                        </div>
-                      </Link>
-                    );
-                  }
-                  if (item.type === 'info') {
-                    return (
-                      <div key={i} className="flex items-center justify-between py-0.5">
-                        <span className="text-xs text-muted-foreground">{item.label}</span>
-                        <span className="text-xs font-medium">{item.value}</span>
-                      </div>
-                    );
-                  }
-                  return null;
-                })}
-              </div>
-            </Card>
-          );
-        })}
+  const { state } = useStore();
+  const [notifs, setNotifs]       = useState(true);
+  const [orderNotifs, setOrderNotifs] = useState(true);
+  const [promoNotifs, setPromoNotifs] = useState(false);
+  const [darkMode, setDarkMode]   = useState(false);
+  const [biometric, setBiometric] = useState(false);
 
-        <button className="flex items-center gap-2 text-destructive text-sm font-medium py-2">
-          <Trash2 className="w-4 h-4" /> Delete My Account
-        </button>
+  return (
+    <div className="pb-20">
+      <AppHeader title="Settings" showBack />
+      <div className="px-4 py-4 space-y-4">
+
+        {/* Account info */}
+        <Card className="p-4 border-border">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-lg">
+              {state.currentUser.name[0]}
+            </div>
+            <div>
+              <p className="text-sm font-semibold">{state.currentUser.name}</p>
+              <p className="text-xs text-muted-foreground">{state.currentUser.phone}</p>
+              <Badge className="mt-0.5 text-[9px] bg-green-100 text-green-700 border-0">Verified</Badge>
+            </div>
+          </div>
+        </Card>
+
+        {/* Notifications */}
+        <Card className="border-border divide-y divide-border">
+          <div className="px-4 py-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Notifications</p>
+          </div>
+          {[
+            { label: 'All Notifications', sub: 'Master toggle', val: notifs, set: setNotifs },
+            { label: 'Order Updates',     sub: 'Status, delivery, etc.', val: orderNotifs, set: setOrderNotifs },
+            { label: 'Promotions & Offers', sub: 'Deals, cashback', val: promoNotifs, set: setPromoNotifs },
+          ].map(item => (
+            <div key={item.label} className="flex items-center justify-between px-4 py-3">
+              <div>
+                <p className="text-sm font-medium">{item.label}</p>
+                <p className="text-xs text-muted-foreground">{item.sub}</p>
+              </div>
+              <Switch checked={item.val} onCheckedChange={item.set} />
+            </div>
+          ))}
+        </Card>
+
+        {/* Appearance */}
+        <Card className="border-border divide-y divide-border">
+          <div className="px-4 py-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Appearance</p>
+          </div>
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-3">
+              <Moon className="w-4 h-4 text-muted-foreground" />
+              <p className="text-sm font-medium">Dark Mode</p>
+            </div>
+            <Switch checked={darkMode} onCheckedChange={setDarkMode} />
+          </div>
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-3">
+              <Globe className="w-4 h-4 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Language</p>
+                <p className="text-xs text-muted-foreground">Current: Hindi</p>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+          </div>
+        </Card>
+
+        {/* Security */}
+        <Card className="border-border divide-y divide-border">
+          <div className="px-4 py-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Security</p>
+          </div>
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-3">
+              <Smartphone className="w-4 h-4 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Biometric Login</p>
+                <p className="text-xs text-muted-foreground">Fingerprint / Face ID</p>
+              </div>
+            </div>
+            <Switch checked={biometric} onCheckedChange={setBiometric} />
+          </div>
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-3">
+              <Shield className="w-4 h-4 text-muted-foreground" />
+              <p className="text-sm font-medium">Privacy Policy</p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+          </div>
+        </Card>
+
+        {/* Danger zone */}
+        <Card className="border-border divide-y divide-border">
+          <Button variant="ghost" className="w-full justify-start px-4 py-3 h-auto gap-3 text-destructive hover:text-destructive hover:bg-destructive/5">
+            <Trash2 className="w-4 h-4" />
+            <div className="text-left">
+              <p className="text-sm font-medium">Delete Account</p>
+              <p className="text-xs text-muted-foreground">Permanently remove your data</p>
+            </div>
+          </Button>
+          <Button variant="ghost" className="w-full justify-start px-4 py-3 h-auto gap-3 text-destructive hover:text-destructive hover:bg-destructive/5">
+            <LogOut className="w-4 h-4" />
+            <p className="text-sm font-medium">Sign Out</p>
+          </Button>
+        </Card>
+
+        <p className="text-center text-xs text-muted-foreground">SETU v1.0.0 · Made with ❤ for Bharat</p>
       </div>
     </div>
   );

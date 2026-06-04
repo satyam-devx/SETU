@@ -1,151 +1,107 @@
 import React, { useState } from 'react';
-import { CheckCircle, XCircle, Eye, Clock, Store, MapPin, Star, FileText, Phone, ChevronDown, ChevronUp, Shield } from 'lucide-react';
+import { CheckCircle, XCircle, Eye, FileText, Clock } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Progress } from '@/components/ui/progress';
-import StatCard from '@/components/shared/StatCard';
+import AppHeader from '@/components/shared/AppHeader';
 
-const pendingVendors = [
-  {
-    id: 'pv1', name: 'Sunita Vegetable Mart', owner: 'Sunita Kumari', phone: '+91 98765 43210',
-    category: 'Fresh Vegetables', village: 'Laxmipur', anchor: 'Ramkali Devi', anchorVouched: true,
-    aadhaarVerified: true, selfieVerified: true, shopPhotos: 3, productsAdded: 7, bankVerified: true,
-    applied: '2025-05-31T08:00:00', experience: '3 years market vendor',
-    riskScore: 'low', subscriptionPlan: 'free',
-    documents: ['Aadhaar ✓', 'Selfie ✓', 'Shop Front ✓', 'Inside Photo ✓'],
-  },
-  {
-    id: 'pv2', name: 'Mohan Mobile Repairs', owner: 'Mohan Kumar', phone: '+91 98765 43211',
-    category: 'Electronics', village: 'Madhepur', anchor: 'Ramkali Devi', anchorVouched: false,
-    aadhaarVerified: true, selfieVerified: false, shopPhotos: 1, productsAdded: 2, bankVerified: false,
-    applied: '2025-05-30T15:00:00', experience: '1 year',
-    riskScore: 'medium', subscriptionPlan: 'free',
-    documents: ['Aadhaar ✓', 'Selfie ✗ (pending)', 'Shop Front ✓', 'Bank ✗'],
-  },
-  {
-    id: 'pv3', name: 'Shiv Ration Depot', owner: 'Shiv Prasad', phone: '+91 98765 43212',
-    category: 'Grocery & Essentials', village: 'Parsad', anchor: 'Geeta Devi', anchorVouched: true,
-    aadhaarVerified: true, selfieVerified: true, shopPhotos: 4, productsAdded: 15, bankVerified: true,
-    applied: '2025-05-29T10:00:00', experience: '12 years PDS dealer',
-    riskScore: 'low', subscriptionPlan: 'pro',
-    documents: ['Aadhaar ✓', 'Selfie ✓', 'Shop Front ✓', 'PDS License ✓', 'Bank ✓'],
-  },
+const PENDING = [
+  { id: 'pv1', name: 'New Electronics Hub',   category: 'Electronics',    village: 'Madhepur',   phone: '+91 98765 43230', appliedAt: '2025-05-30', docs: ['Aadhaar', 'Shop License'], gst: 'PENDING', experience: '3 years' },
+  { id: 'pv2', name: 'Fresh Bakery House',     category: 'Sweets & Snacks',village: 'Laxmipur',   phone: '+91 98765 43231', appliedAt: '2025-05-31', docs: ['Aadhaar', 'PAN'],          gst: 'NA',      experience: '1 year'  },
+  { id: 'pv3', name: 'Raju Mobile Repair',     category: 'Electronics',    village: 'Parsad',     phone: '+91 98765 43232', appliedAt: '2025-06-01', docs: ['Aadhaar'],                  gst: 'NA',      experience: '5 years' },
 ];
 
-const riskColors = { low: 'bg-green-100 text-green-800', medium: 'bg-amber-100 text-amber-800', high: 'bg-red-100 text-red-800' };
-
-function VendorCard({ vendor }) {
-  const [expanded, setExpanded] = useState(true);
-  const [notes, setNotes] = useState('');
-  const readiness = [vendor.aadhaarVerified, vendor.selfieVerified, vendor.shopPhotos >= 2, vendor.productsAdded >= 5, vendor.bankVerified, vendor.anchorVouched].filter(Boolean).length;
-
-  return (
-    <Card className="border-border">
-      <div className="p-4 cursor-pointer" onClick={() => setExpanded(!expanded)}>
-        <div className="flex items-start justify-between mb-2">
-          <div className="flex-1 min-w-0">
-            <h4 className="font-semibold text-sm">{vendor.name}</h4>
-            <p className="text-xs text-muted-foreground">{vendor.owner} · {vendor.phone}</p>
-            <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-              <MapPin className="w-3 h-3" /> {vendor.village} · {vendor.category}
-            </p>
-          </div>
-          <div className="flex flex-col items-end gap-1 shrink-0">
-            <Badge variant="outline" className={`text-[9px] ${riskColors[vendor.riskScore]}`}>Risk: {vendor.riskScore}</Badge>
-            {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground mt-1" /> : <ChevronDown className="w-4 h-4 text-muted-foreground mt-1" />}
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <Progress value={(readiness / 6) * 100} className="flex-1 h-1.5" />
-          <span className="text-xs text-muted-foreground shrink-0">{readiness}/6 checks</span>
-        </div>
-      </div>
-
-      {expanded && (
-        <div className="px-4 pb-4 border-t border-border pt-3 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs font-medium mb-2">KYC & Compliance</p>
-              <div className="space-y-1">
-                {[
-                  { label: 'Aadhaar Verified', done: vendor.aadhaarVerified },
-                  { label: 'Selfie Matched', done: vendor.selfieVerified },
-                  { label: 'Bank Account', done: vendor.bankVerified },
-                  { label: 'Anchor Vouched', done: vendor.anchorVouched },
-                ].map(item => (
-                  <div key={item.label} className="flex items-center gap-2 text-xs">
-                    {item.done ? <CheckCircle className="w-3.5 h-3.5 text-accent" /> : <XCircle className="w-3.5 h-3.5 text-muted-foreground" />}
-                    <span className={item.done ? '' : 'text-muted-foreground'}>{item.label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className="text-xs font-medium mb-2">Store Readiness</p>
-              <div className="space-y-1">
-                {[
-                  { label: `${vendor.shopPhotos} shop photos`, done: vendor.shopPhotos >= 2 },
-                  { label: `${vendor.productsAdded} products added`, done: vendor.productsAdded >= 5 },
-                  { label: `${vendor.experience}`, done: true },
-                  { label: vendor.subscriptionPlan === 'pro' ? '✓ Pro subscriber' : 'Free plan', done: vendor.subscriptionPlan === 'pro' },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center gap-2 text-xs">
-                    {item.done ? <CheckCircle className="w-3.5 h-3.5 text-accent" /> : <Clock className="w-3.5 h-3.5 text-amber-500" />}
-                    <span className={!item.done ? 'text-amber-700' : ''}>{item.label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {!vendor.anchorVouched && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-              <p className="text-xs text-amber-800">⚠️ Anchor has not yet vouched for this vendor. Consider contacting {vendor.anchor} before approving.</p>
-            </div>
-          )}
-
-          <Textarea placeholder="Admin notes (optional — visible in vendor profile)" rows={2} value={notes} onChange={e => setNotes(e.target.value)} className="text-xs" />
-
-          <div className="flex gap-2">
-            <Button className="flex-1 bg-accent hover:bg-accent/90 text-xs h-9">
-              <CheckCircle className="w-3 h-3 mr-1" /> Approve & Activate
-            </Button>
-            <Button variant="outline" className="flex-1 text-xs h-9 text-destructive border-destructive/30">
-              <XCircle className="w-3 h-3 mr-1" /> Reject
-            </Button>
-            <Button variant="outline" className="h-9 w-9 shrink-0">
-              <Phone className="w-3 h-3" />
-            </Button>
-          </div>
-          <Button variant="outline" className="w-full text-xs h-8">Request Additional Documents</Button>
-        </div>
-      )}
-    </Card>
-  );
-}
-
 export default function AdminVendorApproval() {
+  const [vendors, setVendors]   = useState(PENDING);
+  const [expanded, setExpanded] = useState(null);
+  const [note, setNote]         = useState('');
+  const [acting, setActing]     = useState(null);
+
+  const act = (id, action) => {
+    setActing(id + action);
+    setTimeout(() => {
+      setVendors(vs => vs.filter(v => v.id !== id));
+      setActing(null);
+      setExpanded(null);
+    }, 600);
+  };
+
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold font-heading">Vendor Approvals</h1>
-        <p className="text-sm text-muted-foreground">Review and approve vendor applications for Madhepur Block</p>
-      </div>
+    <div className="flex-1 overflow-auto">
+      <AppHeader title="Vendor Approvals" subtitle={`${vendors.length} pending`} />
+      <div className="p-4 space-y-3">
 
-      <div className="grid grid-cols-3 gap-3 mb-6">
-        <StatCard title="Pending Review" value={pendingVendors.length.toString()} icon={Clock} />
-        <StatCard title="Approved Today" value="3" icon={CheckCircle} />
-        <StatCard title="Rejected This Week" value="2" icon={XCircle} />
-      </div>
+        {vendors.length === 0 ? (
+          <Card className="p-8 border-border text-center">
+            <CheckCircle className="w-10 h-10 text-green-500 mx-auto mb-3" />
+            <p className="text-sm font-medium">All caught up!</p>
+            <p className="text-xs text-muted-foreground">No pending vendor approvals</p>
+          </Card>
+        ) : (
+          vendors.map(v => (
+            <Card key={v.id} className="border-border overflow-hidden">
+              <div className="p-4">
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <p className="text-sm font-bold">{v.name}</p>
+                    <p className="text-xs text-muted-foreground">{v.category} · {v.village}</p>
+                    <p className="text-xs text-muted-foreground">{v.phone} · Applied {v.appliedAt}</p>
+                  </div>
+                  <Badge className="text-[9px] bg-amber-100 text-amber-700 border-0 flex items-center gap-1 shrink-0">
+                    <Clock className="w-3 h-3" /> Pending
+                  </Badge>
+                </div>
 
-      <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
-        <p className="text-xs text-blue-800"><Shield className="w-3 h-3 inline mr-1" /><strong>Approval checklist:</strong> All 6 checks must pass. Anchor vouching is strongly recommended. If fraud risk is medium/high, request additional verification before approving.</p>
-      </div>
+                {/* Doc badges */}
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {v.docs.map(doc => (
+                    <Badge key={doc} variant="outline" className="text-[9px] flex items-center gap-1">
+                      <FileText className="w-3 h-3" /> {doc}
+                    </Badge>
+                  ))}
+                  <Badge variant="outline" className="text-[9px]">GST: {v.gst}</Badge>
+                  <Badge variant="outline" className="text-[9px]">Exp: {v.experience}</Badge>
+                </div>
 
-      <div className="space-y-4">
-        {pendingVendors.map(v => <VendorCard key={v.id} vendor={v} />)}
+                <div className="flex gap-2">
+                  <Button size="sm" className="flex-1 h-8 text-xs gap-1"
+                    disabled={acting === v.id + 'approve'}
+                    onClick={() => act(v.id, 'approve')}>
+                    <CheckCircle className="w-3 h-3" />
+                    {acting === v.id + 'approve' ? 'Approving...' : 'Approve'}
+                  </Button>
+                  <Button size="sm" variant="outline" className="flex-1 h-8 text-xs gap-1 text-destructive border-destructive/30"
+                    disabled={acting === v.id + 'reject'}
+                    onClick={() => act(v.id, 'reject')}>
+                    <XCircle className="w-3 h-3" />
+                    {acting === v.id + 'reject' ? 'Rejecting...' : 'Reject'}
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-8 w-8 p-0"
+                    onClick={() => setExpanded(expanded === v.id ? null : v.id)}>
+                    <Eye className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+
+                {expanded === v.id && (
+                  <div className="mt-3 pt-3 border-t border-border">
+                    <p className="text-xs font-medium mb-1">Add note (optional)</p>
+                    <Textarea
+                      placeholder="Reason for approval/rejection..."
+                      className="h-16 text-xs mb-2"
+                      value={note}
+                      onChange={e => setNote(e.target.value)}
+                    />
+                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                      <div>Category: <span className="font-medium text-foreground">{v.category}</span></div>
+                      <div>Village: <span className="font-medium text-foreground">{v.village}</span></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Card>
+          ))
+        )}
       </div>
     </div>
   );

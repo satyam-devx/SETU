@@ -1,141 +1,169 @@
 import React, { useState } from 'react';
-import { Plus, Mic, Globe, Newspaper, Calendar, Eye, ThumbsUp } from 'lucide-react';
+import { Newspaper, Plus, Trash2, Megaphone, Calendar, CheckCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import AppHeader from '@/components/shared/AppHeader';
 
-const posts = [
-  {
-    id: 'p1', type: 'scheme', title: 'PM Kisan 19th Installment Released!',
-    body: 'PM Kisan Samman Nidhi ₹2,000 for eligible farmers has been credited. Check your bank account. Contact Ramkali Devi to verify eligibility.',
-    lang: 'Hindi', views: 142, likes: 38, time: '2 hours ago', pinned: true,
-  },
-  {
-    id: 'p2', type: 'alert', title: 'Water Shortage — Ward 3 & 4',
-    body: 'Jal Jeevan Mission pipeline work is ongoing on Main Road. Water supply will be disrupted 8am–4pm for the next 3 days.',
-    lang: 'Hindi+Maithili', views: 98, likes: 12, time: '5 hours ago', pinned: false,
-  },
-  {
-    id: 'p3', type: 'market', title: 'Makhana Fair Price: ₹680/kg today',
-    body: 'Today\'s wholesale makhana price at Darbhanga Mandi is ₹680/kg. SETU vendor Lakshmi Makhana Traders is offering ₹650/kg. Contact before 2pm.',
-    lang: 'Hindi', views: 67, likes: 24, time: '1 day ago', pinned: false,
-  },
-  {
-    id: 'p4', type: 'health', title: 'Free Health Camp — 3 June at Panchayat Bhavan',
-    body: 'A free health camp organized by Madhubani District Hospital will be held on 3 June. BP, sugar, eye checkup available. Bring Aadhaar.',
-    lang: 'Maithili', views: 203, likes: 55, time: '2 days ago', pinned: false,
-  },
+const INITIAL_NOTICES = [
+  { id: 'n1', title: 'Urea subsidy available', body: 'Kisan credit card holders can collect urea at 30% subsidy from the gram panchayat office until June 30.', type: 'scheme', pinned: true, date: 'Jun 1', author: 'Anchor Ramkali' },
+  { id: 'n2', title: 'SETU vendor fair — June 15', body: 'New vendors can register at Madhepur market on June 15. Bring Aadhaar and 2 passport photos.', type: 'event', pinned: false, date: 'May 30', author: 'Anchor Ramkali' },
+  { id: 'n3', title: 'Water pump repair notice', body: 'Ward 3 hand pump will be under repair June 5-6. Please use the alternate pump near the temple.', type: 'alert', pinned: false, date: 'May 28', author: 'Anchor Ramkali' },
 ];
 
-const typeColors = {
-  scheme: 'bg-green-100 text-green-800',
-  alert: 'bg-red-100 text-red-800',
-  market: 'bg-amber-100 text-amber-800',
-  health: 'bg-blue-100 text-blue-800',
-  general: 'bg-gray-100 text-gray-700',
+const TYPE_STYLE = {
+  scheme: 'bg-blue-100 text-blue-700',
+  event:  'bg-purple-100 text-purple-700',
+  alert:  'bg-amber-100 text-amber-700',
+  general:'bg-gray-100 text-gray-700',
 };
 
 export default function AnchorNoticeboard() {
-  const [open, setOpen] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
+  const [notices, setNotices]   = useState(INITIAL_NOTICES);
+  const [showAdd, setShowAdd]   = useState(false);
+  const [form, setForm]         = useState({ title: '', body: '', type: 'general', pinned: false });
+  const [posting, setPosting]   = useState(false);
+  const [posted, setPosted]     = useState(false);
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handlePost = () => {
+    if (!form.title.trim() || !form.body.trim()) return;
+    setPosting(true);
+    setTimeout(() => {
+      const newNotice = {
+        id: `n${Date.now()}`,
+        ...form,
+        date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+        author: 'Anchor Ramkali',
+      };
+      setNotices(ns => form.pinned ? [newNotice, ...ns] : [...ns, newNotice]);
+      setPosting(false);
+      setPosted(true);
+      setShowAdd(false);
+      setForm({ title: '', body: '', type: 'general', pinned: false });
+      setTimeout(() => setPosted(false), 3000);
+    }, 600);
+  };
+
+  const handleDelete = (id) => setNotices(ns => ns.filter(n => n.id !== id));
+
+  const pinned   = notices.filter(n => n.pinned);
+  const unpinned = notices.filter(n => !n.pinned);
 
   return (
-    <div className="pb-24">
-      <AppHeader title="Village Noticeboard" subtitle="Madhepur" showBack backTo="/anchor" rightAction={
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" className="text-xs h-8"><Plus className="w-3 h-3 mr-1" /> Post</Button>
-          </DialogTrigger>
-          <DialogContent className="max-h-[90vh] overflow-y-auto">
-            <DialogHeader><DialogTitle>New Village Notice</DialogTitle></DialogHeader>
+    <div className="pb-6">
+      <AppHeader
+        title="Noticeboard"
+        subtitle="Madhepur Village"
+        rightAction={
+          <Button size="sm" className="h-7 gap-1 text-xs" onClick={() => setShowAdd(s => !s)}>
+            <Plus className="w-3 h-3" /> Post
+          </Button>
+        }
+      />
+      <div className="px-4 py-3 space-y-3">
+
+        {posted && (
+          <Card className="p-3 border-green-200 bg-green-50 flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-green-600" />
+            <p className="text-sm text-green-700 font-medium">Notice posted successfully!</p>
+          </Card>
+        )}
+
+        {/* Post form */}
+        {showAdd && (
+          <Card className="p-4 border-primary/30 bg-primary/5">
+            <h3 className="font-semibold text-sm mb-3">New Notice</h3>
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-medium mb-1 block">Category</label>
-                <Select>
-                  <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="scheme">Government Scheme</SelectItem>
-                    <SelectItem value="market">Market Prices</SelectItem>
-                    <SelectItem value="health">Health Alert</SelectItem>
-                    <SelectItem value="alert">Civic Alert</SelectItem>
-                    <SelectItem value="general">General</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label className="text-xs mb-1 block">Title *</Label>
+                <Input placeholder="Notice title..." value={form.title} onChange={e => set('title', e.target.value)} />
               </div>
               <div>
-                <label className="text-xs font-medium mb-1 block">Language</label>
-                <Select>
-                  <SelectTrigger><SelectValue placeholder="Select language" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="hindi">Hindi</SelectItem>
-                    <SelectItem value="maithili">Maithili</SelectItem>
-                    <SelectItem value="both">Hindi + Maithili</SelectItem>
-                    <SelectItem value="english">English</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label className="text-xs mb-1 block">Body *</Label>
+                <Textarea placeholder="Notice details in Hindi or local language..." className="h-20 text-sm" value={form.body} onChange={e => set('body', e.target.value)} />
               </div>
-              <Input placeholder="Notice title" />
-              <Textarea placeholder="Write the notice content here..." rows={4} />
-              <div className="flex items-center justify-between bg-muted/50 rounded-xl p-3">
-                <div>
-                  <p className="text-xs font-medium">Voice Input</p>
-                  <p className="text-[10px] text-muted-foreground">Speak in Hindi or Maithili</p>
+              <div>
+                <Label className="text-xs mb-1 block">Type</Label>
+                <div className="flex gap-2 flex-wrap">
+                  {['general', 'scheme', 'event', 'alert'].map(t => (
+                    <button key={t} onClick={() => set('type', t)}
+                      className={`text-xs px-3 py-1.5 rounded-full border capitalize transition-colors ${form.type === t ? 'bg-primary text-white border-primary' : 'border-border'}`}>
+                      {t}
+                    </button>
+                  ))}
                 </div>
-                <Button size="sm" variant={isRecording ? 'destructive' : 'outline'} onClick={() => setIsRecording(!isRecording)} className="text-xs">
-                  <Mic className="w-3 h-3 mr-1" /> {isRecording ? 'Stop' : 'Record'}
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="pinned" checked={form.pinned} onChange={e => set('pinned', e.target.checked)} className="rounded" />
+                <Label htmlFor="pinned" className="text-xs">Pin to top</Label>
+              </div>
+              <div className="flex gap-2">
+                <Button className="flex-1" onClick={handlePost} disabled={posting || !form.title || !form.body}>
+                  {posting ? 'Posting...' : 'Post Notice'}
                 </Button>
+                <Button variant="outline" className="flex-1" onClick={() => setShowAdd(false)}>Cancel</Button>
               </div>
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-medium flex items-center gap-2">
-                  <input type="checkbox" className="rounded" /> Pin this notice
-                </label>
-                <label className="text-xs font-medium flex items-center gap-2">
-                  <input type="checkbox" className="rounded" defaultChecked /> Send SMS alert
-                </label>
-              </div>
-              <Button className="w-full" onClick={() => setOpen(false)}>Publish Notice</Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      } />
-
-      {/* Language filter */}
-      <div className="px-4 py-3 flex gap-2 overflow-x-auto pb-1">
-        {['All', 'Hindi', 'Maithili', 'Schemes', 'Market', 'Health', 'Alerts'].map(f => (
-          <button key={f} className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors ${f === 'All' ? 'bg-primary text-white border-primary' : 'bg-card border-border text-muted-foreground hover:border-primary'}`}>{f}</button>
-        ))}
-      </div>
-
-      <div className="px-4 py-2 space-y-3">
-        {posts.map(post => (
-          <Card key={post.id} className={`p-4 border ${post.pinned ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
-            {post.pinned && <p className="text-[10px] text-primary font-semibold mb-2">📌 PINNED</p>}
-            <div className="flex items-start justify-between mb-2">
-              <Badge variant="outline" className={`text-[9px] ${typeColors[post.type]}`}>{post.type}</Badge>
-              <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                <Globe className="w-3 h-3" /> {post.lang}
-              </div>
-            </div>
-            <h4 className="font-semibold text-sm mb-1">{post.title}</h4>
-            <p className="text-xs text-muted-foreground leading-relaxed mb-3">{post.body}</p>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-                <span className="flex items-center gap-1"><Eye className="w-3 h-3" /> {post.views}</span>
-                <span className="flex items-center gap-1"><ThumbsUp className="w-3 h-3" /> {post.likes}</span>
-                <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {post.time}</span>
-              </div>
-              <Button variant="ghost" size="sm" className="text-xs h-7 text-primary">
-                <Mic className="w-3 h-3 mr-1" /> Listen
-              </Button>
             </div>
           </Card>
-        ))}
+        )}
+
+        {/* Pinned */}
+        {pinned.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+              <Megaphone className="w-3.5 h-3.5" /> PINNED
+            </p>
+            {pinned.map(n => (
+              <NoticeCard key={n.id} notice={n} onDelete={handleDelete} />
+            ))}
+          </div>
+        )}
+
+        {/* All notices */}
+        {unpinned.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground mb-2">RECENT NOTICES</p>
+            {unpinned.map(n => (
+              <NoticeCard key={n.id} notice={n} onDelete={handleDelete} />
+            ))}
+          </div>
+        )}
+
+        {notices.length === 0 && (
+          <Card className="p-8 border-border text-center">
+            <Newspaper className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">No notices yet. Post the first one!</p>
+          </Card>
+        )}
       </div>
     </div>
+  );
+}
+
+function NoticeCard({ notice, onDelete }) {
+  return (
+    <Card className={`p-4 border mb-2 ${notice.pinned ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
+      <div className="flex items-start justify-between mb-1">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-semibold">{notice.title}</p>
+            <Badge className={`text-[9px] border-0 ${TYPE_STYLE[notice.type] || TYPE_STYLE.general}`}>
+              {notice.type}
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">{notice.author} · {notice.date}</p>
+        </div>
+        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+          onClick={() => onDelete(notice.id)}>
+          <Trash2 className="w-3.5 h-3.5" />
+        </Button>
+      </div>
+      <p className="text-sm text-muted-foreground">{notice.body}</p>
+    </Card>
   );
 }
