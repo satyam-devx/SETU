@@ -1,11 +1,13 @@
 // ═══════════════════════════════════════════════════════════
 // SETU PLATFORM — GLOBAL STATE STORE
-// Implements: Order state machine, rider state, vendor state,
-// notification state, user session — all in-memory with
-// localStorage persistence for prototype-phase
+// Phase 1 update:
+//   - currentUser is no longer hardcoded in initialState
+//   - SET_CURRENT_USER action hydrates user from AuthContext
+//   - Backward compatible: falls back to demo user when not set
+//   - All existing actions preserved unchanged
 // ═══════════════════════════════════════════════════════════
 
-import { createContext, useContext, useReducer, useEffect } from 'react';
+import { createContext, useContext, useReducer } from 'react';
 import React from 'react';
 import { ORDERS, RIDERS, VENDORS, PRODUCTS, NOTIFICATIONS, WALLET } from './mockData';
 
@@ -36,29 +38,63 @@ export function canTransition(from, to) {
   return ORDER_TRANSITIONS[from]?.includes(to) ?? false;
 }
 
+// ── DEMO / FALLBACK USER ──────────────────────────────────
+// Used when AuthContext has not yet dispatched SET_CURRENT_USER
+// (e.g. first render before session loads, or demo mode)
+const FALLBACK_USER = {
+  id:         'u1',
+  name:       'Anita Devi',
+  phone:      '+91 98765 43200',
+  village:    'Madhepur',
+  village_id: 'v1',
+  role:       'customer',
+  setuScore:  720,
+  language:   'hi',
+  isVerified: true,
+};
+
 // ── INITIAL STATE ─────────────────────────────────────────
 const initialState = {
-  orders: ORDERS.map(o => ({ ...o, _source: 'seed' })),
-  riders: RIDERS,
+  orders:       ORDERS.map(o => ({ ...o, _source: 'seed' })),
+  riders:       RIDERS,
   notifications: NOTIFICATIONS,
-  wallet: WALLET,
-  currentUser: {
-    id: 'u1',
-    name: 'Anita Devi',
-    phone: '+91 98765 43200',
-    village: 'Madhepur',
-    role: 'customer',
-    setuScore: 720,
-    language: 'hi',
-  },
-  riderOnline: true,
+  wallet:       WALLET,
+  // currentUser starts as fallback; replaced via SET_CURRENT_USER
+  // when AuthContext loads the real profile from Supabase.
+  currentUser:  FALLBACK_USER,
+  riderOnline:  true,
   vendorOnline: true,
-  unreadCount: NOTIFICATIONS.filter(n => !n.isRead).length,
+  unreadCount:  NOTIFICATIONS.filter(n => !n.isRead).length,
 };
 
 // ── REDUCER ───────────────────────────────────────────────
 function setuReducer(state, action) {
   switch (action.type) {
+
+    // ── NEW in Phase 1: sync user from AuthContext ──
+    case 'SET_CURRENT_USER': {
+      const { profile } = action.payload;
+      if (!profile) return state;
+      return {
+        ...state,
+        currentUser: {
+          id:         profile.id,
+          name:       profile.name       ?? FALLBACK_USER.name,
+          phone:      profile.phone      ?? FALLBACK_USER.phone,
+          village:    profile.village    ?? FALLBACK_USER.village,
+          village_id: profile.village_id ?? FALLBACK_USER.village_id,
+          role:       profile.role       ?? FALLBACK_USER.role,
+          setuScore:  profile.setu_score ?? FALLBACK_USER.setuScore,
+          language:   profile.language   ?? FALLBACK_USER.language,
+          isVerified: profile.is_verified ?? false,
+        },
+      };
+    }
+
+    // ── CLEAR user on sign-out ──
+    case 'CLEAR_CURRENT_USER': {
+      return { ...state, currentUser: FALLBACK_USER };
+    }
 
     case 'ORDER_ADVANCE_STATUS': {
       const { orderId, newStatus, meta } = action.payload;
@@ -77,25 +113,25 @@ function setuReducer(state, action) {
 
     case 'ORDER_PLACE': {
       const order = {
-        id: `o${Date.now()}`,
+        id:          `o${Date.now()}`,
         orderNumber: `SETU-2025-${String(state.orders.length + 1).padStart(4, '0')}`,
         ...action.payload,
-        status: ORDER_STATUS.PENDING,
+        status:    ORDER_STATUS.PENDING,
         createdAt: new Date().toISOString(),
       };
       const notification = {
-        id: `n${Date.now()}`,
-        type: 'order',
-        title: 'Order Placed!',
-        body: `${order.orderNumber} placed. Waiting for vendor confirmation.`,
-        isRead: false,
+        id:        `n${Date.now()}`,
+        type:      'order',
+        title:     'Order Placed!',
+        body:      `${order.orderNumber} placed. Waiting for vendor confirmation.`,
+        isRead:    false,
         createdAt: new Date().toISOString(),
       };
       return {
         ...state,
-        orders: [order, ...state.orders],
+        orders:        [order, ...state.orders],
         notifications: [notification, ...state.notifications],
-        unreadCount: state.unreadCount + 1,
+        unreadCount:   state.unreadCount + 1,
       };
     }
 
@@ -108,7 +144,7 @@ function setuReducer(state, action) {
         orders: state.orders.map(o =>
           o.id === orderId ? {
             ...o,
-            status: ORDER_STATUS.CANCELLED,
+            status:      ORDER_STATUS.CANCELLED,
             cancelReason: reason,
             cancelledAt: new Date().toISOString(),
           } : o
@@ -126,7 +162,7 @@ function setuReducer(state, action) {
             vendorRating,
             riderRating,
             ratingComment: comment,
-            isRated: true,
+            isRated:       true,
           } : o
         ),
       };
@@ -141,8 +177,8 @@ function setuReducer(state, action) {
           o.id === orderId ? {
             ...o,
             riderId,
-            riderName: rider?.name || 'Assigned Rider',
-            status: ORDER_STATUS.PICKED_UP,
+            riderName:  rider?.name || 'Assigned Rider',
+            status:     ORDER_STATUS.PICKED_UP,
             acceptedAt: new Date().toISOString(),
           } : o
         ),
@@ -156,28 +192,28 @@ function setuReducer(state, action) {
         orders: state.orders.map(o =>
           o.id === orderId ? {
             ...o,
-            status: ORDER_STATUS.DELIVERED,
-            deliveredAt: new Date().toISOString(),
+            status:          ORDER_STATUS.DELIVERED,
+            deliveredAt:     new Date().toISOString(),
             deliveryPhotoUrl: photoUrl,
-            codCollected: codCollected ?? o.is_cod,
+            codCollected:    codCollected ?? o.is_cod,
           } : o
         ),
         riders: state.riders.map(r =>
           r.id === action.payload.riderId ? {
             ...r,
             todayDeliveries: r.todayDeliveries + 1,
-            todayEarnings: r.todayEarnings + 80,
-            totalEarnings: r.totalEarnings + 80,
-            codBalance: r.codBalance + (codCollected ? (action.payload.amount || 0) : 0),
+            todayEarnings:   r.todayEarnings + 80,
+            totalEarnings:   r.totalEarnings + 80,
+            codBalance:      r.codBalance + (codCollected ? (action.payload.amount || 0) : 0),
           } : r
         ),
         notifications: [
           {
-            id: `n${Date.now()}`,
-            type: 'order',
-            title: 'Order Delivered! ✅',
-            body: `Order has been delivered. Thank you!`,
-            isRead: false,
+            id:        `n${Date.now()}`,
+            type:      'order',
+            title:     'Order Delivered! ✅',
+            body:      'Order has been delivered. Thank you!',
+            isRead:    false,
             createdAt: new Date().toISOString(),
           },
           ...state.notifications,
@@ -193,7 +229,7 @@ function setuReducer(state, action) {
         orders: state.orders.map(o =>
           o.id === orderId ? {
             ...o,
-            status: ORDER_STATUS.CONFIRMED,
+            status:      ORDER_STATUS.CONFIRMED,
             confirmedAt: new Date().toISOString(),
           } : o
         ),
@@ -207,7 +243,7 @@ function setuReducer(state, action) {
         orders: state.orders.map(o =>
           o.id === orderId ? {
             ...o,
-            status: ORDER_STATUS.READY,
+            status:  ORDER_STATUS.READY,
             readyAt: new Date().toISOString(),
           } : o
         ),
@@ -221,7 +257,7 @@ function setuReducer(state, action) {
         orders: state.orders.map(o =>
           o.id === orderId ? {
             ...o,
-            status: ORDER_STATUS.CANCELLED,
+            status:      ORDER_STATUS.CANCELLED,
             cancelReason: reason || 'Rejected by vendor',
             cancelledAt: new Date().toISOString(),
           } : o
@@ -244,7 +280,7 @@ function setuReducer(state, action) {
       return {
         ...state,
         notifications: state.notifications.map(n => ({ ...n, isRead: true })),
-        unreadCount: 0,
+        unreadCount:   0,
       };
     }
 
@@ -257,12 +293,12 @@ function setuReducer(state, action) {
           balance: state.wallet.balance + amount,
           transactions: [
             {
-              id: `t${Date.now()}`,
-              type: 'credit',
+              id:          `t${Date.now()}`,
+              type:        'credit',
               amount,
               description: 'Wallet top-up',
-              date: new Date().toISOString().slice(0, 10),
-              status: 'completed',
+              date:        new Date().toISOString().slice(0, 10),
+              status:      'completed',
             },
             ...state.wallet.transactions,
           ],
@@ -279,7 +315,6 @@ function setuReducer(state, action) {
     }
 
     case 'PRODUCT_UPDATE_STOCK': {
-      // Only updates local mock — would hit API in real implementation
       return state;
     }
 
@@ -288,7 +323,7 @@ function setuReducer(state, action) {
   }
 }
 
-// ── CONTEXT & PROVIDER ───────────────────────────────────
+// ── CONTEXT & PROVIDER ────────────────────────────────────
 const SetuStoreContext = createContext(null);
 
 export function SetuStoreProvider({ children }) {
@@ -336,7 +371,7 @@ export function useWallet() {
 export function useRiderState() {
   const { state, dispatch } = useStore();
   return {
-    isOnline: state.riderOnline,
+    isOnline:     state.riderOnline,
     toggleOnline: () => dispatch({ type: 'RIDER_TOGGLE_ONLINE' }),
   };
 }
