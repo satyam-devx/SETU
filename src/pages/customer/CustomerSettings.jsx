@@ -6,14 +6,26 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
 import { useStore } from '@/lib/store';
+import { useAuth } from '@/lib/AuthContext';
 
 export default function CustomerSettings() {
-  const { state } = useStore();
-  const [notifs, setNotifs]       = useState(true);
+  const { state }                   = useStore();
+  const { signOut, userName, userPhone } = useAuth();
+
+  const [notifs, setNotifs]           = useState(true);
   const [orderNotifs, setOrderNotifs] = useState(true);
   const [promoNotifs, setPromoNotifs] = useState(false);
-  const [darkMode, setDarkMode]   = useState(false);
-  const [biometric, setBiometric] = useState(false);
+  const [darkMode, setDarkMode]       = useState(false);
+  const [biometric, setBiometric]     = useState(false);
+  const [signingOut, setSigningOut]   = useState(false);
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    await signOut();
+  };
+
+  const displayName  = userName  || state.currentUser.name;
+  const displayPhone = userPhone || state.currentUser.phone;
 
   return (
     <div className="pb-20">
@@ -24,11 +36,11 @@ export default function CustomerSettings() {
         <Card className="p-4 border-border">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-lg">
-              {state.currentUser.name[0]}
+              {displayName[0]}
             </div>
             <div>
-              <p className="text-sm font-semibold">{state.currentUser.name}</p>
-              <p className="text-xs text-muted-foreground">{state.currentUser.phone}</p>
+              <p className="text-sm font-semibold">{displayName}</p>
+              <p className="text-xs text-muted-foreground">{displayPhone}</p>
               <Badge className="mt-0.5 text-[9px] bg-green-100 text-green-700 border-0">Verified</Badge>
             </div>
           </div>
@@ -40,9 +52,9 @@ export default function CustomerSettings() {
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Notifications</p>
           </div>
           {[
-            { label: 'All Notifications', sub: 'Master toggle', val: notifs, set: setNotifs },
-            { label: 'Order Updates',     sub: 'Status, delivery, etc.', val: orderNotifs, set: setOrderNotifs },
-            { label: 'Promotions & Offers', sub: 'Deals, cashback', val: promoNotifs, set: setPromoNotifs },
+            { label: 'All Notifications',    sub: 'Master toggle',        val: notifs,      set: setNotifs      },
+            { label: 'Order Updates',        sub: 'Status, delivery etc.', val: orderNotifs, set: setOrderNotifs },
+            { label: 'Promotions & Offers',  sub: 'Deals, cashback',      val: promoNotifs, set: setPromoNotifs },
           ].map(item => (
             <div key={item.label} className="flex items-center justify-between px-4 py-3">
               <div>
@@ -104,16 +116,24 @@ export default function CustomerSettings() {
 
         {/* Danger zone */}
         <Card className="border-border divide-y divide-border">
-          <Button variant="ghost" className="w-full justify-start px-4 py-3 h-auto gap-3 text-destructive hover:text-destructive hover:bg-destructive/5">
+          <Button
+            variant="ghost"
+            className="w-full justify-start px-4 py-3 h-auto gap-3 text-destructive hover:text-destructive hover:bg-destructive/5"
+          >
             <Trash2 className="w-4 h-4" />
             <div className="text-left">
               <p className="text-sm font-medium">Delete Account</p>
               <p className="text-xs text-muted-foreground">Permanently remove your data</p>
             </div>
           </Button>
-          <Button variant="ghost" className="w-full justify-start px-4 py-3 h-auto gap-3 text-destructive hover:text-destructive hover:bg-destructive/5">
+          <Button
+            variant="ghost"
+            className="w-full justify-start px-4 py-3 h-auto gap-3 text-destructive hover:text-destructive hover:bg-destructive/5"
+            onClick={handleSignOut}
+            disabled={signingOut}
+          >
             <LogOut className="w-4 h-4" />
-            <p className="text-sm font-medium">Sign Out</p>
+            <p className="text-sm font-medium">{signingOut ? 'Signing out...' : 'Sign Out'}</p>
           </Button>
         </Card>
 
