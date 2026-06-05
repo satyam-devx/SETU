@@ -1,147 +1,130 @@
 import React, { useState } from 'react';
-import { Clock, MapPin, Bell, Save } from 'lucide-react';
+import { Bell, Globe, Moon, ChevronRight, LogOut, Store, Clock } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
+import { useAuth } from '@/lib/AuthContext';
 
-const timeSlots = ['6:00 AM','7:00 AM','8:00 AM','9:00 AM','10:00 AM','11:00 AM','12:00 PM','1:00 PM','2:00 PM','3:00 PM','4:00 PM','5:00 PM','6:00 PM','7:00 PM','8:00 PM','9:00 PM','10:00 PM'];
+const BUSINESS_HOURS = [
+  { day: 'Monday – Friday', hours: '8:00 AM – 9:00 PM' },
+  { day: 'Saturday',        hours: '8:00 AM – 10:00 PM' },
+  { day: 'Sunday',          hours: '9:00 AM – 6:00 PM' },
+];
 
 export default function VendorSettings() {
-  const [notifyNewOrder, setNotifyNewOrder] = useState(true);
-  const [notifyLowStock, setNotifyLowStock] = useState(true);
-  const [notifyPayment, setNotifyPayment] = useState(true);
-  const [autoAccept, setAutoAccept] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const { signOut, userName, userPhone } = useAuth();
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const [orderNotifs, setOrderNotifs] = useState(true);
+  const [stockAlerts, setStockAlerts] = useState(true);
+  const [darkMode, setDarkMode]       = useState(false);
+  const [autoAccept, setAutoAccept]   = useState(false);
+  const [signingOut, setSigningOut]   = useState(false);
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    await signOut();
   };
 
   return (
-    <div className="pb-24">
+    <div className="pb-20">
       <AppHeader title="Settings" showBack />
       <div className="px-4 py-4 space-y-4">
+
+        {/* Account */}
         <Card className="p-4 border-border">
-          <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-            <Clock className="w-4 h-4 text-primary" /> Store Hours
-          </h3>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs mb-1 block">Opens at</Label>
-              <Select defaultValue="8:00 AM">
-                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                <SelectContent>{timeSlots.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
-              </Select>
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-accent/10 flex items-center justify-center">
+              <Store className="w-5 h-5 text-accent" />
             </div>
             <div>
-              <Label className="text-xs mb-1 block">Closes at</Label>
-              <Select defaultValue="9:00 PM">
-                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                <SelectContent>{timeSlots.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="mt-3 space-y-2">
-            <p className="text-xs text-muted-foreground font-medium">Closed days</p>
-            <div className="flex flex-wrap gap-2">
-              {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => (
-                <button key={d} className={`text-xs px-3 py-1 rounded-lg border transition-colors ${d === 'Sun' ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
-                  {d}
-                </button>
-              ))}
+              <p className="text-sm font-semibold">{userName || 'Vendor'}</p>
+              <p className="text-xs text-muted-foreground">{userPhone || '—'}</p>
+              <Badge className="mt-0.5 text-[9px] bg-green-100 text-green-700 border-0">Verified Vendor</Badge>
             </div>
           </div>
         </Card>
 
-        <Card className="p-4 border-border">
-          <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-primary" /> Delivery Settings
-          </h3>
-          <div className="space-y-3">
+        {/* Order settings */}
+        <Card className="border-border divide-y divide-border">
+          <div className="px-4 py-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Order Settings</p>
+          </div>
+          <div className="flex items-center justify-between px-4 py-3">
             <div>
-              <Label className="text-xs mb-1 block">Delivery radius (km)</Label>
-              <div className="flex items-center gap-3">
-                <Input type="number" defaultValue="3" className="w-24" min={1} max={10} />
-                <span className="text-xs text-muted-foreground">km from store</span>
-              </div>
+              <p className="text-sm font-medium">New Order Alerts</p>
+              <p className="text-xs text-muted-foreground">Sound + push notification</p>
             </div>
+            <Switch checked={orderNotifs} onCheckedChange={setOrderNotifs} />
+          </div>
+          <div className="flex items-center justify-between px-4 py-3">
             <div>
-              <Label className="text-xs mb-1 block">Min order value (₹)</Label>
-              <Input type="number" defaultValue="100" className="w-24" />
+              <p className="text-sm font-medium">Auto-Accept Orders</p>
+              <p className="text-xs text-muted-foreground">Confirm within 3 minutes automatically</p>
             </div>
+            <Switch checked={autoAccept} onCheckedChange={setAutoAccept} />
+          </div>
+          <div className="flex items-center justify-between px-4 py-3">
             <div>
-              <Label className="text-xs mb-1 block">Avg prep time (min)</Label>
-              <div className="flex items-center gap-3">
-                <Input type="number" defaultValue="15" className="w-24" />
-                <span className="text-xs text-muted-foreground">minutes</span>
-              </div>
+              <p className="text-sm font-medium">Low Stock Alerts</p>
+              <p className="text-xs text-muted-foreground">When stock drops below 5</p>
             </div>
+            <Switch checked={stockAlerts} onCheckedChange={setStockAlerts} />
           </div>
         </Card>
 
+        {/* Business hours */}
         <Card className="p-4 border-border">
-          <h3 className="font-semibold text-sm mb-3">Order Settings</h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">Auto-accept orders</p>
-                <p className="text-xs text-muted-foreground">Orders auto-confirmed without manual review</p>
-              </div>
-              <Switch checked={autoAccept} onCheckedChange={setAutoAccept} />
-            </div>
-            <Separator />
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">Accept UPI payments</p>
-                <p className="text-xs text-muted-foreground">Allow customers to pay via UPI</p>
-              </div>
-              <Switch defaultChecked />
-            </div>
-            <Separator />
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">Accept COD orders</p>
-                <p className="text-xs text-muted-foreground">Cash on delivery orders</p>
-              </div>
-              <Switch defaultChecked />
-            </div>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold flex items-center gap-2">
+              <Clock className="w-4 h-4 text-muted-foreground" /> Business Hours
+            </h3>
+            <Button variant="ghost" size="sm" className="h-6 text-xs text-primary px-0">Edit</Button>
           </div>
-        </Card>
-
-        <Card className="p-4 border-border">
-          <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-            <Bell className="w-4 h-4 text-primary" /> Notifications
-          </h3>
-          <div className="space-y-3">
-            {[
-              { label: 'New order received', desc: 'Alert when a new order comes in', val: notifyNewOrder, set: setNotifyNewOrder },
-              { label: 'Low stock alert', desc: 'When product stock falls below 5', val: notifyLowStock, set: setNotifyLowStock },
-              { label: 'Payment received', desc: 'UPI payment confirmation alerts', val: notifyPayment, set: setNotifyPayment },
-            ].map((item, i) => (
-              <div key={i}>
-                {i > 0 && <Separator className="mb-3" />}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">{item.label}</p>
-                    <p className="text-xs text-muted-foreground">{item.desc}</p>
-                  </div>
-                  <Switch checked={item.val} onCheckedChange={item.set} />
-                </div>
+          <div className="space-y-1.5">
+            {BUSINESS_HOURS.map(bh => (
+              <div key={bh.day} className="flex justify-between text-xs">
+                <span className="text-muted-foreground">{bh.day}</span>
+                <span className="font-medium">{bh.hours}</span>
               </div>
             ))}
           </div>
         </Card>
 
-        <Button className="w-full" onClick={handleSave}>
-          <Save className="w-4 h-4 mr-2" />
-          {saved ? 'Saved!' : 'Save Settings'}
+        {/* Appearance */}
+        <Card className="border-border divide-y divide-border">
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-3">
+              <Moon className="w-4 h-4 text-muted-foreground" />
+              <p className="text-sm font-medium">Dark Mode</p>
+            </div>
+            <Switch checked={darkMode} onCheckedChange={setDarkMode} />
+          </div>
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-3">
+              <Globe className="w-4 h-4 text-muted-foreground" />
+              <p className="text-sm font-medium">Language</p>
+            </div>
+            <div className="flex items-center gap-1 text-muted-foreground">
+              <span className="text-sm">Hindi</span>
+              <ChevronRight className="w-4 h-4" />
+            </div>
+          </div>
+        </Card>
+
+        {/* Sign out */}
+        <Button
+          variant="outline"
+          className="w-full gap-2 text-destructive border-destructive/30 hover:bg-destructive/5"
+          onClick={handleSignOut}
+          disabled={signingOut}
+        >
+          <LogOut className="w-4 h-4" />
+          {signingOut ? 'Signing out...' : 'Sign Out'}
         </Button>
+
+        <p className="text-center text-xs text-muted-foreground">SETU v1.0.0 · Made with ❤ for Bharat</p>
       </div>
     </div>
   );
