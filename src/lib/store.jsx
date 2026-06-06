@@ -1,15 +1,35 @@
 // ═══════════════════════════════════════════════════════════
-// SETU PLATFORM — GLOBAL STATE STORE
-// Phase 1 update:
-//   - currentUser is no longer hardcoded in initialState
-//   - SET_CURRENT_USER action hydrates user from AuthContext
-//   - Backward compatible: falls back to demo user when not set
-//   - All existing actions preserved unchanged
+// SETU PLATFORM — GLOBAL STATE STORE  (production-hardened)
+//
+// KEY FIXES APPLIED:
+//
+//  1. FALLBACK_USER is now null (not a fake profile) during the loading
+//     window. This prevents stale Anita Devi data from leaking into UI
+//     while the real session is being resolved. Components that rely on
+//     currentUser should handle null gracefully.
+//
+//  2. SET_CURRENT_USER validates the payload before mutating state,
+//     so a malformed dispatch cannot corrupt the user object.
+//
+//  3. CLEAR_CURRENT_USER resets currentUser to null (not FALLBACK_USER),
+//     so post-logout state is clean and unambiguous.
+//
+//  4. useCurrentUser() now returns null instead of fake data when no
+//     real profile is loaded. Callers should guard: `const user = useCurrentUser()`.
+//
+//  5. React import moved to top (was after named imports — cosmetic but
+//     correct per convention).
+//
+//  6. PRODUCTS and VENDORS were imported from mockData but never used in
+//     initialState — removed from import to eliminate dead references.
+//     Add them back if/when they are used in state.
+//
+//  7. RIDER_DELIVER hardcoded +80 earnings — kept as-is (mock behaviour)
+//     but marked with TODO for real earnings logic.
 // ═══════════════════════════════════════════════════════════
 
-import { createContext, useContext, useReducer } from 'react';
-import React from 'react';
-import { ORDERS, RIDERS, VENDORS, PRODUCTS, NOTIFICATIONS, WALLET } from './mockData';
+import React, { createContext, useContext, useReducer } from 'react';
+import { ORDERS, RIDERS, NOTIFICATIONS, WALLET } from './mockData';
 
 // ── ORDER STATUS MACHINE ──────────────────────────────────
 export const ORDER_STATUS = {
@@ -38,62 +58,57 @@ export function canTransition(from, to) {
   return ORDER_TRANSITIONS[from]?.includes(to) ?? false;
 }
 
-// ── DEMO / FALLBACK USER ──────────────────────────────────
-// Used when AuthContext has not yet dispatched SET_CURRENT_USER
-// (e.g. first render before session loads, or demo mode)
-const FALLBACK_USER = {
-  id:         'u1',
-  name:       'Anita Devi',
-  phone:      '+91 98765 43200',
-  village:    'Madhepur',
-  village_id: 'v1',
-  role:       'customer',
-  setuScore:  720,
-  language:   'hi',
-  isVerified: true,
-};
-
 // ── INITIAL STATE ─────────────────────────────────────────
+// FIX (Issue 9 / store): currentUser starts as null.
+// It is populated exclusively by SET_CURRENT_USER dispatched from
+// AuthStoreBridge in App.jsx once AuthContext loads the real profile.
+// Using null (not a fake FALLBACK_USER object) makes it unambiguous
+// whether a real profile has been loaded yet.
 const initialState = {
-  orders:       ORDERS.map(o => ({ ...o, _source: 'seed' })),
-  riders:       RIDERS,
+  orders:        ORDERS.map(o => ({ ...o, _source: 'seed' })),
+  riders:        RIDERS,
   notifications: NOTIFICATIONS,
-  wallet:       WALLET,
-  // currentUser starts as fallback; replaced via SET_CURRENT_USER
-  // when AuthContext loads the real profile from Supabase.
-  currentUser:  FALLBACK_USER,
-  riderOnline:  true,
-  vendorOnline: true,
-  unreadCount:  NOTIFICATIONS.filter(n => !n.isRead).length,
+  wallet:        WALLET,
+  currentUser:   null,       // null until AuthStoreBridge dispatches SET_CURRENT_USER
+  riderOnline:   true,
+  vendorOnline:  true,
+  unreadCount:   NOTIFICATIONS.filter(n => !n.isRead).length,
 };
 
 // ── REDUCER ───────────────────────────────────────────────
 function setuReducer(state, action) {
   switch (action.type) {
 
-    // ── NEW in Phase 1: sync user from AuthContext ──
+    // ── Sync real user from AuthContext (via AuthStoreBridge) ──
     case 'SET_CURRENT_USER': {
       const { profile } = action.payload;
-      if (!profile) return state;
+
+      // FIX: validate payload before mutating — malformed dispatch returns current state
+      if (!profile || typeof profile !== 'object' || !profile.id) {
+        console.warn('[SETU Store] SET_CURRENT_USER: invalid profile payload', profile);
+        return state;
+      }
+
       return {
         ...state,
         currentUser: {
           id:         profile.id,
-          name:       profile.name       ?? FALLBACK_USER.name,
-          phone:      profile.phone      ?? FALLBACK_USER.phone,
-          village:    profile.village    ?? FALLBACK_USER.village,
-          village_id: profile.village_id ?? FALLBACK_USER.village_id,
-          role:       profile.role       ?? FALLBACK_USER.role,
-          setuScore:  profile.setu_score ?? FALLBACK_USER.setuScore,
-          language:   profile.language   ?? FALLBACK_USER.language,
+          name:       profile.name       ?? 'SETU User',
+          phone:      profile.phone      ?? '',
+          village:    profile.village    ?? null,
+          village_id: profile.village_id ?? null,
+          role:       profile.role       ?? 'customer',
+          setuScore:  profile.setu_score ?? 500,
+          language:   profile.language   ?? 'hi',
           isVerified: profile.is_verified ?? false,
         },
       };
     }
 
-    // ── CLEAR user on sign-out ──
+    // ── Clear on sign-out ──
+    // FIX: resets to null, not a fake user, so post-logout state is clean
     case 'CLEAR_CURRENT_USER': {
-      return { ...state, currentUser: FALLBACK_USER };
+      return { ...state, currentUser: null };
     }
 
     case 'ORDER_ADVANCE_STATUS': {
@@ -101,12 +116,9 @@ function setuReducer(state, action) {
       return {
         ...state,
         orders: state.orders.map(o =>
-          o.id === orderId ? {
-            ...o,
-            status: newStatus,
-            ...meta,
-            [`${newStatus}At`]: new Date().toISOString(),
-          } : o
+          o.id === orderId
+            ? { ...o, status: newStatus, ...meta, [`${newStatus}At`]: new Date().toISOString() }
+            : o
         ),
       };
     }
@@ -142,12 +154,9 @@ function setuReducer(state, action) {
       return {
         ...state,
         orders: state.orders.map(o =>
-          o.id === orderId ? {
-            ...o,
-            status:      ORDER_STATUS.CANCELLED,
-            cancelReason: reason,
-            cancelledAt: new Date().toISOString(),
-          } : o
+          o.id === orderId
+            ? { ...o, status: ORDER_STATUS.CANCELLED, cancelReason: reason, cancelledAt: new Date().toISOString() }
+            : o
         ),
       };
     }
@@ -157,13 +166,9 @@ function setuReducer(state, action) {
       return {
         ...state,
         orders: state.orders.map(o =>
-          o.id === orderId ? {
-            ...o,
-            vendorRating,
-            riderRating,
-            ratingComment: comment,
-            isRated:       true,
-          } : o
+          o.id === orderId
+            ? { ...o, vendorRating, riderRating, ratingComment: comment, isRated: true }
+            : o
         ),
       };
     }
@@ -174,38 +179,34 @@ function setuReducer(state, action) {
       return {
         ...state,
         orders: state.orders.map(o =>
-          o.id === orderId ? {
-            ...o,
-            riderId,
-            riderName:  rider?.name || 'Assigned Rider',
-            status:     ORDER_STATUS.PICKED_UP,
-            acceptedAt: new Date().toISOString(),
-          } : o
+          o.id === orderId
+            ? { ...o, riderId, riderName: rider?.name || 'Assigned Rider', status: ORDER_STATUS.PICKED_UP, acceptedAt: new Date().toISOString() }
+            : o
         ),
       };
     }
 
     case 'RIDER_DELIVER': {
-      const { orderId, photoUrl, codCollected } = action.payload;
+      const { orderId, photoUrl, codCollected, riderId, amount } = action.payload;
+      // TODO: replace hardcoded 80 with real per-delivery earnings from profile/config
+      const DELIVERY_EARNING = 80;
       return {
         ...state,
         orders: state.orders.map(o =>
-          o.id === orderId ? {
-            ...o,
-            status:          ORDER_STATUS.DELIVERED,
-            deliveredAt:     new Date().toISOString(),
-            deliveryPhotoUrl: photoUrl,
-            codCollected:    codCollected ?? o.is_cod,
-          } : o
+          o.id === orderId
+            ? { ...o, status: ORDER_STATUS.DELIVERED, deliveredAt: new Date().toISOString(), deliveryPhotoUrl: photoUrl, codCollected: codCollected ?? o.is_cod }
+            : o
         ),
         riders: state.riders.map(r =>
-          r.id === action.payload.riderId ? {
-            ...r,
-            todayDeliveries: r.todayDeliveries + 1,
-            todayEarnings:   r.todayEarnings + 80,
-            totalEarnings:   r.totalEarnings + 80,
-            codBalance:      r.codBalance + (codCollected ? (action.payload.amount || 0) : 0),
-          } : r
+          r.id === riderId
+            ? {
+                ...r,
+                todayDeliveries: r.todayDeliveries + 1,
+                todayEarnings:   r.todayEarnings + DELIVERY_EARNING,
+                totalEarnings:   r.totalEarnings + DELIVERY_EARNING,
+                codBalance:      r.codBalance + (codCollected ? (amount || 0) : 0),
+              }
+            : r
         ),
         notifications: [
           {
@@ -227,11 +228,9 @@ function setuReducer(state, action) {
       return {
         ...state,
         orders: state.orders.map(o =>
-          o.id === orderId ? {
-            ...o,
-            status:      ORDER_STATUS.CONFIRMED,
-            confirmedAt: new Date().toISOString(),
-          } : o
+          o.id === orderId
+            ? { ...o, status: ORDER_STATUS.CONFIRMED, confirmedAt: new Date().toISOString() }
+            : o
         ),
       };
     }
@@ -241,11 +240,9 @@ function setuReducer(state, action) {
       return {
         ...state,
         orders: state.orders.map(o =>
-          o.id === orderId ? {
-            ...o,
-            status:  ORDER_STATUS.READY,
-            readyAt: new Date().toISOString(),
-          } : o
+          o.id === orderId
+            ? { ...o, status: ORDER_STATUS.READY, readyAt: new Date().toISOString() }
+            : o
         ),
       };
     }
@@ -255,12 +252,9 @@ function setuReducer(state, action) {
       return {
         ...state,
         orders: state.orders.map(o =>
-          o.id === orderId ? {
-            ...o,
-            status:      ORDER_STATUS.CANCELLED,
-            cancelReason: reason || 'Rejected by vendor',
-            cancelledAt: new Date().toISOString(),
-          } : o
+          o.id === orderId
+            ? { ...o, status: ORDER_STATUS.CANCELLED, cancelReason: reason || 'Rejected by vendor', cancelledAt: new Date().toISOString() }
+            : o
         ),
       };
     }
@@ -315,6 +309,7 @@ function setuReducer(state, action) {
     }
 
     case 'PRODUCT_UPDATE_STOCK': {
+      // TODO: implement when product state is added to store
       return state;
     }
 
@@ -342,6 +337,7 @@ export function useStore() {
 }
 
 // ── SELECTOR HOOKS ────────────────────────────────────────
+
 export function useOrders(filter) {
   const { state } = useStore();
   if (!filter) return state.orders;
@@ -353,6 +349,16 @@ export function useOrder(orderId) {
   return state.orders.find(o => o.id === orderId);
 }
 
+/**
+ * Returns the current authenticated user from the store,
+ * or null if the auth session has not yet loaded.
+ *
+ * FIX: Returns null instead of a fake FALLBACK_USER, so callers can
+ * distinguish "loading" from "logged in". Guard usage:
+ *
+ *   const user = useCurrentUser();
+ *   if (!user) return <LoadingSpinner />;
+ */
 export function useCurrentUser() {
   const { state } = useStore();
   return state.currentUser;
@@ -373,5 +379,13 @@ export function useRiderState() {
   return {
     isOnline:     state.riderOnline,
     toggleOnline: () => dispatch({ type: 'RIDER_TOGGLE_ONLINE' }),
+  };
+}
+
+export function useVendorState() {
+  const { state, dispatch } = useStore();
+  return {
+    isOnline:     state.vendorOnline,
+    toggleOnline: () => dispatch({ type: 'VENDOR_TOGGLE_ONLINE' }),
   };
 }
