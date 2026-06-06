@@ -1,3 +1,24 @@
+// ═══════════════════════════════════════════════════════════
+// SETU PLATFORM — ROLE SELECT / LANDING PAGE  (production-hardened)
+//
+// KEY FIXES APPLIED:
+//
+//  1. Auth-state redirect now waits for BOTH isAuthenticated AND
+//     isProfileLoaded before navigating. Previously it used only
+//     isAuthenticated, so a user with a session but a loading/failed
+//     profile would be redirected to portalPath = '/' (because
+//     profile?.role is undefined), causing an infinite loop on this
+//     same page.
+//
+//  2. Redirect useEffect now guards against navigating to '/' (which
+//     is this page itself), breaking the infinite loop caused by
+//     unknown roles returning '/' from getPortalPath.
+//
+//  3. Loading screen is shown while isLoading is true, regardless of
+//     isAuthenticated, so a returning user never briefly sees the
+//     unauthenticated welcome screen before being redirected.
+// ═══════════════════════════════════════════════════════════
+
 import React, { useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -7,16 +28,27 @@ import { useAuth } from '@/lib/AuthContext';
 
 export default function RoleSelect() {
   const navigate = useNavigate();
-  const { isAuthenticated, isLoading, portalPath } = useAuth();
+  const { isAuthenticated, isProfileLoaded, isLoading, portalPath } = useAuth();
 
-  // If already authenticated, redirect to their portal immediately
+  // FIX (Issue 1 / RoleSelect): Wait for BOTH authentication AND profile load
+  // before redirecting. This prevents:
+  //   a) Redirecting to '/' when profile is still loading (portalPath defaults to '/')
+  //   b) Infinite loop when portalPath is '/' due to unknown/null role
   useEffect(() => {
-    if (!isLoading && isAuthenticated) {
+    if (isLoading) return;
+    if (!isAuthenticated) return;
+    if (!isProfileLoaded) return;
+
+    // Guard: never redirect to '/' — that's this page, causing an infinite loop.
+    // This happens when getPortalPath returns '/' for an unknown role.
+    if (portalPath && portalPath !== '/') {
       navigate(portalPath, { replace: true });
     }
-  }, [isAuthenticated, isLoading, portalPath, navigate]);
+  }, [isAuthenticated, isProfileLoaded, isLoading, portalPath, navigate]);
 
-  // Show spinner while auth state resolves on page refresh
+  // Show spinner while auth state is being resolved (e.g. page refresh with
+  // existing session). This prevents returning users from seeing the
+  // unauthenticated welcome screen before being redirected to their portal.
   if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-background">
@@ -95,9 +127,9 @@ export default function RoleSelect() {
         className="mt-8 flex flex-wrap justify-center gap-5"
       >
         {[
-          { label: 'Become a Vendor →',         path: '/onboarding/vendor', color: 'text-accent'   },
-          { label: 'Become a Rider →',           path: '/onboarding/rider',  color: 'text-chart-3'  },
-          { label: 'Register as Seva Provider →', path: '/onboarding/seva',   color: 'text-chart-4'  },
+          { label: 'Become a Vendor →',          path: '/onboarding/vendor', color: 'text-accent'  },
+          { label: 'Become a Rider →',            path: '/onboarding/rider',  color: 'text-chart-3' },
+          { label: 'Register as Seva Provider →', path: '/onboarding/seva',   color: 'text-chart-4' },
         ].map(link => (
           <Link
             key={link.path}
