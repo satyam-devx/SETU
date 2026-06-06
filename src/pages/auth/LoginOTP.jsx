@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Phone, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -10,7 +11,18 @@ const VALID_INDIAN_PHONE = /^[6-9]\d{9}$/;
 
 export default function LoginOTP() {
   const navigate   = useNavigate();
-  const { sendOTP, isAuthenticated, portalPath } = useAuth();
+  const {
+    sendOTP,
+    signInWithEmail,
+    signUpWithEmail,
+    isAuthenticated,
+    portalPath
+  } = useAuth();
+
+  const [mode, setMode] = useState('phone');
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
   const [rawPhone, setRawPhone]   = useState('');
   const [loading, setLoading]     = useState(false);
@@ -83,6 +95,28 @@ export default function LoginOTP() {
           Login or create your account
         </p>
 
+        <div className="flex gap-2 mb-5">
+          <Button
+            type="button"
+            variant={mode === 'phone' ? 'default' : 'outline'}
+            onClick={() => setMode('phone')}
+            className="flex-1"
+          >
+            Phone
+          </Button>
+
+          <Button
+            type="button"
+            variant={mode === 'email' ? 'default' : 'outline'}
+            onClick={() => setMode('email')}
+            className="flex-1"
+          >
+            Email
+          </Button>
+        </div>
+
+        {mode === 'phone' && (
+        <>
         {/* Phone input */}
         <div className="mb-4">
           <p className="text-xs font-medium text-muted-foreground mb-1.5">
@@ -143,7 +177,82 @@ export default function LoginOTP() {
           An OTP will be sent to your number via SMS.
           By continuing, you agree to SETU's terms.
         </p>
-      </Card>
+      </>
+    )}
+
+        {mode === 'email' && (
+          <>
+            <Input
+              type="email"
+              placeholder="Email Address"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="mb-3"
+            />
+
+            <Input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="mb-4"
+            />
+
+            {error && (
+              <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-xl mb-4">
+                <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                <p className="text-xs text-destructive">{error}</p>
+              </div>
+            )}
+
+            <Button
+              className="w-full mb-2"
+              disabled={loading}
+              onClick={async () => {
+                setLoading(true);
+                setError('');
+
+                const { error } = await signInWithEmail(
+                  email,
+                  password
+                );
+
+                setLoading(false);
+
+                if (error) {
+                  setError(error.message);
+                }
+              }}
+            >
+              Login with Email
+            </Button>
+
+            <Button
+              variant="outline"
+              className="w-full"
+              disabled={loading}
+              onClick={async () => {
+                setLoading(true);
+                setError('');
+
+                const { error } = await signUpWithEmail(
+                  email,
+                  password
+                );
+
+                setLoading(false);
+
+                if (error) {
+                  setError(error.message);
+                } else {
+                  alert('Account created successfully');
+                }
+              }}
+            >
+              Create Account
+            </Button>
+          </>
+        )}
 
       {/* Demo mode notice */}
       {!import.meta.env.VITE_SUPABASE_URL && (
