@@ -13,16 +13,12 @@ export default function LoginOTP() {
   const navigate   = useNavigate();
   const {
     sendOTP,
-    signInWithEmail,
-    signUpWithEmail,
+    signInWithGoogle,
     isAuthenticated,
     portalPath
   } = useAuth();
 
   const [mode, setMode] = useState('phone');
-
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
 
   const [rawPhone, setRawPhone]   = useState('');
   const [loading, setLoading]     = useState(false);
@@ -180,81 +176,75 @@ export default function LoginOTP() {
         </p>
       </>
     )}
+    
+    {mode === 'email' && (
+  <>
+    <div className="text-center mb-5">
+      <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
+        <Mail className="w-6 h-6 text-primary" />
+      </div>
 
-        {mode === 'email' && (
-          <>
-            <Input
-              type="email"
-              placeholder="Email Address"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mb-3"
-            />
+      <h3 className="text-base font-semibold text-foreground">
+        Continue with Google
+      </h3>
 
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mb-4"
-            />
+      <p className="text-xs text-muted-foreground mt-1">
+        Fast, secure and password-free sign in.
+      </p>
+    </div>
 
-            {error && (
-              <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-xl mb-4">
-                <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
-                <p className="text-xs text-destructive">{error}</p>
-              </div>
-            )}
+    {error && (
+      <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-xl mb-4">
+        <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+        <p className="text-xs text-destructive">{error}</p>
+      </div>
+    )}
 
-            <Button
-              className="w-full mb-2"
-              disabled={loading}
-              onClick={async () => {
-                setLoading(true);
-                setError('');
+    <Button
+      variant="outline"
+      className="w-full h-11 text-sm font-semibold gap-3"
+      disabled={loading}
+      onClick={async () => {
+        setLoading(true);
+        setError('');
 
-                const { error } = await signInWithEmail(
-                  email,
-                  password
-                );
+        const { error } = await signInWithGoogle();
 
-                setLoading(false);
+        if (error) {
+          setLoading(false);
+          setError(error.message);
+        }
+      }}
+    >
+      {loading ? (
+        <>
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Connecting...
+        </>
+      ) : (
+        <>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 48 48"
+            className="w-5 h-5"
+          >
+            <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12S17.4 12 24 12c3 0 5.7 1.1 7.8 3l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/>
+            <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.4 18.9 12 24 12c3 0 5.7 1.1 7.8 3l5.7-5.7C34.1 6.1 29.3 4 24 4c-7.7 0-14.4 4.3-17.7 10.7z"/>
+            <path fill="#4CAF50" d="M24 44c5.2 0 10-2 13.5-5.2l-6.2-5.2c-2.1 1.6-4.7 2.4-7.3 2.4-5.3 0-9.7-3.3-11.3-8H6.4C9.6 39.5 16.2 44 24 44z"/>
+            <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1.1 3.1-3.3 5.5-6.2 7.1l6.2 5.2C39.7 36.4 44 30.8 44 24c0-1.3-.1-2.4-.4-3.5z"/>
+          </svg>
 
-                if (error) {
-                  setError(error.message);
-                }
-              }}
-            >
-              Login with Email
-            </Button>
+          Continue with Google
+        </>
+      )}
+    </Button>
 
-            <Button
-              variant="outline"
-              className="w-full"
-              disabled={loading}
-              onClick={async () => {
-                setLoading(true);
-                setError('');
-
-                const { error } = await signUpWithEmail(
-                  email,
-                  password
-                );
-
-                setLoading(false);
-
-                if (error) {
-                  setError(error.message);
-                } else {
-                  alert('Account created successfully');
-                }
-              }}
-            >
-              Create Account
-            </Button>
-          </>
-        )}
-        </Card>
+    <p className="text-xs text-muted-foreground text-center mt-4">
+      Your Google account will be used to securely sign in to SETU.
+    </p>
+  </>
+)}
+</Card>
 
       {/* Demo mode notice */}
       {!import.meta.env.VITE_SUPABASE_URL && (
