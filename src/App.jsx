@@ -1,47 +1,62 @@
-import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
+// ═══════════════════════════════════════════════════════════
+// SETU PLATFORM — APP ROOT  (production-hardened)
+//
+// KEY FIXES APPLIED:
+//  1. Router now wraps AuthProvider (not nested inside it), so that
+//     any component inside AuthProvider can safely use useNavigate.
+//  2. AuthStoreBridge added — syncs AuthContext profile into the
+//     SetuStore so useCurrentUser() returns real user data, not
+//     the hardcoded FALLBACK_USER (Anita Devi) for every session.
+//  3. Added /onboarding/register route (was missing — new users hit 404).
+//  4. Added /role-error route for unknown roles.
+// ═══════════════════════════════════════════════════════════
+
+import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { useEffect } from 'react';
 import { Toaster } from '@/components/ui/toaster';
 import ScrollToTop from './components/ScrollToTop';
 import { CartProvider } from '@/lib/cartContext';
-import { SetuStoreProvider } from '@/lib/store';
-import { AuthProvider } from '@/lib/AuthContext';
+import { SetuStoreProvider, useStore } from '@/lib/store';
+import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 // Auth
-import LoginOTP   from '@/pages/auth/LoginOTP';
-import OTPVerify  from '@/pages/auth/OTPVerify';
+import LoginOTP  from '@/pages/auth/LoginOTP';
+import OTPVerify from '@/pages/auth/OTPVerify';
 
 // Role select & Onboarding
-import RoleSelect       from '@/pages/RoleSelect';
-import VendorOnboarding from '@/pages/onboarding/VendorOnboarding';
-import RiderOnboarding  from '@/pages/onboarding/RiderOnboarding';
-import SevaVerification from '@/pages/onboarding/SevaVerification';
+import RoleSelect          from '@/pages/RoleSelect';
+import RegisterOnboarding  from '@/pages/onboarding/RegisterOnboarding'; // FIX: was missing
+import VendorOnboarding    from '@/pages/onboarding/VendorOnboarding';
+import RiderOnboarding     from '@/pages/onboarding/RiderOnboarding';
+import SevaVerification    from '@/pages/onboarding/SevaVerification';
 
 // Customer
-import CustomerLayout       from '@/pages/customer/CustomerLayout';
-import CustomerHome         from '@/pages/customer/CustomerHome';
-import CustomerOrders       from '@/pages/customer/CustomerOrders';
-import CustomerOrderDetail  from '@/pages/customer/CustomerOrderDetail';
-import CustomerWallet       from '@/pages/customer/CustomerWallet';
-import CustomerCredit       from '@/pages/customer/CustomerCredit';
-import CustomerSchemes      from '@/pages/customer/CustomerSchemes';
-import CustomerVoice        from '@/pages/customer/CustomerVoice';
-import CustomerOffline      from '@/pages/customer/CustomerOffline';
-import CustomerLanguage     from '@/pages/customer/CustomerLanguage';
-import CustomerFraudReport  from '@/pages/customer/CustomerFraudReport';
-import CustomerTrust        from '@/pages/customer/CustomerTrust';
-import CustomerProfile      from '@/pages/customer/CustomerProfile';
+import CustomerLayout        from '@/pages/customer/CustomerLayout';
+import CustomerHome          from '@/pages/customer/CustomerHome';
+import CustomerOrders        from '@/pages/customer/CustomerOrders';
+import CustomerOrderDetail   from '@/pages/customer/CustomerOrderDetail';
+import CustomerWallet        from '@/pages/customer/CustomerWallet';
+import CustomerCredit        from '@/pages/customer/CustomerCredit';
+import CustomerSchemes       from '@/pages/customer/CustomerSchemes';
+import CustomerVoice         from '@/pages/customer/CustomerVoice';
+import CustomerOffline       from '@/pages/customer/CustomerOffline';
+import CustomerLanguage      from '@/pages/customer/CustomerLanguage';
+import CustomerFraudReport   from '@/pages/customer/CustomerFraudReport';
+import CustomerTrust         from '@/pages/customer/CustomerTrust';
+import CustomerProfile       from '@/pages/customer/CustomerProfile';
 import CustomerNotifications from '@/pages/customer/CustomerNotifications';
-import CustomerSupport      from '@/pages/customer/CustomerSupport';
-import CustomerSettings     from '@/pages/customer/CustomerSettings';
-import CustomerSearch       from '@/pages/customer/CustomerSearch';
+import CustomerSupport       from '@/pages/customer/CustomerSupport';
+import CustomerSettings      from '@/pages/customer/CustomerSettings';
+import CustomerSearch        from '@/pages/customer/CustomerSearch';
 import CustomerProductDetail from '@/pages/customer/CustomerProductDetail';
 import CustomerVendorProfile from '@/pages/customer/CustomerVendorProfile';
-import CustomerCart         from '@/pages/customer/CustomerCart';
-import CustomerCheckout     from '@/pages/customer/CustomerCheckout';
-import CustomerVendors      from '@/pages/customer/CustomerVendors';
-import CustomerAddresses    from '@/pages/customer/CustomerAddresses';
-import CustomerReferral     from '@/pages/customer/CustomerReferral';
-import CustomerReorder      from '@/pages/customer/CustomerReorder';
+import CustomerCart          from '@/pages/customer/CustomerCart';
+import CustomerCheckout      from '@/pages/customer/CustomerCheckout';
+import CustomerVendors       from '@/pages/customer/CustomerVendors';
+import CustomerAddresses     from '@/pages/customer/CustomerAddresses';
+import CustomerReferral      from '@/pages/customer/CustomerReferral';
+import CustomerReorder       from '@/pages/customer/CustomerReorder';
 
 // Vendor
 import VendorLayout    from '@/pages/vendor/VendorLayout';
@@ -78,30 +93,30 @@ import SevaSchedule  from '@/pages/seva/SevaSchedule';
 import SevaSettings  from '@/pages/seva/SevaSettings';
 
 // Anchor
-import AnchorLayout     from '@/pages/anchor/AnchorLayout';
-import AnchorDashboard  from '@/pages/anchor/AnchorDashboard';
-import AnchorVillage    from '@/pages/anchor/AnchorVillage';
+import AnchorLayout      from '@/pages/anchor/AnchorLayout';
+import AnchorDashboard   from '@/pages/anchor/AnchorDashboard';
+import AnchorVillage     from '@/pages/anchor/AnchorVillage';
 import AnchorNoticeboard from '@/pages/anchor/AnchorNoticeboard';
-import AnchorDisputes   from '@/pages/anchor/AnchorDisputes';
-import AnchorReports    from '@/pages/anchor/AnchorReports';
-import AnchorKYC        from '@/pages/anchor/AnchorKYC';
+import AnchorDisputes    from '@/pages/anchor/AnchorDisputes';
+import AnchorReports     from '@/pages/anchor/AnchorReports';
+import AnchorKYC         from '@/pages/anchor/AnchorKYC';
 import AnchorEscalations from '@/pages/anchor/AnchorEscalations';
 
 // Admin
-import AdminLayout        from '@/pages/admin/AdminLayout';
-import AdminDashboard     from '@/pages/admin/AdminDashboard';
-import AdminOrders        from '@/pages/admin/AdminOrders';
-import AdminVendors       from '@/pages/admin/AdminVendors';
+import AdminLayout         from '@/pages/admin/AdminLayout';
+import AdminDashboard      from '@/pages/admin/AdminDashboard';
+import AdminOrders         from '@/pages/admin/AdminOrders';
+import AdminVendors        from '@/pages/admin/AdminVendors';
 import AdminVendorApproval from '@/pages/admin/AdminVendorApproval';
-import AdminRiders        from '@/pages/admin/AdminRiders';
-import AdminCash          from '@/pages/admin/AdminCash';
-import AdminSupport       from '@/pages/admin/AdminSupport';
-import AdminSevaProviders from '@/pages/admin/AdminSevaProviders';
-import AdminVillages      from '@/pages/admin/AdminVillages';
-import AdminSettings      from '@/pages/admin/AdminSettings';
-import AdminCustomers     from '@/pages/admin/AdminCustomers';
-import AdminIncidents     from '@/pages/admin/AdminIncidents';
-import AdminMonitoring    from '@/pages/admin/AdminMonitoring';
+import AdminRiders         from '@/pages/admin/AdminRiders';
+import AdminCash           from '@/pages/admin/AdminCash';
+import AdminSupport        from '@/pages/admin/AdminSupport';
+import AdminSevaProviders  from '@/pages/admin/AdminSevaProviders';
+import AdminVillages       from '@/pages/admin/AdminVillages';
+import AdminSettings       from '@/pages/admin/AdminSettings';
+import AdminCustomers      from '@/pages/admin/AdminCustomers';
+import AdminIncidents      from '@/pages/admin/AdminIncidents';
+import AdminMonitoring     from '@/pages/admin/AdminMonitoring';
 
 // Super Admin
 import SuperAdminLayout     from '@/pages/superadmin/SuperAdminLayout';
@@ -117,6 +132,26 @@ import SuperAdminCompliance from '@/pages/superadmin/SuperAdminCompliance';
 import SuperAdminHealth     from '@/pages/superadmin/SuperAdminHealth';
 import SuperAdminAI         from '@/pages/superadmin/SuperAdminAI';
 
+// ── AUTH → STORE BRIDGE ───────────────────────────────────
+// FIX (Issue 9): Syncs the real authenticated profile into SetuStore
+// so that useCurrentUser() returns live data, not the hardcoded FALLBACK_USER.
+// Placed inside both AuthProvider and SetuStoreProvider.
+function AuthStoreBridge() {
+  const { profile } = useAuth();
+  const { dispatch } = useStore();
+
+  useEffect(() => {
+    if (profile) {
+      dispatch({ type: 'SET_CURRENT_USER', payload: { profile } });
+    } else {
+      dispatch({ type: 'CLEAR_CURRENT_USER' });
+    }
+  }, [profile, dispatch]);
+
+  return null;
+}
+
+// ── PAGES ─────────────────────────────────────────────────
 function NotFound() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background gap-3">
@@ -127,24 +162,46 @@ function NotFound() {
   );
 }
 
+// FIX (Issue 17): Error page for users with unrecognised roles
+function RoleError() {
+  const { signOut, userRole } = useAuth();
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-background gap-4 p-6">
+      <h1 className="text-2xl font-bold text-foreground">Access Error</h1>
+      <p className="text-muted-foreground text-sm text-center max-w-xs">
+        Your account role ({userRole ?? 'unknown'}) is not recognised.
+        Please contact support.
+      </p>
+      <button onClick={signOut} className="text-primary text-sm underline">Sign out</button>
+    </div>
+  );
+}
+
+// ── APP ───────────────────────────────────────────────────
 function App() {
   return (
-    <AuthProvider>
-      <SetuStoreProvider>
-        <CartProvider>
-          <Router>
+    // FIX (Issue 5): Router is now the outermost wrapper.
+    // This allows any component inside AuthProvider to safely call useNavigate.
+    <Router>
+      <AuthProvider>
+        <SetuStoreProvider>
+          {/* FIX (Issue 9): Bridge syncs auth profile into store */}
+          <AuthStoreBridge />
+          <CartProvider>
             <ScrollToTop />
             <Routes>
 
               {/* ── Public routes ── */}
-              <Route path="/"              element={<RoleSelect />} />
-              <Route path="/login"         element={<LoginOTP />} />
-              <Route path="/login/verify"  element={<OTPVerify />} />
+              <Route path="/"             element={<RoleSelect />} />
+              <Route path="/login"        element={<LoginOTP />} />
+              <Route path="/login/verify" element={<OTPVerify />} />
+              <Route path="/role-error"   element={<RoleError />} />
 
-              {/* Onboarding (public — users may not yet have a role) */}
-              <Route path="/onboarding/vendor" element={<VendorOnboarding />} />
-              <Route path="/onboarding/rider"  element={<RiderOnboarding />} />
-              <Route path="/onboarding/seva"   element={<SevaVerification />} />
+              {/* Onboarding — public, users may not yet have a role */}
+              <Route path="/onboarding/register" element={<RegisterOnboarding />} /> {/* FIX: was missing */}
+              <Route path="/onboarding/vendor"   element={<VendorOnboarding />} />
+              <Route path="/onboarding/rider"    element={<RiderOnboarding />} />
+              <Route path="/onboarding/seva"     element={<SevaVerification />} />
 
               {/* ── Customer portal ── */}
               <Route path="/customer" element={
@@ -152,30 +209,30 @@ function App() {
                   <CustomerLayout />
                 </ProtectedRoute>
               }>
-                <Route index                          element={<CustomerHome />} />
-                <Route path="orders"                  element={<CustomerOrders />} />
-                <Route path="orders/:orderId"         element={<CustomerOrderDetail />} />
-                <Route path="wallet"                  element={<CustomerWallet />} />
-                <Route path="credit"                  element={<CustomerCredit />} />
-                <Route path="schemes"                 element={<CustomerSchemes />} />
-                <Route path="voice"                   element={<CustomerVoice />} />
-                <Route path="offline"                 element={<CustomerOffline />} />
-                <Route path="language"                element={<CustomerLanguage />} />
-                <Route path="fraud"                   element={<CustomerFraudReport />} />
-                <Route path="trust"                   element={<CustomerTrust />} />
-                <Route path="profile"                 element={<CustomerProfile />} />
-                <Route path="notifications"           element={<CustomerNotifications />} />
-                <Route path="support"                 element={<CustomerSupport />} />
-                <Route path="settings"                element={<CustomerSettings />} />
-                <Route path="search"                  element={<CustomerSearch />} />
-                <Route path="product/:productId"      element={<CustomerProductDetail />} />
-                <Route path="vendor/:vendorId"        element={<CustomerVendorProfile />} />
-                <Route path="vendors"                 element={<CustomerVendors />} />
-                <Route path="cart"                    element={<CustomerCart />} />
-                <Route path="checkout"                element={<CustomerCheckout />} />
-                <Route path="addresses"               element={<CustomerAddresses />} />
-                <Route path="referral"                element={<CustomerReferral />} />
-                <Route path="reorder/:orderId"        element={<CustomerReorder />} />
+                <Route index                         element={<CustomerHome />} />
+                <Route path="orders"                 element={<CustomerOrders />} />
+                <Route path="orders/:orderId"        element={<CustomerOrderDetail />} />
+                <Route path="wallet"                 element={<CustomerWallet />} />
+                <Route path="credit"                 element={<CustomerCredit />} />
+                <Route path="schemes"                element={<CustomerSchemes />} />
+                <Route path="voice"                  element={<CustomerVoice />} />
+                <Route path="offline"                element={<CustomerOffline />} />
+                <Route path="language"               element={<CustomerLanguage />} />
+                <Route path="fraud"                  element={<CustomerFraudReport />} />
+                <Route path="trust"                  element={<CustomerTrust />} />
+                <Route path="profile"                element={<CustomerProfile />} />
+                <Route path="notifications"          element={<CustomerNotifications />} />
+                <Route path="support"                element={<CustomerSupport />} />
+                <Route path="settings"               element={<CustomerSettings />} />
+                <Route path="search"                 element={<CustomerSearch />} />
+                <Route path="product/:productId"     element={<CustomerProductDetail />} />
+                <Route path="vendor/:vendorId"       element={<CustomerVendorProfile />} />
+                <Route path="vendors"                element={<CustomerVendors />} />
+                <Route path="cart"                   element={<CustomerCart />} />
+                <Route path="checkout"               element={<CustomerCheckout />} />
+                <Route path="addresses"              element={<CustomerAddresses />} />
+                <Route path="referral"               element={<CustomerReferral />} />
+                <Route path="reorder/:orderId"       element={<CustomerReorder />} />
               </Route>
 
               {/* ── Vendor portal ── */}
@@ -184,16 +241,16 @@ function App() {
                   <VendorLayout />
                 </ProtectedRoute>
               }>
-                <Route index                  element={<VendorDashboard />} />
-                <Route path="orders"          element={<VendorOrders />} />
-                <Route path="products"        element={<VendorProducts />} />
-                <Route path="products/new"    element={<VendorAddProduct />} />
-                <Route path="earnings"        element={<VendorEarnings />} />
-                <Route path="analytics"       element={<VendorAnalytics />} />
-                <Route path="credit"          element={<VendorCredit />} />
-                <Route path="customers"       element={<VendorCustomers />} />
-                <Route path="settings"        element={<VendorSettings />} />
-                <Route path="profile"         element={<VendorProfile />} />
+                <Route index                 element={<VendorDashboard />} />
+                <Route path="orders"         element={<VendorOrders />} />
+                <Route path="products"       element={<VendorProducts />} />
+                <Route path="products/new"   element={<VendorAddProduct />} />
+                <Route path="earnings"       element={<VendorEarnings />} />
+                <Route path="analytics"      element={<VendorAnalytics />} />
+                <Route path="credit"         element={<VendorCredit />} />
+                <Route path="customers"      element={<VendorCustomers />} />
+                <Route path="settings"       element={<VendorSettings />} />
+                <Route path="profile"        element={<VendorProfile />} />
               </Route>
 
               {/* ── Rider portal ── */}
@@ -202,14 +259,14 @@ function App() {
                   <RiderLayout />
                 </ProtectedRoute>
               }>
-                <Route index                  element={<RiderDashboard />} />
-                <Route path="deliveries"      element={<RiderDeliveries />} />
-                <Route path="earnings"        element={<RiderEarnings />} />
-                <Route path="cod"             element={<RiderCOD />} />
-                <Route path="safety"          element={<RiderSafety />} />
-                <Route path="incentives"      element={<RiderIncentives />} />
-                <Route path="settings"        element={<RiderSettings />} />
-                <Route path="profile"         element={<RiderProfile />} />
+                <Route index                 element={<RiderDashboard />} />
+                <Route path="deliveries"     element={<RiderDeliveries />} />
+                <Route path="earnings"       element={<RiderEarnings />} />
+                <Route path="cod"            element={<RiderCOD />} />
+                <Route path="safety"         element={<RiderSafety />} />
+                <Route path="incentives"     element={<RiderIncentives />} />
+                <Route path="settings"       element={<RiderSettings />} />
+                <Route path="profile"        element={<RiderProfile />} />
               </Route>
 
               {/* ── Seva portal ── */}
@@ -218,13 +275,13 @@ function App() {
                   <SevaLayout />
                 </ProtectedRoute>
               }>
-                <Route index                  element={<SevaDashboard />} />
-                <Route path="jobs"            element={<SevaJobs />} />
-                <Route path="jobs/:jobId"     element={<SevaJobDetail />} />
-                <Route path="schedule"        element={<SevaSchedule />} />
-                <Route path="earnings"        element={<SevaEarnings />} />
-                <Route path="settings"        element={<SevaSettings />} />
-                <Route path="profile"         element={<SevaProfile />} />
+                <Route index                 element={<SevaDashboard />} />
+                <Route path="jobs"           element={<SevaJobs />} />
+                <Route path="jobs/:jobId"    element={<SevaJobDetail />} />
+                <Route path="schedule"       element={<SevaSchedule />} />
+                <Route path="earnings"       element={<SevaEarnings />} />
+                <Route path="settings"       element={<SevaSettings />} />
+                <Route path="profile"        element={<SevaProfile />} />
               </Route>
 
               {/* ── Anchor portal ── */}
@@ -233,13 +290,13 @@ function App() {
                   <AnchorLayout />
                 </ProtectedRoute>
               }>
-                <Route index                  element={<AnchorDashboard />} />
-                <Route path="village"         element={<AnchorVillage />} />
-                <Route path="noticeboard"     element={<AnchorNoticeboard />} />
-                <Route path="disputes"        element={<AnchorDisputes />} />
-                <Route path="reports"         element={<AnchorReports />} />
-                <Route path="kyc"             element={<AnchorKYC />} />
-                <Route path="escalations"     element={<AnchorEscalations />} />
+                <Route index                 element={<AnchorDashboard />} />
+                <Route path="village"        element={<AnchorVillage />} />
+                <Route path="noticeboard"    element={<AnchorNoticeboard />} />
+                <Route path="disputes"       element={<AnchorDisputes />} />
+                <Route path="reports"        element={<AnchorReports />} />
+                <Route path="kyc"            element={<AnchorKYC />} />
+                <Route path="escalations"    element={<AnchorEscalations />} />
               </Route>
 
               {/* ── Admin portal ── */}
@@ -248,19 +305,19 @@ function App() {
                   <AdminLayout />
                 </ProtectedRoute>
               }>
-                <Route index                      element={<AdminDashboard />} />
-                <Route path="orders"              element={<AdminOrders />} />
-                <Route path="vendors"             element={<AdminVendors />} />
-                <Route path="vendor-approval"     element={<AdminVendorApproval />} />
-                <Route path="riders"              element={<AdminRiders />} />
-                <Route path="cash"                element={<AdminCash />} />
-                <Route path="support"             element={<AdminSupport />} />
-                <Route path="seva-providers"      element={<AdminSevaProviders />} />
-                <Route path="villages"            element={<AdminVillages />} />
-                <Route path="settings"            element={<AdminSettings />} />
-                <Route path="customers"           element={<AdminCustomers />} />
-                <Route path="incidents"           element={<AdminIncidents />} />
-                <Route path="monitoring"          element={<AdminMonitoring />} />
+                <Route index                     element={<AdminDashboard />} />
+                <Route path="orders"             element={<AdminOrders />} />
+                <Route path="vendors"            element={<AdminVendors />} />
+                <Route path="vendor-approval"    element={<AdminVendorApproval />} />
+                <Route path="riders"             element={<AdminRiders />} />
+                <Route path="cash"               element={<AdminCash />} />
+                <Route path="support"            element={<AdminSupport />} />
+                <Route path="seva-providers"     element={<AdminSevaProviders />} />
+                <Route path="villages"           element={<AdminVillages />} />
+                <Route path="settings"           element={<AdminSettings />} />
+                <Route path="customers"          element={<AdminCustomers />} />
+                <Route path="incidents"          element={<AdminIncidents />} />
+                <Route path="monitoring"         element={<AdminMonitoring />} />
               </Route>
 
               {/* ── Super Admin portal ── */}
@@ -269,27 +326,28 @@ function App() {
                   <SuperAdminLayout />
                 </ProtectedRoute>
               }>
-                <Route index                  element={<SuperAdminDashboard />} />
-                <Route path="analytics"       element={<SuperAdminAnalytics />} />
-                <Route path="credit"          element={<SuperAdminCredit />} />
-                <Route path="blocks"          element={<SuperAdminBlocks />} />
-                <Route path="security"        element={<SuperAdminSecurity />} />
-                <Route path="audit"           element={<SuperAdminAuditLog />} />
-                <Route path="config"          element={<SuperAdminConfig />} />
-                <Route path="expansion"       element={<SuperAdminExpansion />} />
-                <Route path="compliance"      element={<SuperAdminCompliance />} />
-                <Route path="health"          element={<SuperAdminHealth />} />
-                <Route path="ai"              element={<SuperAdminAI />} />
+                <Route index                 element={<SuperAdminDashboard />} />
+                <Route path="analytics"      element={<SuperAdminAnalytics />} />
+                <Route path="credit"         element={<SuperAdminCredit />} />
+                <Route path="blocks"         element={<SuperAdminBlocks />} />
+                <Route path="security"       element={<SuperAdminSecurity />} />
+                <Route path="audit"          element={<SuperAdminAuditLog />} />
+                <Route path="config"         element={<SuperAdminConfig />} />
+                <Route path="expansion"      element={<SuperAdminExpansion />} />
+                <Route path="compliance"     element={<SuperAdminCompliance />} />
+                <Route path="health"         element={<SuperAdminHealth />} />
+                <Route path="ai"             element={<SuperAdminAI />} />
               </Route>
 
               {/* ── Fallbacks ── */}
               <Route path="*" element={<NotFound />} />
+
             </Routes>
             <Toaster />
-          </Router>
-        </CartProvider>
-      </SetuStoreProvider>
-    </AuthProvider>
+          </CartProvider>
+        </SetuStoreProvider>
+      </AuthProvider>
+    </Router>
   );
 }
 
