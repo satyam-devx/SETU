@@ -55,14 +55,30 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    const p = await getProfile(authUser.id);
+    // Retry mechanism to handle database trigger race conditions
+    let p = null;
+    let retries = 3;
+
+    while (retries > 0) {
+      const data = await getProfile(authUser.id);
+      if (data) {
+        p = data;
+        break; // Success, exit the loop
+      }
+      
+      // Wait 500ms before retrying
+      await new Promise(res => setTimeout(res, 500));
+      retries--;
+    }
+
     if (p) {
       setProfile(p);
     } else {
-      // Profile doesn't exist yet — new user going through onboarding
+      console.warn('[SETU Auth] Profile not found after retries. User may be stuck in onboarding.');
       setProfile(null);
     }
   }, []);
+
 
   // ── Bootstrap: check for existing session ──
   useEffect(() => {
