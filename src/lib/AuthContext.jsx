@@ -197,6 +197,19 @@ export function AuthProvider({ children }) {
       password,
     });
   }, []);
+  
+  const signInWithGoogle = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      return { error: { message: 'Supabase not   configured' } };
+    }
+
+    return await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+  }, []);
 
   // ── Update profile ──
   const updateProfile = useCallback(async (updates) => {
@@ -223,6 +236,7 @@ export function AuthProvider({ children }) {
     verifyOTP,
     signInWithEmail,
     signUpWithEmail,
+    signInWithGoogle,
     createProfile,
     updateProfile,
     // Convenience getters
