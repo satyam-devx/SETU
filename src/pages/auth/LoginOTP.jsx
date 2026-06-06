@@ -253,6 +253,7 @@ export default function LoginOTP() {
             </Button>
           </>
         )}
+        </Card>
 
       {/* Demo mode notice */}
       {!import.meta.env.VITE_SUPABASE_URL && (
