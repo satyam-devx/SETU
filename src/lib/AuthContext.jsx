@@ -176,6 +176,28 @@ export function AuthProvider({ children }) {
     return { error };
   }, []);
 
+    const signInWithEmail = useCallback(async (email, password) => {
+    if (!isSupabaseConfigured) {
+      return { error: { message: 'Supabase not configured' } };
+    }
+
+    return await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+  }, []);
+
+  const signUpWithEmail = useCallback(async (email, password) => {
+    if (!isSupabaseConfigured) {
+      return { error: { message: 'Supabase not configured' } };
+    }
+
+    return await supabase.auth.signUp({
+      email,
+      password,
+    });
+  }, []);
+
   // ── Update profile ──
   const updateProfile = useCallback(async (updates) => {
     if (!user || !isSupabaseConfigured) return { error: null };
@@ -199,6 +221,8 @@ export function AuthProvider({ children }) {
     signOut,
     sendOTP,
     verifyOTP,
+    signInWithEmail,
+    signUpWithEmail,
     createProfile,
     updateProfile,
     // Convenience getters
