@@ -84,7 +84,12 @@ export async function getProfile(userId) {
     .select('*')
     .eq('id', userId)
     .single();
-  if (error) return null;
+
+  if (error) {
+    console.error('[SETU Auth] Error fetching profile:', error.message, error.details);
+    return null;
+  }
+  
   return data;
 }
 
