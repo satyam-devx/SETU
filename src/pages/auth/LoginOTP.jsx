@@ -109,8 +109,9 @@ export default function LoginOTP() {
             type="button"
             variant={mode === 'email' ? 'default' : 'outline'}
             onClick={() => setMode('email')}
-            className="flex-1"
+            className="flex-1 gap-2"
           >
+            <Mail className="w-4 h-4" />
             Email
           </Button>
         </div>
