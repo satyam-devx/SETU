@@ -1,92 +1,196 @@
-import React, { useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   CheckCircle, Clock, Package, Bike, MapPin, Phone,
-  AlertTriangle, Copy, MessageSquare, RefreshCw, X
+  AlertTriangle, Copy, MessageSquare, RefreshCw, X, Loader2
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import AppHeader from '@/components/shared/AppHeader';
-import { useStore, useOrder, canTransition, ORDER_STATUS } from '@/lib/store';
+import { useRealtimeOrder } from '@/hooks/useRealtimeOrders';
+import { useStore, canTransition, ORDER_STATUS } from '@/lib/store';
+import { OrderAPI } from '@/lib/api';
 import { ORDERS } from '@/lib/mockData';
 
-const ORDER_TIMELINE = {
-  pending:    [{ label: 'Order Placed', done: true, icon: Package }, { label: 'Vendor Confirming', done: false, active: true, icon: Clock }, { label: 'Preparing', done: false, icon: Package }, { label: 'Rider Picked Up', done: false, icon: Bike }, { label: 'Delivered', done: false, icon: CheckCircle }],
-  confirmed:  [{ label: 'Order Placed', done: true, icon: Package }, { label: 'Vendor Confirmed', done: true, icon: CheckCircle }, { label: 'Preparing', done: false, active: true, icon: Package }, { label: 'Rider Pickup', done: false, icon: Bike }, { label: 'Delivered', done: false, icon: CheckCircle }],
-  preparing:  [{ label: 'Order Placed', done: true, icon: Package }, { label: 'Vendor Confirmed', done: true, icon: CheckCircle }, { label: 'Preparing', done: true, active: true, icon: Package }, { label: 'Rider Pickup', done: false, icon: Bike }, { label: 'Delivered', done: false, icon: CheckCircle }],
-  picked_up:  [{ label: 'Order Placed', done: true, icon: Package }, { label: 'Confirmed', done: true, icon: CheckCircle }, { label: 'Prepared', done: true, icon: Package }, { label: 'Rider Picked Up', done: true, icon: Bike }, { label: 'Delivering', done: false, active: true, icon: MapPin }, { label: 'Delivered', done: false, icon: CheckCircle }],
-  on_the_way: [{ label: 'Order Placed', done: true, icon: Package }, { label: 'Confirmed', done: true, icon: CheckCircle }, { label: 'Prepared', done: true, icon: Package }, { label: 'Picked Up', done: true, icon: Bike }, { label: 'On The Way', done: true, active: true, icon: MapPin }, { label: 'Delivered', done: false, icon: CheckCircle }],
-  delivered:  [{ label: 'Order Placed', done: true, icon: Package }, { label: 'Confirmed', done: true, icon: CheckCircle }, { label: 'Prepared', done: true, icon: Package }, { label: 'Picked Up', done: true, icon: Bike }, { label: 'On The Way', done: true, icon: MapPin }, { label: 'Delivered ✓', done: true, icon: CheckCircle }],
-  cancelled:  [{ label: 'Order Placed', done: true, icon: Package }, { label: 'Cancelled', done: true, icon: X }],
+// ── Timeline config per status ──────────────────────────
+const TIMELINE = {
+  pending:    [
+    { label: 'Order Placed',       done: true,  active: false, icon: Package    },
+    { label: 'Vendor Confirming',  done: false, active: true,  icon: Clock      },
+    { label: 'Preparing',          done: false, active: false, icon: Package    },
+    { label: 'Rider Pickup',       done: false, active: false, icon: Bike       },
+    { label: 'Delivered',          done: false, active: false, icon: CheckCircle },
+  ],
+  confirmed:  [
+    { label: 'Order Placed',       done: true,  active: false, icon: Package    },
+    { label: 'Vendor Confirmed',   done: true,  active: false, icon: CheckCircle },
+    { label: 'Preparing',          done: false, active: true,  icon: Package    },
+    { label: 'Rider Pickup',       done: false, active: false, icon: Bike       },
+    { label: 'Delivered',          done: false, active: false, icon: CheckCircle },
+  ],
+  preparing:  [
+    { label: 'Order Placed',       done: true,  active: false, icon: Package    },
+    { label: 'Confirmed',          done: true,  active: false, icon: CheckCircle },
+    { label: 'Preparing',          done: false, active: true,  icon: Package    },
+    { label: 'Rider Pickup',       done: false, active: false, icon: Bike       },
+    { label: 'Delivered',          done: false, active: false, icon: CheckCircle },
+  ],
+  ready:      [
+    { label: 'Order Placed',       done: true,  active: false, icon: Package    },
+    { label: 'Confirmed',          done: true,  active: false, icon: CheckCircle },
+    { label: 'Ready for Pickup',   done: true,  active: true,  icon: Package    },
+    { label: 'Awaiting Rider',     done: false, active: false, icon: Bike       },
+    { label: 'Delivered',          done: false, active: false, icon: CheckCircle },
+  ],
+  picked_up:  [
+    { label: 'Order Placed',       done: true,  active: false, icon: Package    },
+    { label: 'Confirmed',          done: true,  active: false, icon: CheckCircle },
+    { label: 'Prepared',           done: true,  active: false, icon: Package    },
+    { label: 'Rider Picked Up',    done: true,  active: true,  icon: Bike       },
+    { label: 'Delivered',          done: false, active: false, icon: CheckCircle },
+  ],
+  on_the_way: [
+    { label: 'Order Placed',       done: true,  active: false, icon: Package    },
+    { label: 'Confirmed',          done: true,  active: false, icon: CheckCircle },
+    { label: 'Prepared',           done: true,  active: false, icon: Package    },
+    { label: 'On the Way 🛵',      done: true,  active: true,  icon: MapPin     },
+    { label: 'Delivered',          done: false, active: false, icon: CheckCircle },
+  ],
+  delivered:  [
+    { label: 'Order Placed',       done: true,  active: false, icon: Package    },
+    { label: 'Confirmed',          done: true,  active: false, icon: CheckCircle },
+    { label: 'Prepared',           done: true,  active: false, icon: Package    },
+    { label: 'Picked Up',          done: true,  active: false, icon: Bike       },
+    { label: 'Delivered ✓',        done: true,  active: false, icon: CheckCircle },
+  ],
+  cancelled:  [
+    { label: 'Order Placed',       done: true,  active: false, icon: Package    },
+    { label: 'Cancelled',          done: true,  active: false, icon: X          },
+  ],
 };
 
+// ── Loading skeleton ─────────────────────────────────────
+function OrderSkeleton() {
+  return (
+    <div className="pb-24 animate-pulse">
+      <div className="h-14 bg-muted" />
+      <div className="h-24 bg-primary/5 border-b border-border" />
+      <div className="px-4 py-4 space-y-3">
+        {[1,2,3].map(i => (
+          <div key={i} className="h-16 bg-muted rounded-xl" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── "Last updated X ago" helper ──────────────────────────
+function useLastUpdated(order) {
+  const [label, setLabel] = useState('');
+
+  useEffect(() => {
+    if (!order) return;
+    const ts = order.updatedAt || order.updated_at || order.createdAt;
+    if (!ts) return;
+
+    const update = () => {
+      const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+      if (diff < 60)       setLabel(`Updated ${diff}s ago`);
+      else if (diff < 3600) setLabel(`Updated ${Math.floor(diff / 60)}m ago`);
+      else                  setLabel(`Updated ${Math.floor(diff / 3600)}h ago`);
+    };
+    update();
+    const t = setInterval(update, 10000);
+    return () => clearInterval(t);
+  }, [order]);
+
+  return label;
+}
+
+// ── MAIN COMPONENT ───────────────────────────────────────
 export default function CustomerOrderDetail() {
-  const { orderId } = useParams();
-  const navigate = useNavigate();
-  const { dispatch } = useStore();
+  const { orderId }   = useParams();
+  const navigate      = useNavigate();
+  const { dispatch }  = useStore();
 
-  // Try store first, then fall back to seed data
-  const storeOrder = useOrder(orderId);
-  const order = storeOrder || ORDERS.find(o => o.id === orderId) || ORDERS[0];
+  // Realtime subscription for this single order
+  const { order: liveOrder, isLoading } = useRealtimeOrder(orderId);
 
-  const [rating, setRating]           = useState(0);
-  const [ratingComment, setRatingComment] = useState('');
-  const [ratingSubmitted, setRatingSubmitted] = useState(!!order.isRated);
-  const [cancelling, setCancelling]   = useState(false);
-  const [cancelReason, setCancelReason] = useState('');
+  // Fall back to seed data if realtime hasn't loaded yet
+  const order = liveOrder ?? ORDERS.find(o => o.id === orderId) ?? ORDERS[0];
+  const lastUpdated = useLastUpdated(order);
+
+  const [rating,          setRating]          = useState(0);
+  const [ratingComment,   setRatingComment]   = useState('');
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
+  const [cancelling,      setCancelling]      = useState(false);
+  const [cancelReason,    setCancelReason]    = useState('');
   const [showCancelModal, setShowCancelModal] = useState(false);
-  const [copied, setCopied]           = useState(false);
+  const [copied,          setCopied]          = useState(false);
+  const [actionLoading,   setActionLoading]   = useState(false);
 
-  const timeline = ORDER_TIMELINE[order.status] || ORDER_TIMELINE.pending;
-  const isLive    = !['delivered', 'cancelled'].includes(order.status);
-  const canCancel = canTransition(order.status, ORDER_STATUS.CANCELLED);
+  const isLive    = !['delivered', 'cancelled'].includes(order?.status);
+  const canCancel = order ? canTransition(order.status, ORDER_STATUS.CANCELLED) : false;
+  const timeline  = TIMELINE[order?.status] ?? TIMELINE.pending;
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
     if (!cancelReason.trim()) return;
     setCancelling(true);
+    // Optimistic update
     dispatch({ type: 'ORDER_CANCEL', payload: { orderId: order.id, reason: cancelReason } });
-    setTimeout(() => {
-      setCancelling(false);
-      setShowCancelModal(false);
-    }, 600);
+    // Persist to DB
+    await OrderAPI.cancel(order.id, cancelReason);
+    setCancelling(false);
+    setShowCancelModal(false);
   };
 
-  const handleRating = () => {
+  const handleRating = async () => {
     if (rating === 0) return;
-    dispatch({
-      type: 'ORDER_RATE',
-      payload: { orderId: order.id, vendorRating: rating, riderRating: rating, comment: ratingComment },
-    });
+    setActionLoading(true);
+    // Optimistic update
+    dispatch({ type: 'ORDER_RATE', payload: { orderId: order.id, vendorRating: rating, riderRating: rating, comment: ratingComment } });
+    // Persist
+    await OrderAPI.rate(order.id, { vendorRating: rating, riderRating: rating, comment: ratingComment });
+    setActionLoading(false);
     setRatingSubmitted(true);
   };
 
-  const handleReorder = () => {
-    navigate(`/customer/reorder/${order.id}`);
-  };
+  const handleReorder = () => navigate(`/customer/reorder/${order.id}`);
 
   const handleCopy = () => {
-    navigator.clipboard?.writeText(order.orderNumber);
+    navigator.clipboard?.writeText(order.orderNumber ?? '');
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
 
+  if (isLoading && !order) return <OrderSkeleton />;
+
   return (
     <div className="pb-24">
       <AppHeader
-        title={order.orderNumber}
-        subtitle={`Placed ${new Date(order.createdAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}`}
+        title={order.orderNumber ?? '—'}
+        subtitle={order.createdAt
+          ? new Date(order.createdAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })
+          : ''}
         showBack
         backTo="/customer/orders"
       />
 
       {/* Status hero */}
-      <div className={`px-4 py-5 ${isLive ? 'bg-primary/5 border-b border-primary/10' : order.status === 'delivered' ? 'bg-green-50 border-b border-green-100' : 'bg-red-50 border-b border-red-100'}`}>
+      <div className={`px-4 py-5 ${
+        isLive              ? 'bg-primary/5 border-b border-primary/10'
+        : order.status === 'delivered' ? 'bg-green-50 border-b border-green-100'
+        :                    'bg-red-50 border-b border-red-100'
+      }`}>
         {isLive && (
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-1.5">
             <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
             <p className="text-xs font-medium text-primary uppercase tracking-wide">Live Order</p>
+            {lastUpdated && (
+              <span className="text-[10px] text-muted-foreground ml-auto">{lastUpdated}</span>
+            )}
           </div>
         )}
         <h2 className="text-xl font-bold">
@@ -94,7 +198,7 @@ export default function CustomerOrderDetail() {
           {order.status === 'confirmed'  && '✅ Vendor confirmed'}
           {order.status === 'preparing'  && '👨‍🍳 Being prepared'}
           {order.status === 'ready'      && '📦 Ready for pickup'}
-          {order.status === 'picked_up'  && '🛵 Rider on the way'}
+          {order.status === 'picked_up'  && '🛵 Rider has it'}
           {order.status === 'on_the_way' && '🛵 Almost there!'}
           {order.status === 'delivered'  && '✅ Delivered!'}
           {order.status === 'cancelled'  && '❌ Cancelled'}
@@ -102,13 +206,15 @@ export default function CustomerOrderDetail() {
         {order.riderName && isLive && (
           <div className="flex items-center gap-3 mt-3 p-3 bg-card rounded-xl border border-border">
             <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary text-sm">
-              {order.riderName.split(' ').map(n => n[0]).join('')}
+              {(order.riderName ?? 'R').split(' ').map(n => n[0]).join('')}
             </div>
             <div className="flex-1">
               <p className="text-sm font-semibold">{order.riderName}</p>
               <p className="text-xs text-muted-foreground">Your delivery rider</p>
             </div>
-            <Button size="icon" variant="outline" className="h-9 w-9"><Phone className="w-4 h-4" /></Button>
+            <Button size="icon" variant="outline" className="h-9 w-9">
+              <Phone className="w-4 h-4" />
+            </Button>
           </div>
         )}
         {order.cancelReason && (
@@ -127,12 +233,18 @@ export default function CustomerOrderDetail() {
               return (
                 <div key={i} className="flex items-start gap-4 relative">
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 z-10 transition-all ${
-                    step.done ? 'bg-accent text-white' : step.active ? 'bg-primary text-white ring-4 ring-primary/20' : 'bg-muted text-muted-foreground'
+                    step.active ? 'bg-primary text-white ring-4 ring-primary/20'
+                    : step.done  ? 'bg-accent text-white'
+                    :              'bg-muted text-muted-foreground'
                   }`}>
                     <Icon className="w-4 h-4" />
                   </div>
                   <div className="pt-1">
-                    <p className={`text-sm font-medium ${step.active ? 'text-primary' : step.done ? 'text-foreground' : 'text-muted-foreground'}`}>
+                    <p className={`text-sm font-medium ${
+                      step.active ? 'text-primary'
+                      : step.done  ? 'text-foreground'
+                      :              'text-muted-foreground'
+                    }`}>
                       {step.label}
                     </p>
                   </div>
@@ -147,7 +259,7 @@ export default function CustomerOrderDetail() {
       <div className="px-4 mb-4">
         <Card className="p-4 border-border">
           <h3 className="font-semibold text-sm mb-3">Order Items</h3>
-          {order.items.map((item, i) => (
+          {(order.items ?? order.order_items ?? []).map((item, i) => (
             <div key={i} className="flex items-center justify-between py-2 border-b border-border last:border-0">
               <span className="text-sm flex-1">{item.name}</span>
               <div className="flex items-center gap-3">
@@ -156,43 +268,50 @@ export default function CustomerOrderDetail() {
               </div>
             </div>
           ))}
-          <div className="mt-3 space-y-1 pt-2 border-t border-border">
-            <div className="flex justify-between text-xs text-muted-foreground"><span>Subtotal</span><span>₹{order.subtotal}</span></div>
-            <div className="flex justify-between text-xs text-muted-foreground"><span>Delivery</span><span>₹{order.deliveryFee}</span></div>
-            <div className="flex justify-between text-xs text-muted-foreground"><span>Platform fee</span><span>₹{order.platformFee}</span></div>
-            <div className="flex justify-between text-sm font-bold mt-1 pt-1 border-t border-border"><span>Total</span><span>₹{order.total}</span></div>
+          <div className="mt-3 space-y-1 pt-2 border-t border-border text-sm">
+            <div className="flex justify-between text-muted-foreground">
+              <span>Subtotal</span><span>₹{order.subtotal}</span>
+            </div>
+            <div className="flex justify-between text-muted-foreground">
+              <span>Delivery fee</span><span>₹{order.deliveryFee ?? order.delivery_fee ?? 0}</span>
+            </div>
+            <div className="flex justify-between text-muted-foreground">
+              <span>Platform fee</span><span>₹{order.platformFee ?? order.platform_fee ?? 0}</span>
+            </div>
+            <div className="flex justify-between font-bold pt-1 border-t border-border">
+              <span>Total</span><span>₹{order.total}</span>
+            </div>
           </div>
         </Card>
       </div>
 
-      {/* Payment & Vendor */}
+      {/* Payment & vendor */}
       <div className="px-4 mb-4 grid grid-cols-2 gap-3">
         <Card className="p-3 border-border">
           <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Payment</p>
-          <p className="text-sm font-bold">{order.paymentMethod}</p>
-          <Badge variant="outline" className={`text-[9px] mt-1 ${order.paymentStatus === 'paid' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
-            {order.paymentStatus}
+          <p className="text-sm font-bold">{order.paymentMethod ?? order.payment_method}</p>
+          <Badge variant="outline" className={`text-[9px] mt-1 ${
+            (order.paymentStatus ?? order.payment_status) === 'paid' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+          }`}>
+            {order.paymentStatus ?? order.payment_status}
           </Badge>
         </Card>
         <Card className="p-3 border-border">
           <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Vendor</p>
-          <p className="text-sm font-bold truncate">{order.vendorName}</p>
+          <p className="text-sm font-bold truncate">{order.vendorName ?? order.vendor_name}</p>
           <p className="text-xs text-muted-foreground">{order.village}</p>
         </Card>
       </div>
 
-      {/* Rating (after delivery, if not yet rated) */}
-      {order.status === 'delivered' && !ratingSubmitted && !order.isRated && (
+      {/* Rating (post-delivery) */}
+      {order.status === 'delivered' && !ratingSubmitted && !order.isRated && !order.is_rated && (
         <div className="px-4 mb-4">
           <Card className="p-4 border-accent/30 bg-accent/5">
             <h3 className="font-semibold text-sm mb-3">Rate your experience</h3>
             <div className="flex justify-center gap-2 mb-3">
-              {[1, 2, 3, 4, 5].map(star => (
-                <button
-                  key={star}
-                  onClick={() => setRating(star)}
-                  className={`text-3xl transition-transform hover:scale-110 ${star <= rating ? '' : 'opacity-40'}`}
-                >
+              {[1,2,3,4,5].map(star => (
+                <button key={star} onClick={() => setRating(star)}
+                  className={`text-3xl transition-transform hover:scale-110 ${star <= rating ? '' : 'opacity-40'}`}>
                   ⭐
                 </button>
               ))}
@@ -203,13 +322,14 @@ export default function CustomerOrderDetail() {
               value={ratingComment}
               onChange={e => setRatingComment(e.target.value)}
             />
-            <Button className="w-full text-xs h-9" onClick={handleRating} disabled={rating === 0}>
-              Submit Rating
+            <Button className="w-full text-xs h-9" onClick={handleRating}
+              disabled={rating === 0 || actionLoading}>
+              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit Rating'}
             </Button>
           </Card>
         </div>
       )}
-      {(ratingSubmitted || order.isRated) && order.status === 'delivered' && (
+      {(ratingSubmitted || order.isRated || order.is_rated) && order.status === 'delivered' && (
         <div className="px-4 mb-4">
           <Card className="p-3 border-green-200 bg-green-50 text-center">
             <p className="text-sm font-medium text-green-700">✓ Thanks for rating this order!</p>
@@ -225,39 +345,33 @@ export default function CustomerOrderDetail() {
           </Button>
         )}
         {canCancel && (
-          <Button
-            variant="outline"
+          <Button variant="outline"
             className="w-full text-destructive border-destructive/30 text-xs"
-            onClick={() => setShowCancelModal(true)}
-          >
+            onClick={() => setShowCancelModal(true)}>
             <AlertTriangle className="w-3 h-3 mr-2" /> Cancel Order
           </Button>
         )}
-        <Link to="/customer/support">
-          <Button variant="outline" className="w-full text-xs">
-            <MessageSquare className="w-3 h-3 mr-2" /> Raise Issue
-          </Button>
-        </Link>
+        <Button variant="outline" className="w-full text-xs"
+          onClick={() => navigate('/customer/support')}>
+          <MessageSquare className="w-3 h-3 mr-2" /> Raise Issue
+        </Button>
         <Button variant="outline" className="w-full text-xs h-9" onClick={handleCopy}>
           <Copy className="w-3 h-3 mr-1" /> {copied ? 'Copied!' : 'Copy Order ID'}
         </Button>
       </div>
 
-      {/* Cancel Modal */}
+      {/* Cancel modal */}
       {showCancelModal && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-end">
           <div className="bg-background rounded-t-2xl p-6 w-full max-w-md mx-auto">
             <h3 className="font-bold text-base mb-1">Cancel Order</h3>
             <p className="text-xs text-muted-foreground mb-3">Please tell us why you're cancelling</p>
             <div className="space-y-2 mb-3">
-              {['Changed my mind', 'Ordered by mistake', 'Vendor taking too long', 'Found elsewhere'].map(r => (
-                <button
-                  key={r}
-                  onClick={() => setCancelReason(r)}
-                  className={`w-full text-left text-sm p-3 rounded-lg border transition-colors ${cancelReason === r ? 'border-destructive bg-destructive/5' : 'border-border'}`}
-                >
-                  {r}
-                </button>
+              {['Changed my mind','Ordered by mistake','Vendor taking too long','Found elsewhere'].map(r => (
+                <button key={r} onClick={() => setCancelReason(r)}
+                  className={`w-full text-left text-sm p-3 rounded-lg border transition-colors ${
+                    cancelReason === r ? 'border-destructive bg-destructive/5' : 'border-border'
+                  }`}>{r}</button>
               ))}
             </div>
             <Textarea
@@ -267,15 +381,11 @@ export default function CustomerOrderDetail() {
               onChange={e => setCancelReason(e.target.value)}
             />
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setShowCancelModal(false)}>
-                Keep Order
-              </Button>
-              <Button
-                variant="destructive"
-                className="flex-1"
+              <Button variant="outline" className="flex-1"
+                onClick={() => setShowCancelModal(false)}>Keep Order</Button>
+              <Button variant="destructive" className="flex-1"
                 disabled={!cancelReason.trim() || cancelling}
-                onClick={handleCancel}
-              >
+                onClick={handleCancel}>
                 {cancelling ? 'Cancelling...' : 'Cancel Order'}
               </Button>
             </div>
