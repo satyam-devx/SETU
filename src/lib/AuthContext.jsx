@@ -209,42 +209,55 @@ export function AuthProvider({ children }) {
   // ── Create profile (called from onboarding after first OTP verify) ──
   // ── Create / complete profile (called from onboarding) ──
   //
-  // WHY UPSERT, NOT INSERT:
-  // The handle_new_user trigger on auth.users fires immediately when a
-  // user signs up (phone OTP or Google OAuth) and inserts a skeleton
-  // profile row with a generated name ("SETU User" / Google display name).
-  // By the time the user reaches /onboarding/register and clicks Continue,
-  // that row ALREADY EXISTS. A plain INSERT hits the PRIMARY KEY unique
-  // constraint → "duplicate key value violates unique constraint profiles_pkey"
-  // → Supabase returns an error → frontend shows "Could not create your profile."
+  // STRATEGY: explicit UPDATE first, INSERT as fallback.
   //
-  // Fix: use upsert() which maps to INSERT ... ON CONFLICT (id) DO UPDATE.
-  // When the trigger row exists → we UPDATE name, phone, role with real values.
-  // When no row exists (e.g. trigger failed) → we INSERT a fresh row.
-  // Either way the operation succeeds and the profile reflects what the user entered.
+  // Why not upsert(): supabase-js upsert() with RLS can silently fail in
+  // PostgREST when conflict resolution touches both INSERT and UPDATE RLS
+  // policies in one request.
+  //
+  // Why not plain INSERT: the handle_new_user DB trigger fires immediately
+  // on signup and creates a skeleton row, so INSERT hits the PK constraint.
+  //
+  // UPDATE + fallback INSERT: clean, each call matches exactly one RLS policy.
   const createProfile = useCallback(async (userId, profileData) => {
     if (!isSupabaseConfigured) return { error: null };
 
-    const { error } = await supabase.from('profiles').upsert(
-      {
-        id:    userId,
-        phone: profileData.phone || '',
-        name:  profileData.name || null,
-        role:  profileData.role || 'customer',
-      },
-      {
-        onConflict: 'id',          // conflict target = primary key
-        ignoreDuplicates: false,   // DO UPDATE (not DO NOTHING) so name gets saved
-      }
-    );
+    const payload = {
+      name:       profileData.name  || null,
+      phone:      profileData.phone || '',
+      role:       profileData.role  || 'customer',
+      updated_at: new Date().toISOString(),
+    };
 
-    if (!error) {
-      // Re-fetch to get the full profile row with DB defaults applied
-      const { data } = await getProfile(userId);
-      if (data) setProfile(data);
+    // Step 1: UPDATE — handles the 99% case where the trigger row exists
+    const { error: updateError, count } = await supabase
+      .from('profiles')
+      .update(payload)
+      .eq('id', userId)
+      .select('id', { count: 'exact', head: true });
+
+    if (updateError) {
+      console.error('[SETU] createProfile UPDATE error:', updateError);
+      return { error: updateError };
     }
 
-    return { error };
+    // Step 2: INSERT fallback — only if trigger somehow did not fire
+    if (count === 0) {
+      const { error: insertError } = await supabase
+        .from('profiles')
+        .insert({ id: userId, ...payload });
+
+      if (insertError) {
+        console.error('[SETU] createProfile INSERT error:', insertError);
+        return { error: insertError };
+      }
+    }
+
+    // Re-fetch to sync local state with DB
+    const { data } = await getProfile(userId);
+    if (data) setProfile(data);
+
+    return { error: null };
   }, []);
 
   // ── Email / Password sign-in (admin/dev use) ──
