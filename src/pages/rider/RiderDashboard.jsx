@@ -13,6 +13,8 @@ import StatCard from '@/components/shared/StatCard';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { useStore, useRiderState } from '@/lib/store';
 import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
+import { useRiderLocation } from '@/hooks/useRiderLocation';
+import RiderNavigationMap from '@/components/maps/RiderNavigationMap';
 import { RiderAPI } from '@/lib/api';
 import { RIDERS } from '@/lib/mockData';
 
@@ -31,6 +33,7 @@ function OrdersSkeleton() {
 export default function RiderDashboard() {
   const { state, dispatch }           = useStore();
   const { isOnline, toggleOnline }    = useRiderState();
+  const { location: currentLocation } = useRiderLocation(RIDER_UUID, isOnline);
   const [accepting, setAccepting]     = useState(null);
   const [delivering, setDelivering]   = useState(null);
 
@@ -127,15 +130,13 @@ export default function RiderDashboard() {
         />
       </div>
 
-      {/* Map placeholder */}
-      <div className="px-4 mb-4">
-        <Card className="h-36 bg-muted border-border flex items-center justify-center relative overflow-hidden">
-          <div className="text-center z-10">
-            <Navigation className="w-8 h-8 text-primary mx-auto mb-2" />
-            <p className="text-sm font-medium">Madhepur Zone Map</p>
-            <p className="text-xs text-muted-foreground">Offline navigation ready</p>
-          </div>
-        </Card>
+      {/* Map */}
+      <div className="px-4 mb-4 h-48">
+        <RiderNavigationMap
+          currentLocation={currentLocation}
+          destination={{ lat: 26.355, lng: 86.075, address: 'Customer Address' }}
+          onArrived={() => console.log('Arrived')}
+        />
       </div>
 
       {/* Active deliveries */}

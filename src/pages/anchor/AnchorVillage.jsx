@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AppHeader from '@/components/shared/AppHeader';
+import VillageMap from '@/components/maps/VillageMap';
 import { VILLAGES, VENDORS, RIDERS, SEVA_PROVIDERS } from '@/lib/mockData';
 
 export default function AnchorVillage() {
@@ -15,6 +16,13 @@ export default function AnchorVillage() {
     <div className="pb-6">
       <AppHeader title={`${village.name} Village`} subtitle={`${village.block} Block · Pop. ${(village.population/1000).toFixed(0)}k`} showBack={false} />
       <div className="px-4 py-3 space-y-3">
+        {/* Village Map */}
+        <div className="w-full h-48 rounded-2xl overflow-hidden border border-border shadow-sm">
+          <VillageMap
+            villageName={village.name}
+            vendors={VENDORS.map(v => ({ ...v, lat: 26.350 + (Math.random() - 0.5) * 0.01, lng: 86.070 + (Math.random() - 0.5) * 0.01 }))}
+          />
+        </div>
 
         {/* Village header */}
         <Card className="p-4 border-border">

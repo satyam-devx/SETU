@@ -1,41 +1,73 @@
-import React, { useState } from 'react';
-import { ArrowUpRight, ArrowDownLeft, Plus, IndianRupee, Clock } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowUpRight, ArrowDownLeft, Plus, IndianRupee, Clock, Loader2, AlertCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import AppHeader from '@/components/shared/AppHeader';
 import { useStore } from '@/lib/store';
+import { useAuth } from '@/lib/AuthContext';
+import { PaymentAPI } from '@/lib/api';
+import { loadRazorpayScript, initiatePayment } from '@/lib/payments';
 
 const QUICK_AMOUNTS = [100, 200, 500, 1000];
 
 export default function CustomerWallet() {
   const { state, dispatch } = useStore();
+  const { user, profile } = useAuth();
   const wallet = state.wallet;
 
   const [showTopup, setShowTopup] = useState(false);
   const [amount, setAmount]       = useState('');
   const [topping, setTopping]     = useState(false);
+  const [error, setError]         = useState(null);
   const [done, setDone]           = useState(false);
 
-  const handleTopup = () => {
+  useEffect(() => {
+    loadRazorpayScript();
+  }, []);
+
+  const handleTopup = async () => {
     const n = parseInt(amount, 10);
     if (!n || n < 10) return;
+
     setTopping(true);
-    setTimeout(() => {
-      dispatch({ type: 'WALLET_TOPUP', payload: { amount: n } });
+    setError(null);
+
+    try {
+      const rzpResult = await initiatePayment({
+        amount: n,
+        customerId: user.id,
+        customerName: profile?.name,
+        customerPhone: profile?.phone,
+        type: 'wallet_topup'
+      });
+
+      if (rzpResult.error) throw new Error(rzpResult.error);
+
+      if (!rzpResult.cancelled) {
+        setDone(true);
+        setShowTopup(false);
+        setAmount('');
+        setTimeout(() => setDone(false), 3000);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
       setTopping(false);
-      setDone(true);
-      setShowTopup(false);
-      setAmount('');
-      setTimeout(() => setDone(false), 2000);
-    }, 800);
+    }
   };
 
   return (
     <div className="pb-6">
       <AppHeader title="SETU Wallet" showBack />
       <div className="px-4 py-4 space-y-4">
+        {error && (
+          <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-xl flex items-start gap-2 text-destructive">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <p className="text-xs font-medium">{error}</p>
+          </div>
+        )}
 
         {/* Balance card */}
         <Card className="p-6 border-primary/20 bg-gradient-to-br from-primary/10 to-primary/5">
@@ -44,7 +76,7 @@ export default function CustomerWallet() {
             <IndianRupee className="w-6 h-6 text-primary" />
             <p className="text-4xl font-bold text-primary">{wallet.balance.toLocaleString()}</p>
           </div>
-          {done && <p className="text-xs text-green-600 mt-1 font-medium">✓ Wallet topped up!</p>}
+          {done && <p className="text-xs text-green-600 mt-1 font-medium">✓ Payment successful! Wallet will be updated shortly.</p>}
         </Card>
 
         {/* Quick actions */}
@@ -74,11 +106,11 @@ export default function CustomerWallet() {
                 <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                 <Input type="number" placeholder="Enter amount" className="pl-8" value={amount} onChange={e => setAmount(e.target.value)} />
               </div>
-              <Button onClick={handleTopup} disabled={!amount || topping} className="shrink-0">
-                {topping ? '...' : 'Add'}
+              <Button onClick={handleTopup} disabled={!amount || topping} className="shrink-0 min-w-[80px]">
+                {topping ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Add'}
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground mt-2">Via UPI · Instant transfer</p>
+            <p className="text-xs text-muted-foreground mt-2">Via UPI / Card · Secure Razorpay</p>
           </Card>
         )}
 

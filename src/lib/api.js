@@ -658,23 +658,20 @@ export const SevaAPI = {
 // ─────────────────────────────────────────────────────────
 export const AIAPI = {
   transcribeVoice: async (audioBlob) => {
-    await delay(1200);
-    return ok({
-      transcript:        'चावल और तेल चाहिए',
-      confidence:        0.92,
-      detectedLanguage:  'hi',
-      intent:            'search',
-      query:             'rice and oil',
+    // In production, we'd send the blob to a 'whisper-transcribe' Edge Function
+    const { data, error } = await supabase.functions.invoke('ai-assistant', {
+      body: { type: 'transcription', audio: 'base64_encoded_blob_here' }
     });
+    if (error) return err(error);
+    return ok(data);
   },
 
   chatAssistant: async (message, context) => {
-    await delay(1000);
-    return ok({
-      reply:   'आपका ऑर्डर जल्द ही डिलीवर होगा। कोई और मदद चाहिए?',
-      intent:  'order_status',
-      actions: [],
+    const { data, error } = await supabase.functions.invoke('ai-assistant', {
+      body: { message, context }
     });
+    if (error) return err(error);
+    return ok(data);
   },
 
   getRecommendations: async (userId, village) => {

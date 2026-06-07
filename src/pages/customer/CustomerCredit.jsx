@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CreditCard, ArrowUpRight, ArrowDownLeft, TrendingUp, CheckCircle, Clock, AlertCircle } from 'lucide-react';
+import { CreditCard, ArrowUpRight, ArrowDownLeft, TrendingUp, CheckCircle, Clock, AlertCircle, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -8,57 +8,93 @@ import { Input } from '@/components/ui/input';
 import AppHeader from '@/components/shared/AppHeader';
 import { CreditAPI } from '@/lib/api';
 import { useStore } from '@/lib/store';
+import { useAuth } from '@/lib/AuthContext';
+import { loadRazorpayScript, initiatePayment } from '@/lib/payments';
 
 const REPAY_AMOUNTS = [200, 500, 1000, 1200];
 
 export default function CustomerCredit() {
   const { state } = useStore();
+  const { user, profile } = useAuth();
   const [account, setAccount] = useState(null);
   const [applying, setApplying] = useState(false);
   const [applyAmt, setApplyAmt] = useState('');
   const [applyPurpose, setApplyPurpose] = useState('');
   const [applySubmitted, setApplySubmitted] = useState(false);
+
   const [repayAmt, setRepayAmt] = useState('');
   const [repaying, setRepaying] = useState(false);
   const [repaid, setRepaid]     = useState(false);
+  const [error, setError]       = useState(null);
+
   const [showApply, setShowApply] = useState(false);
   const [showRepay, setShowRepay] = useState(false);
 
   useEffect(() => {
-    CreditAPI.getAccount('u1').then(({ data }) => data && setAccount(data));
-  }, []);
+    loadRazorpayScript();
+    if (user) {
+      CreditAPI.getAccount(user.id).then(({ data }) => data && setAccount(data));
+    }
+  }, [user]);
 
-  const handleApply = () => {
+  const handleApply = async () => {
     if (!applyAmt) return;
     setApplying(true);
-    CreditAPI.applyCredit('u1', parseInt(applyAmt), applyPurpose).then(({ data }) => {
+    setError(null);
+    try {
+      const { data, error: apiError } = await CreditAPI.applyCredit(user.id, parseInt(applyAmt), applyPurpose);
+      if (apiError) throw apiError;
+      setApplySubmitted(true);
+      setShowApply(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
       setApplying(false);
-      if (data) { setApplySubmitted(true); setShowApply(false); }
-    });
+    }
   };
 
-  const handleRepay = () => {
+  const handleRepay = async () => {
     if (!repayAmt) return;
     setRepaying(true);
-    CreditAPI.repay('u1', parseInt(repayAmt)).then(({ data }) => {
+    setError(null);
+
+    try {
+      const rzpResult = await initiatePayment({
+        amount: parseInt(repayAmt),
+        customerId: user.id,
+        customerName: profile?.name,
+        customerPhone: profile?.phone,
+        type: 'credit_repayment'
+      });
+
+      if (rzpResult.error) throw new Error(rzpResult.error);
+
+      if (!rzpResult.cancelled) {
+        setRepaid(true);
+        setShowRepay(false);
+        setTimeout(() => setRepaid(false), 3000);
+        // Refresh account
+        CreditAPI.getAccount(user.id).then(({ data }) => data && setAccount(data));
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
       setRepaying(false);
-      if (data) { setRepaid(true); setShowRepay(false); setTimeout(() => setRepaid(false), 3000); }
-    });
+    }
   };
 
-  const score = state.currentUser.setuScore;
-
-  const TRANSACTIONS = [
-    { type: 'debit',  label: 'Used at checkout',          amount: 450,  date: '2 days ago',  status: 'outstanding' },
-    { type: 'debit',  label: 'Used at checkout',          amount: 320,  date: '5 days ago',  status: 'outstanding' },
-    { type: 'credit', label: 'Repayment',                 amount: 1000, date: '1 week ago',  status: 'completed'   },
-    { type: 'debit',  label: 'Used at checkout',          amount: 280,  date: '2 weeks ago', status: 'paid'        },
-  ];
+  const score = profile?.setu_score || 500;
 
   return (
     <div className="pb-6">
       <AppHeader title="SETU Credit" showBack />
       <div className="px-4 py-4 space-y-4">
+        {error && (
+          <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-xl flex items-start gap-2 text-destructive">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <p className="text-xs font-medium">{error}</p>
+          </div>
+        )}
 
         {/* Credit summary */}
         {account && (
@@ -82,7 +118,7 @@ export default function CustomerCredit() {
         {repaid && (
           <Card className="p-3 border-green-200 bg-green-50 flex items-center gap-2">
             <CheckCircle className="w-4 h-4 text-green-600" />
-            <p className="text-sm text-green-700 font-medium">Repayment recorded successfully!</p>
+            <p className="text-sm text-green-700 font-medium">Repayment successful! Updating account...</p>
           </Card>
         )}
         {applySubmitted && (
@@ -118,7 +154,7 @@ export default function CustomerCredit() {
             <Input placeholder="Purpose (e.g. groceries, medicine)" className="mb-3" value={applyPurpose} onChange={e => setApplyPurpose(e.target.value)} />
             <p className="text-xs text-muted-foreground mb-3">Repayment due within 15 days · No interest</p>
             <Button className="w-full" onClick={handleApply} disabled={applying || !applyAmt}>
-              {applying ? 'Applying...' : 'Apply Now'}
+              {applying ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Applying...</> : 'Apply Now'}
             </Button>
           </Card>
         )}
@@ -135,10 +171,13 @@ export default function CustomerCredit() {
                 </button>
               ))}
             </div>
-            <Input placeholder="Or enter amount" type="number" className="mb-3" value={repayAmt} onChange={e => setRepayAmt(e.target.value)} />
-            <Button className="w-full bg-accent hover:bg-accent/90" onClick={handleRepay} disabled={repaying || !repayAmt}>
-              {repaying ? 'Processing...' : `Repay ₹${repayAmt || '0'}`}
-            </Button>
+            <div className="flex gap-2">
+              <Input placeholder="Amount" type="number" className="flex-1" value={repayAmt} onChange={e => setRepayAmt(e.target.value)} />
+              <Button className="bg-accent hover:bg-accent/90 min-w-[100px]" onClick={handleRepay} disabled={repaying || !repayAmt}>
+                {repaying ? <Loader2 className="w-4 h-4 animate-spin" /> : `Repay`}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">Repay using UPI / Card</p>
           </Card>
         )}
 
@@ -152,40 +191,11 @@ export default function CustomerCredit() {
               <span className="text-lg font-bold text-primary">{score}</span>
             </div>
             <div>
-              <p className="text-sm font-semibold text-green-600">Good Standing</p>
-              <p className="text-xs text-muted-foreground">Eligible for up to ₹5,000</p>
-              <Badge className="mt-1 text-[9px] bg-primary/10 text-primary border-0">Top 30% customers</Badge>
+              <p className="text-sm font-semibold text-green-600">Account Standing</p>
+              <p className="text-xs text-muted-foreground">Improve score by timely repayments</p>
             </div>
           </div>
         </Card>
-
-        {/* Transactions */}
-        <div>
-          <h3 className="font-semibold text-sm mb-2">Credit History</h3>
-          <div className="space-y-2">
-            {TRANSACTIONS.map((t, i) => (
-              <Card key={i} className="p-3 border-border flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${t.type === 'credit' ? 'bg-green-100' : 'bg-primary/10'}`}>
-                  {t.type === 'credit'
-                    ? <ArrowDownLeft className="w-4 h-4 text-green-600" />
-                    : <ArrowUpRight className="w-4 h-4 text-primary" />}
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium">{t.label}</p>
-                  <p className="text-xs text-muted-foreground">{t.date}</p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className={`text-sm font-bold ${t.type === 'credit' ? 'text-green-600' : 'text-primary'}`}>
-                    {t.type === 'credit' ? '-' : '+'}₹{t.amount}
-                  </p>
-                  <Badge variant="outline" className={`text-[9px] ${t.status === 'outstanding' ? 'bg-amber-50 text-amber-700' : ''}`}>
-                    {t.status}
-                  </Badge>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );

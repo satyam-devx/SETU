@@ -25,6 +25,7 @@ import ScrollToTop from './components/ScrollToTop';
 import { CartProvider } from '@/lib/cartContext';
 import { SetuStoreProvider, useStore } from '@/lib/store';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { VillageProvider } from '@/lib/village';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 // Auth

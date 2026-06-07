@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import AppHeader from '@/components/shared/AppHeader';
+import OrderTrackingMap from '@/components/maps/OrderTrackingMap';
 import { useRealtimeOrder } from '@/hooks/useRealtimeOrders';
 import { useStore, canTransition, ORDER_STATUS } from '@/lib/store';
 import { OrderAPI } from '@/lib/api';
@@ -177,6 +178,17 @@ export default function CustomerOrderDetail() {
         showBack
         backTo="/customer/orders"
       />
+
+      {/* Map for Live Orders */}
+      {isLive && (
+        <div className="w-full h-64 border-b border-border">
+          <OrderTrackingMap
+            riderId={order.rider_id}
+            vendorLoc={{ lat: 26.350, lng: 86.070 }}
+            customerLoc={{ lat: 26.355, lng: 86.075 }}
+          />
+        </div>
+      )}
 
       {/* Status hero */}
       <div className={`px-4 py-5 ${
