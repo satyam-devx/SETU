@@ -9,9 +9,7 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.warn(
-    '[SETU] Missing Supabase environment variables.\n' +
-    'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your .env file.\n' +
-    'The app will run in demo mode with mock data.'
+    '[SETU] Missing Supabase env vars. Running in demo mode.'
   );
 }
 
@@ -23,13 +21,10 @@ export const supabase = createClient(
       autoRefreshToken:   true,
       persistSession:     true,
       detectSessionInUrl: true,
-      // FIX (Issue 11): guard against SSR / test environments where window is undefined
       storage: typeof window !== 'undefined' ? window.localStorage : undefined,
     },
   }
 );
-
-// ── HELPERS ───────────────────────────────────────────────
 
 export async function getCurrentUser() {
   const { data: { user }, error } = await supabase.auth.getUser();
@@ -44,12 +39,21 @@ export async function getCurrentSession() {
 }
 
 /**
- * Fetches the profile row for a given user id.
+ * Fetches the profile row for a given userId.
  *
- * FIX (Issue 4): Returns a typed result object so callers can distinguish
- * between "row not found" (new user) and "real DB/network error".
+ * ROOT CAUSE FIX:
+ * With RLS enabled, both "row does not exist" AND "RLS blocked the row"
+ * return the exact same error: PGRST116 ("no rows returned").
+ * The old code treated PGRST116 as notFound:true immediately, which meant
+ * that any timing issue (JWT not yet propagated, session not attached) looked
+ * identical to a missing row — causing loadProfile to give up and set
+ * profile=null, which ProtectedRoute then showed as a loading spinner forever
+ * or an error screen.
  *
- * @returns {{ data: object|null, notFound: boolean, error: object|null }}
+ * Fix: PGRST116 is treated as a RETRYABLE error, not an immediate notFound.
+ * Before marking notFound, we verify auth.uid() is actually set by calling
+ * getUser(). Only if auth is confirmed valid AND the row is still not found
+ * do we treat it as a genuinely new user with no profile row.
  */
 export async function getProfile(userId) {
   const { data, error } = await supabase
@@ -58,22 +62,28 @@ export async function getProfile(userId) {
     .eq('id', userId)
     .single();
 
-  if (error) {
-    // PGRST116 = "no rows returned" — this is normal for new users, not an error
-    if (error.code === 'PGRST116') {
-      return { data: null, notFound: true, error: null };
-    }
-    console.error('[SETU Auth] Error fetching profile:', error.message, error.details);
-    return { data: null, notFound: false, error };
+  if (!error) {
+    return { data, notFound: false, error: null };
   }
 
-  return { data, notFound: false, error: null };
+  if (error.code === 'PGRST116') {
+    // Could be: (a) row genuinely doesn't exist, or (b) RLS blocked it.
+    // Verify auth is valid before concluding notFound.
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user && user.id === userId) {
+      // Auth is confirmed — row genuinely does not exist (new user).
+      return { data: null, notFound: true, error: null };
+    }
+    // Auth not confirmed — treat as a retryable error so loadProfile retries.
+    return { data: null, notFound: false, error: { ...error, message: 'Auth not ready, will retry' } };
+  }
+
+  console.error('[SETU] getProfile error:', error.message, error.code);
+  return { data: null, notFound: false, error };
 }
 
 /**
  * Maps a profile role to the correct portal path.
- * FIX (Issue 17): Returns a dedicated error path for unknown roles instead of '/',
- * which caused an infinite redirect loop.
  */
 export function getPortalPath(role) {
   const MAP = {
