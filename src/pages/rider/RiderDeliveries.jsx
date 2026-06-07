@@ -1,119 +1,137 @@
 import React, { useState } from 'react';
-import { MapPin, Phone, CheckCircle, Clock, Package, Camera, Navigation } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { MapPin, Navigation, Phone, CheckCircle, Package, ArrowRight, Loader2 } from 'lucide-react';
 import AppHeader from '@/components/shared/AppHeader';
-import StatusBadge from '@/components/shared/StatusBadge';
 import { useStore } from '@/lib/store';
-
-const RIDER_ID = 'r1';
+import { useNavigate } from 'react-router-dom';
+import RiderNavigationMap from '@/components/maps/RiderNavigationMap';
+import { useAuth } from '@/lib/AuthContext';
 
 export default function RiderDeliveries() {
-  const { state, dispatch } = useStore();
-  const [tab, setTab]       = useState('active');
-  const [delivering, setDelivering] = useState(null);
+  const { state } = useStore();
+  const { profile } = useAuth();
+  const navigate = useNavigate();
+  const riderUuid = profile?.rider_id;
 
-  const myOrders = state.orders.filter(o => o.riderId === RIDER_ID);
-  const active   = myOrders.filter(o => !['delivered','cancelled'].includes(o.status));
-  const done     = myOrders.filter(o => o.status === 'delivered');
+  const activeDeliveries = state.orders.filter(o =>
+    (o.riderId === riderUuid || o.rider_id === riderUuid) &&
+    ['picked_up', 'on_the_way', 'ready'].includes(o.status)
+  );
 
-  const list = tab === 'active' ? active : done;
+  const completedToday = state.orders.filter(o =>
+    (o.riderId === riderUuid || o.rider_id === riderUuid) &&
+    o.status === 'delivered'
+  ).length;
 
-  const handleDeliver = (orderId, total) => {
-    setDelivering(orderId);
-    setTimeout(() => {
-      dispatch({ type: 'RIDER_DELIVER', payload: { orderId, riderId: RIDER_ID, codCollected: true, amount: total } });
-      setDelivering(null);
-    }, 700);
-  };
+  const [navigating, setNavigating] = useState(null);
 
   return (
     <div className="pb-20">
-      <AppHeader title="My Deliveries" subtitle={`${active.length} active · ${done.length} done today`} />
-      <div className="px-4 py-3 space-y-3">
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="w-full grid grid-cols-2">
-            <TabsTrigger value="active" className="text-xs">Active ({active.length})</TabsTrigger>
-            <TabsTrigger value="done"   className="text-xs">Completed ({done.length})</TabsTrigger>
-          </TabsList>
-        </Tabs>
+      <AppHeader title="My Deliveries" subtitle={`${activeDeliveries.length} active · ${completedToday} done`} />
 
-        {list.length === 0 ? (
-          <Card className="p-8 border-border text-center">
-            <Package className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground">
-              {tab === 'active' ? 'No active deliveries. Go online to receive orders.' : 'No deliveries completed yet today.'}
-            </p>
-          </Card>
+      <div className="px-4 py-4 space-y-4">
+
+        {/* Active Navigation Card (If any) */}
+        {navigating ? (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <h3 className="font-bold text-sm">Navigation</h3>
+              <button onClick={() => setNavigating(null)} className="text-[10px] font-bold text-primary uppercase">Close Map</button>
+            </div>
+            <div className="h-64 rounded-2xl overflow-hidden border-2 border-primary/20 shadow-lg">
+               <RiderNavigationMap
+                riderUuid={riderUuid}
+                destination={navigating.customer_location || { lat: 26.35, lng: 86.07 }}
+               />
+            </div>
+          </div>
         ) : (
-          <div className="space-y-3">
-            {list.map(order => (
-              <Card key={order.id} className={`p-4 border ${!['delivered','cancelled'].includes(order.status) ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <p className="text-xs font-mono font-bold">{order.orderNumber}</p>
-                    <p className="text-sm font-semibold mt-0.5">{order.customerName || 'Customer'}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-base font-bold">₹{order.total}</p>
-                    <StatusBadge status={order.status} />
-                  </div>
+          <div className="p-4 bg-primary/5 rounded-2xl border border-primary/10 flex items-center justify-between">
+             <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                   <Navigation className="w-5 h-5 text-primary" />
                 </div>
-
-                {/* Route */}
-                <div className="space-y-1 mb-3">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <div className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
-                    <span>Pickup: {order.vendorName}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <MapPin className="w-3 h-3 text-primary shrink-0" />
-                    <span>Deliver: {order.customerName}, {order.village}</span>
-                  </div>
+                <div>
+                   <p className="text-xs font-bold uppercase tracking-tight opacity-70">Queue</p>
+                   <p className="text-sm font-black">{activeDeliveries.length} Orders Pending</p>
                 </div>
-
-                <div className="flex items-center gap-2 mb-3">
-                  <Badge variant="outline" className="text-[9px]">{order.paymentMethod}</Badge>
-                  {order.paymentMethod === 'COD' && (
-                    <Badge className="text-[9px] bg-amber-100 text-amber-700 border-0">Collect ₹{order.total}</Badge>
-                  )}
-                </div>
-
-                {!['delivered','cancelled'].includes(order.status) && (
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" className="flex-1 gap-1 h-8 text-xs">
-                      <Phone className="w-3 h-3" /> Call
-                    </Button>
-                    <Button size="sm" variant="outline" className="flex-1 gap-1 h-8 text-xs">
-                      <Navigation className="w-3 h-3" /> Navigate
-                    </Button>
-                    <Button size="sm" variant="outline" className="h-8 w-8 p-0">
-                      <Camera className="w-3 h-3" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      className="flex-1 gap-1 h-8 text-xs bg-accent hover:bg-accent/90"
-                      disabled={delivering === order.id}
-                      onClick={() => handleDeliver(order.id, order.total)}
-                    >
-                      <CheckCircle className="w-3 h-3" />
-                      {delivering === order.id ? '...' : 'Delivered'}
-                    </Button>
-                  </div>
-                )}
-
-                {order.status === 'delivered' && (
-                  <div className="flex items-center gap-2 text-xs text-green-600 font-medium">
-                    <CheckCircle className="w-3.5 h-3.5" />
-                    Delivered · Earned ₹80
-                  </div>
-                )}
-              </Card>
-            ))}
+             </div>
+             <div className="text-right">
+                <p className="text-xs font-bold text-green-600">₹{(activeDeliveries.length * 40).toLocaleString()}</p>
+                <p className="text-[10px] text-muted-foreground font-medium">Est. Fee</p>
+             </div>
           </div>
         )}
+
+        {/* Deliveries List */}
+        <div className="space-y-3">
+          {activeDeliveries.map((order, idx) => (
+            <Card key={order.id} className={`p-4 border-l-4 transition-all ${idx === 0 ? 'border-l-primary shadow-md' : 'border-l-muted'}`}>
+              <div className="flex justify-between items-start mb-3">
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-primary/10 text-primary text-[10px] font-black uppercase px-2 h-5">
+                    {order.status.replace('_', ' ')}
+                  </Badge>
+                  <span className="text-[10px] font-mono font-bold text-muted-foreground">{order.orderNumber || order.order_number}</span>
+                </div>
+                <p className="text-sm font-black">₹{order.total}</p>
+              </div>
+
+              <div className="space-y-3 mb-4">
+                <div className="flex items-start gap-3">
+                   <div className="mt-1 w-2 h-2 rounded-full bg-muted-foreground/30 shrink-0" />
+                   <div className="min-w-0">
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase leading-none mb-1">Pickup</p>
+                      <p className="text-sm font-bold truncate">{order.vendorName || order.vendor_name}</p>
+                   </div>
+                </div>
+                <div className="flex items-start gap-3">
+                   <MapPin className="w-4 h-4 text-primary shrink-0" />
+                   <div className="min-w-0">
+                      <p className="text-[10px] font-bold text-primary uppercase leading-none mb-1">Deliver to</p>
+                      <p className="text-sm font-black truncate">{order.customerName || order.customer_name}</p>
+                      <p className="text-xs text-muted-foreground font-medium truncate">{order.delivery_address || 'Madhepur Ward 3'}</p>
+                   </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1 h-10 rounded-xl text-xs font-bold gap-2 shadow-sm"
+                  onClick={() => setNavigating(order)}
+                >
+                  <Navigation className="w-3.5 h-3.5" /> Start Navigation
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-10 w-12 rounded-xl border-border"
+                  onClick={() => window.location.href = `tel:${order.phone || '9876543210'}`}
+                >
+                  <Phone className="w-4 h-4 text-primary" />
+                </Button>
+              </div>
+            </Card>
+          ))}
+
+          {activeDeliveries.length === 0 && (
+            <div className="text-center py-12 px-6">
+               <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle className="w-8 h-8 text-muted-foreground/40" />
+               </div>
+               <h3 className="font-bold text-base mb-1">All caught up!</h3>
+               <p className="text-xs text-muted-foreground max-w-[200px] mx-auto">No active deliveries. Check the dashboard for new available orders.</p>
+               <button
+                onClick={() => navigate('/rider')}
+                className="mt-6 text-xs font-bold text-primary uppercase tracking-widest flex items-center gap-2 mx-auto"
+               >
+                 Go to Dashboard <ArrowRight className="w-3.5 h-3.5" />
+               </button>
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
   );
