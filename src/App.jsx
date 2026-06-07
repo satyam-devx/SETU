@@ -1,14 +1,21 @@
 // ═══════════════════════════════════════════════════════════
 // SETU PLATFORM — APP ROOT  (production-hardened)
 //
-// KEY FIXES APPLIED:
-//  1. Router now wraps AuthProvider (not nested inside it), so that
-//     any component inside AuthProvider can safely use useNavigate.
-//  2. AuthStoreBridge added — syncs AuthContext profile into the
-//     SetuStore so useCurrentUser() returns real user data, not
-//     the hardcoded FALLBACK_USER (Anita Devi) for every session.
-//  3. Added /onboarding/register route (was missing — new users hit 404).
-//  4. Added /role-error route for unknown roles.
+// CHANGE IN THIS VERSION:
+//  Added /auth/callback route for Google OAuth session exchange.
+//
+//  WHY:
+//  Without a dedicated /auth/callback route, Google OAuth redirects
+//  land on / or /login, which immediately navigate away — stripping
+//  the #access_token hash before Supabase can exchange it for a session.
+//  The AuthCallback component handles the exchange and only navigates
+//  after the session is confirmed.
+//
+// All other fixes from previous version are preserved:
+//  1. Router wraps AuthProvider (useNavigate works inside AuthProvider children).
+//  2. AuthStoreBridge syncs AuthContext profile into SetuStore.
+//  3. /onboarding/register route present (new users don't 404).
+//  4. /role-error route present for unknown roles.
 // ═══════════════════════════════════════════════════════════
 
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
@@ -21,12 +28,13 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
 // Auth
-import LoginOTP  from '@/pages/auth/LoginOTP';
-import OTPVerify from '@/pages/auth/OTPVerify';
+import LoginOTP    from '@/pages/auth/LoginOTP';
+import OTPVerify   from '@/pages/auth/OTPVerify';
+import AuthCallback from '@/pages/auth/AuthCallback'; // NEW: Google OAuth callback handler
 
 // Role select & Onboarding
 import RoleSelect          from '@/pages/RoleSelect';
-import RegisterOnboarding  from '@/pages/onboarding/RegisterOnboarding'; // FIX: was missing
+import RegisterOnboarding  from '@/pages/onboarding/RegisterOnboarding';
 import VendorOnboarding    from '@/pages/onboarding/VendorOnboarding';
 import RiderOnboarding     from '@/pages/onboarding/RiderOnboarding';
 import SevaVerification    from '@/pages/onboarding/SevaVerification';
@@ -133,9 +141,8 @@ import SuperAdminHealth     from '@/pages/superadmin/SuperAdminHealth';
 import SuperAdminAI         from '@/pages/superadmin/SuperAdminAI';
 
 // ── AUTH → STORE BRIDGE ───────────────────────────────────
-// FIX (Issue 9): Syncs the real authenticated profile into SetuStore
-// so that useCurrentUser() returns live data, not the hardcoded FALLBACK_USER.
-// Placed inside both AuthProvider and SetuStoreProvider.
+// Syncs the real authenticated profile into SetuStore so that
+// useCurrentUser() returns live data, not the hardcoded FALLBACK_USER.
 function AuthStoreBridge() {
   const { profile } = useAuth();
   const { dispatch } = useStore();
@@ -162,7 +169,6 @@ function NotFound() {
   );
 }
 
-// FIX (Issue 17): Error page for users with unrecognised roles
 function RoleError() {
   const { signOut, userRole } = useAuth();
   return (
@@ -180,12 +186,11 @@ function RoleError() {
 // ── APP ───────────────────────────────────────────────────
 function App() {
   return (
-    // FIX (Issue 5): Router is now the outermost wrapper.
-    // This allows any component inside AuthProvider to safely call useNavigate.
+    // Router is the outermost wrapper so any component inside
+    // AuthProvider can safely call useNavigate.
     <Router>
       <AuthProvider>
         <SetuStoreProvider>
-          {/* FIX (Issue 9): Bridge syncs auth profile into store */}
           <AuthStoreBridge />
           <CartProvider>
             <ScrollToTop />
@@ -197,8 +202,12 @@ function App() {
               <Route path="/login/verify" element={<OTPVerify />} />
               <Route path="/role-error"   element={<RoleError />} />
 
+              {/* NEW: Google OAuth callback — MUST be public and rendered
+                  before any navigation occurs so the token hash is not lost */}
+              <Route path="/auth/callback" element={<AuthCallback />} />
+
               {/* Onboarding — public, users may not yet have a role */}
-              <Route path="/onboarding/register" element={<RegisterOnboarding />} /> {/* FIX: was missing */}
+              <Route path="/onboarding/register" element={<RegisterOnboarding />} />
               <Route path="/onboarding/vendor"   element={<VendorOnboarding />} />
               <Route path="/onboarding/rider"    element={<RiderOnboarding />} />
               <Route path="/onboarding/seva"     element={<SevaVerification />} />
