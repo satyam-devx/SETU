@@ -335,7 +335,6 @@ export function AuthProvider({ children }) {
     isLoading,
     isAuthenticated,
     isProfileLoaded,
-    authError,
     signOut,
     sendOTP,
     verifyOTP,
@@ -352,6 +351,7 @@ export function AuthProvider({ children }) {
     isVerified: profile?.is_verified ?? false,
     portalPath: profile ? getPortalPath(profile.role) : '/',
     reloadProfile: () => { if (user) loadProfile(user); },
+    loadProfileForUser: loadProfile,
   };
 
   return (
