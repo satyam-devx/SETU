@@ -1,34 +1,3 @@
-// ═══════════════════════════════════════════════════════════
-// SETU PLATFORM — REGISTER ONBOARDING  (production-hardened)
-//
-// BUGS FIXED IN THIS VERSION:
-//
-//  BUG 1 — Premature auto-redirect (skips name entry entirely):
-//    The DB trigger handle_new_user fires the moment a user signs up
-//    and immediately inserts a skeleton profile row (name="SETU User").
-//    The old code had:
-//      useEffect(() => { if (isProfileLoaded) navigate(portalPath) }, [...])
-//    Because the trigger already created the row, isProfileLoaded is TRUE
-//    on mount. The page redirected away instantly — the user never saw
-//    the name input and was stuck with the name "SETU User".
-//
-//    Fix: Removed the auto-redirect-on-mount useEffect entirely.
-//    Redirect is now only triggered AFTER the user has clicked Continue
-//    and the upsert has completed successfully (tracked by `submitted` state).
-//
-//  BUG 2 — Plain INSERT fails when trigger row already exists:
-//    createProfile() called supabase.from('profiles').insert() which hits
-//    the PRIMARY KEY unique constraint when the trigger row exists.
-//    Fix is in AuthContext.jsx → createProfile() changed to upsert().
-//    This onboarding page calls createProfile() the same way — the fix
-//    is transparent here once AuthContext is updated.
-//
-//  PRESERVED:
-//    - If no authenticated user, redirect to /login.
-//    - After successful submit, navigate to the correct portal.
-//    - All UI, copy, and layout unchanged.
-// ═══════════════════════════════════════════════════════════
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Loader2, User, ArrowRight } from 'lucide-react';
@@ -38,65 +7,48 @@ import { Card } from '@/components/ui/card';
 import { useAuth } from '@/lib/AuthContext';
 
 export default function RegisterOnboarding() {
-  const navigate  = useNavigate();
-  const location  = useLocation();
-  const phone     = location.state?.phone || '';
+  const navigate = useNavigate();
+  const location = useLocation();
+  const phone    = location.state?.phone || '';
 
-  const { user, createProfile, isProfileLoaded, portalPath } = useAuth();
+  const { user, updateProfile, isLoading, portalPath } = useAuth();
 
-  const [name,      setName]      = useState('');
-  const [loading,   setLoading]   = useState(false);
-  const [error,     setError]     = useState('');
-  const [submitted, setSubmitted] = useState(false); // true only after user clicks Continue
+  const [name,    setName]    = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState('');
 
   // If no authenticated user, go back to login
   useEffect(() => {
-    if (!user) navigate('/login', { replace: true });
-  }, [user, navigate]);
+    if (!isLoading && !user) navigate('/login', { replace: true });
+  }, [user, isLoading, navigate]);
 
-  // Redirect to portal ONLY after the user has submitted the form.
-  // We must NOT redirect on mount even if isProfileLoaded is already true,
-  // because the DB trigger creates a skeleton profile row ("SETU User")
-  // the moment the user signs up — before they've had a chance to enter
-  // their real name. Auto-redirecting on mount would skip name entry entirely.
-  useEffect(() => {
-    if (submitted && isProfileLoaded && portalPath && portalPath !== '/') {
-      navigate(portalPath, { replace: true });
-    }
-  }, [submitted, isProfileLoaded, portalPath, navigate]);
-
-  const handleRegister = async () => {
+  const handleContinue = async () => {
     if (!name.trim()) {
       setError('Please enter your name.');
-      return;
-    }
-    if (!user) {
-      setError('Session expired. Please log in again.');
-      navigate('/login', { replace: true });
       return;
     }
 
     setLoading(true);
     setError('');
 
-    const { error: createError } = await createProfile(user.id, {
-      phone,
-      name: name.trim(),
-      role: 'customer',
-    });
+    // Best-effort name update — if it fails we still let the user in.
+    // The profile row already exists (created by the DB trigger on signup).
+    // The name can always be changed later from profile settings.
+    await updateProfile({ name: name.trim(), phone: phone || undefined });
 
-    setLoading(false);
-
-    if (createError) {
-      console.error('[SETU Onboarding] createProfile error:', createError);
-      setError('Could not save your profile. Please try again.');
-      return;
-    }
-
-    // Mark as submitted — the useEffect above will redirect once
-    // AuthContext confirms the profile is loaded.
-    setSubmitted(true);
+    // Navigate regardless of whether the update succeeded.
+    // portalPath is '/customer' for the default customer role.
+    const destination = (portalPath && portalPath !== '/') ? portalPath : '/customer';
+    navigate(destination, { replace: true });
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="w-5 h-5 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/30 flex flex-col items-center justify-center p-6">
@@ -114,7 +66,7 @@ export default function RegisterOnboarding() {
           Welcome to SETU!
         </h2>
         <p className="text-sm text-muted-foreground text-center mb-6">
-          Let's set up your account. What's your name?
+          What should we call you?
         </p>
 
         <div className="mb-4">
@@ -123,25 +75,22 @@ export default function RegisterOnboarding() {
             placeholder="Your full name"
             value={name}
             onChange={e => { setName(e.target.value); setError(''); }}
-            onKeyDown={e => e.key === 'Enter' && handleRegister()}
+            onKeyDown={e => e.key === 'Enter' && handleContinue()}
             className="h-11"
             autoFocus
             autoComplete="name"
-            disabled={loading || submitted}
+            disabled={loading}
           />
+          {error && <p className="text-xs text-destructive mt-2">{error}</p>}
         </div>
-
-        {error && (
-          <p className="text-xs text-destructive mb-4">{error}</p>
-        )}
 
         <Button
           className="w-full h-11 gap-2 text-sm font-semibold"
-          onClick={handleRegister}
-          disabled={loading || submitted || !name.trim()}
+          onClick={handleContinue}
+          disabled={loading || !name.trim()}
         >
-          {loading || submitted ? (
-            <><Loader2 className="w-4 h-4 animate-spin" /> {submitted ? 'Entering SETU...' : 'Saving...'}</>
+          {loading ? (
+            <><Loader2 className="w-4 h-4 animate-spin" /> Entering SETU...</>
           ) : (
             <>Continue <ArrowRight className="w-4 h-4" /></>
           )}
