@@ -1,20 +1,32 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { getPortalPath } from '@/lib/supabase';
 
 export default function ProtectedRoute({ children, allowedRoles = [], redirectTo = '/login' }) {
-  const { isAuthenticated, isProfileLoaded, isLoading, userRole, authError, user, reloadProfile } = useAuth();
+  const { isAuthenticated, isProfileLoaded, isLoading, userRole, user, loadProfileForUser } = useAuth();
   const location = useLocation();
 
-  // If authenticated but profile still not loaded after mount, trigger a reload.
-  // This catches the case where the component mounts before loadProfile finishes.
+  // Only show the error screen after waiting long enough for retries to complete.
+  // This prevents a flash of error when profile is still loading.
+  const [timedOut, setTimedOut] = useState(false);
+
   useEffect(() => {
-    if (!isLoading && isAuthenticated && !isProfileLoaded && !authError && reloadProfile) {
-      reloadProfile();
+    setTimedOut(false);
+    if (!isLoading && isAuthenticated && !isProfileLoaded) {
+      // Give the retry logic 8 seconds before showing error
+      const t = setTimeout(() => setTimedOut(true), 8000);
+      return () => clearTimeout(t);
     }
-  }, [isLoading, isAuthenticated, isProfileLoaded, authError, reloadProfile]);
+  }, [isLoading, isAuthenticated, isProfileLoaded]);
+
+  // Re-trigger profile load if stuck
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && !isProfileLoaded && user && loadProfileForUser) {
+      loadProfileForUser(user);
+    }
+  }, [isLoading, isAuthenticated, isProfileLoaded]);
 
   if (isLoading) return <LoadingScreen />;
 
@@ -23,13 +35,15 @@ export default function ProtectedRoute({ children, allowedRoles = [], redirectTo
   }
 
   if (!isProfileLoaded) {
-    if (authError) {
+    if (timedOut) {
       return (
         <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background p-6">
           <div className="w-12 h-12 rounded-2xl bg-destructive/10 flex items-center justify-center">
             <span className="text-destructive text-xl">⚠</span>
           </div>
-          <p className="text-sm text-muted-foreground text-center max-w-xs">{authError}</p>
+          <p className="text-sm text-muted-foreground text-center max-w-xs">
+            Could not load your profile. Please check your connection and try again.
+          </p>
           <button onClick={() => window.location.reload()} className="text-xs text-primary underline">
             Retry
           </button>
