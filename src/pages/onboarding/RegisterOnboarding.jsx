@@ -5,41 +5,51 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { useAuth } from '@/lib/AuthContext';
+import { supabase } from '@/lib/supabase';
 
 export default function RegisterOnboarding() {
   const navigate = useNavigate();
   const location = useLocation();
   const phone    = location.state?.phone || '';
 
-  const { user, updateProfile, isLoading, portalPath } = useAuth();
+  const { user, isLoading, profile, portalPath } = useAuth();
 
   const [name,    setName]    = useState('');
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
 
-  // If no authenticated user, go back to login
+  // If already has a real name in profile, skip straight to portal
+  useEffect(() => {
+    if (!isLoading && profile?.name && profile.name !== 'SETU User') {
+      const dest = portalPath && portalPath !== '/' ? portalPath : '/customer';
+      navigate(dest, { replace: true });
+    }
+  }, [isLoading, profile, portalPath, navigate]);
+
   useEffect(() => {
     if (!isLoading && !user) navigate('/login', { replace: true });
   }, [user, isLoading, navigate]);
 
   const handleContinue = async () => {
-    if (!name.trim()) {
-      setError('Please enter your name.');
-      return;
-    }
+    if (!name.trim()) { setError('Please enter your name.'); return; }
 
     setLoading(true);
     setError('');
 
-    // Best-effort name update — if it fails we still let the user in.
-    // The profile row already exists (created by the DB trigger on signup).
-    // The name can always be changed later from profile settings.
-    await updateProfile({ name: name.trim(), phone: phone || undefined });
+    // Direct Supabase call — bypasses all AuthContext state/retry logic
+    // Simply update the name on the existing profile row (created by DB trigger)
+    const { error: dbError } = await supabase
+      .from('profiles')
+      .update({ name: name.trim(), updated_at: new Date().toISOString() })
+      .eq('id', user.id);
 
-    // Navigate regardless of whether the update succeeded.
-    // portalPath is '/customer' for the default customer role.
-    const destination = (portalPath && portalPath !== '/') ? portalPath : '/customer';
-    navigate(destination, { replace: true });
+    if (dbError) {
+      console.error('[SETU Onboarding] update error:', dbError);
+      // Don't block the user — navigate anyway, they can set name in settings
+    }
+
+    // Always navigate to customer portal after onboarding
+    navigate('/customer', { replace: true });
   };
 
   if (isLoading) {
@@ -62,12 +72,8 @@ export default function RegisterOnboarding() {
           <User className="w-6 h-6 text-primary" />
         </div>
 
-        <h2 className="text-xl font-bold text-center text-foreground mb-1">
-          Welcome to SETU!
-        </h2>
-        <p className="text-sm text-muted-foreground text-center mb-6">
-          What should we call you?
-        </p>
+        <h2 className="text-xl font-bold text-center text-foreground mb-1">Welcome to SETU!</h2>
+        <p className="text-sm text-muted-foreground text-center mb-6">What should we call you?</p>
 
         <div className="mb-4">
           <Input
@@ -89,11 +95,10 @@ export default function RegisterOnboarding() {
           onClick={handleContinue}
           disabled={loading || !name.trim()}
         >
-          {loading ? (
-            <><Loader2 className="w-4 h-4 animate-spin" /> Entering SETU...</>
-          ) : (
-            <>Continue <ArrowRight className="w-4 h-4" /></>
-          )}
+          {loading
+            ? <><Loader2 className="w-4 h-4 animate-spin" /> Entering SETU...</>
+            : <>Continue <ArrowRight className="w-4 h-4" /></>
+          }
         </Button>
       </Card>
 
