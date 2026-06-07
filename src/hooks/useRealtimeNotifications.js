@@ -162,5 +162,3 @@ export function useRealtimeNotifications(userId) {
     refetch,
   };
 }
-EOF
-echo "useRealtimeNotifications.js done — $(wc -l < /home/claude/SETU-main/src/hooks/useRealtimeNotifications.js) lines"
