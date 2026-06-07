@@ -206,7 +206,7 @@ export default function RiderOnboarding() {
               ))}
             </Card>
             <Card className="p-3 bg-muted/50 border-border">
-              <p className="text-xs text-muted-foreground"><strong>COD Rule:</strong> All cash collected must be deposited at the SETU collection point by 8pm daily. Excess balance >₹2,000 triggers a mandatory deposit.</p>
+              <p className="text-xs text-muted-foreground"><strong>COD Rule:</strong> All cash collected must be deposited at the SETU collection point by 8pm daily. Excess balance &gt;₹2,000 triggers a mandatory deposit.</p>
             </Card>
             <Button className="w-full">Submit Application 🚀</Button>
           </div>

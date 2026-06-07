@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   MapPin, Navigation, IndianRupee, Package,
-  Clock, AlertTriangle, CheckCircle, Phone, Loader2
+  Clock, AlertTriangle, CheckCircle, Phone, Loader2, Download
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,86 +14,72 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import { useStore, useRiderState } from '@/lib/store';
 import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
 import { RiderAPI } from '@/lib/api';
-import { RIDERS } from '@/lib/mockData';
-
-const RIDER_ID   = 'r1';
-const RIDER_UUID = '33000000-0000-0000-0000-000000000001'; // DB uuid from seed
-
-// ── Loading skeleton ──────────────────────────────────────
-function OrdersSkeleton() {
-  return (
-    <div className="space-y-2 animate-pulse">
-      {[1, 2].map(i => <div key={i} className="h-24 bg-muted rounded-xl" />)}
-    </div>
-  );
-}
+import { useAuth } from '@/lib/AuthContext';
+import { useRiderLocation } from '@/hooks/useRiderLocation';
+import RiderNavigationMap from '@/components/maps/RiderNavigationMap';
 
 export default function RiderDashboard() {
   const { state, dispatch }           = useStore();
+  const { profile }                   = useAuth();
   const { isOnline, toggleOnline }    = useRiderState();
   const [accepting, setAccepting]     = useState(null);
   const [delivering, setDelivering]   = useState(null);
+  const [downloading, setDownloading] = useState(false);
 
-  const rider = RIDERS[0];
+  const riderUuid = profile?.rider_id;
+  const riderName = profile?.name ?? 'Rider';
 
-  // ── Realtime: orders assigned to this rider (active) ──
+  // ── GPS Tracking ──
+  useRiderLocation(riderUuid, isOnline);
+
+  // ── Realtime: orders assigned to this rider ──
   const { orders: myOrders, isLoading: loadingMine } = useRealtimeOrders({
     mode:       'rider',
-    riderId:    RIDER_UUID,
+    riderId:    riderUuid,
     activeOnly: true,
   });
 
-  // ── Realtime: available (unassigned pending) orders ──
-  // When Supabase is configured this filters server-side.
-  // In demo mode we filter store state.
   const availableOrders = state.orders.filter(o =>
     !o.riderId && !o.rider_id && o.status === 'pending'
   );
 
-  // ── Accept order ──────────────────────────────────────
   const handleAccept = async (orderId) => {
     setAccepting(orderId);
-    // Optimistic
-    dispatch({ type: 'RIDER_ACCEPT_ORDER', payload: { orderId, riderId: RIDER_ID } });
-    // Persist
-    await RiderAPI.acceptOrder(orderId, RIDER_UUID, rider.name);
-    // Update rider online status in DB
-    await RiderAPI.updateLocation(RIDER_UUID, 26.350, 86.070);
+    dispatch({ type: 'RIDER_ACCEPT_ORDER', payload: { orderId, riderId: 'r1' } });
+    await RiderAPI.acceptOrder(orderId, riderUuid, riderName);
     setAccepting(null);
   };
 
-  // ── Mark delivered ────────────────────────────────────
   const handleDeliver = async (orderId, total) => {
     setDelivering(orderId);
-    // Optimistic
     dispatch({
       type: 'RIDER_DELIVER',
-      payload: { orderId, riderId: RIDER_ID, codCollected: true, amount: total },
+      payload: { orderId, riderId: 'r1', codCollected: true, amount: total },
     });
-    // Persist
     await RiderAPI.markDelivered(orderId, {
-      rider_id:      RIDER_UUID,
+      rider_id:      riderUuid,
       cod_collected: true,
       amount:        total,
     });
     setDelivering(null);
   };
 
-  // ── Toggle online → persist ───────────────────────────
   const handleToggleOnline = async () => {
     toggleOnline();
-    await RiderAPI.toggleOnline(RIDER_UUID, !isOnline);
+    await RiderAPI.toggleOnline(riderUuid, !isOnline);
   };
+
+  const activeOrder = myOrders.find(o => ['picked_up', 'on_the_way'].includes(o.status));
 
   return (
     <div className="pb-20">
       <AppHeader
-        title={rider.name}
-        subtitle={`Zone: ${rider.zone}`}
+        title={riderName}
+        subtitle={`Zone: Madhepur`}
         notificationCount={availableOrders.length}
         rightAction={
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
               {isOnline ? 'Online' : 'Offline'}
             </span>
             <Switch checked={isOnline} onCheckedChange={handleToggleOnline} />
@@ -101,190 +87,155 @@ export default function RiderDashboard() {
         }
       />
 
-      {/* Offline banner */}
       {!isOnline && (
-        <div className="mx-4 mt-3 p-3 bg-muted rounded-xl text-center">
-          <p className="text-sm font-medium text-muted-foreground">
-            You're offline — toggle to start receiving orders
+        <div className="mx-4 mt-3 p-4 bg-muted/50 rounded-2xl border-2 border-dashed border-muted text-center animate-in fade-in zoom-in-95">
+          <p className="text-sm font-bold text-muted-foreground">
+            You're currently offline
           </p>
+          <p className="text-[10px] text-muted-foreground/60 mt-0.5">Toggle switch above to start receiving orders</p>
         </div>
       )}
 
-      {/* Stats */}
-      <div className="px-4 py-3 grid grid-cols-2 gap-2">
+      {/* Map Section */}
+      <div className="px-4 mt-4">
+        <div className="relative group">
+          <div className="h-48 rounded-2xl overflow-hidden shadow-md">
+            {activeOrder ? (
+              <RiderNavigationMap
+                riderUuid={riderUuid}
+                destination={activeOrder.customer_location}
+              />
+            ) : (
+              <div className="w-full h-full bg-slate-100 flex items-center justify-center border border-border">
+                 <div className="text-center opacity-40 group-hover:opacity-60 transition-opacity">
+                    <Navigation className="w-8 h-8 mx-auto mb-2" />
+                    <p className="text-[10px] font-black uppercase tracking-widest">Awaiting Active Task</p>
+                 </div>
+              </div>
+            )}
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="absolute top-2 right-2 h-7 text-[10px] bg-background/80 backdrop-blur font-bold gap-1.5 shadow-sm border border-border"
+            onClick={() => { setDownloading(true); setTimeout(() => setDownloading(false), 2000); }}
+          >
+            {downloading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+            {downloading ? 'Downloading...' : 'Offline Map'}
+          </Button>
+        </div>
+      </div>
+
+      <div className="px-4 py-4 grid grid-cols-2 gap-3">
         <StatCard
           title="Today's Earnings"
-          value={`₹${rider.todayEarnings}`}
-          trend="15% above avg"
+          value={`₹1,240`}
+          trend="+12%"
           trendUp
           icon={IndianRupee}
         />
         <StatCard
-          title="Deliveries Today"
-          value={String(rider.todayDeliveries)}
-          subtitle={`${rider.totalDeliveries} total`}
+          title="Deliveries"
+          value="14"
+          subtitle="4 in last hour"
           icon={Package}
         />
       </div>
 
-      {/* Map placeholder */}
-      <div className="px-4 mb-4">
-        <Card className="h-36 bg-muted border-border flex items-center justify-center relative overflow-hidden">
-          <div className="text-center z-10">
-            <Navigation className="w-8 h-8 text-primary mx-auto mb-2" />
-            <p className="text-sm font-medium">Madhepur Zone Map</p>
-            <p className="text-xs text-muted-foreground">Offline navigation ready</p>
-          </div>
-        </Card>
-      </div>
-
       {/* Active deliveries */}
       <div className="px-4 mb-4">
-        <h3 className="font-semibold text-sm mb-2">
-          My Active Deliveries ({myOrders.length})
-        </h3>
-
-        {loadingMine ? (
-          <OrdersSkeleton />
-        ) : myOrders.length === 0 ? (
-          <Card className="p-4 border-border text-center">
-            <p className="text-sm text-muted-foreground">No active deliveries</p>
+        <h3 className="font-bold text-sm mb-3 px-1">Active Deliveries ({myOrders.length})</h3>
+        {myOrders.length === 0 ? (
+          <Card className="p-6 border-dashed border-2 border-muted flex flex-col items-center justify-center text-center">
+            <Package className="w-6 h-6 text-muted-foreground/40 mb-2" />
+            <p className="text-xs text-muted-foreground font-medium">No active tasks assigned to you</p>
           </Card>
         ) : (
-          myOrders.map(order => {
-            const orderNum  = order.orderNumber ?? order.order_number ?? '—';
-            const custName  = order.customerName ?? order.customer_name ?? 'Customer';
-            const village   = order.village ?? '—';
-            const total     = order.total ?? 0;
-            const payMethod = order.paymentMethod ?? order.payment_method ?? 'COD';
-            const canDeliver = ['picked_up', 'on_the_way', 'ready'].includes(order.status);
-
-            return (
-              <Card key={order.id} className="p-3 border-primary/30 bg-primary/5 mb-2">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-mono font-bold">{orderNum}</span>
-                  <StatusBadge status={order.status} />
+          myOrders.map(order => (
+            <Card key={order.id} className="p-4 border-primary/20 bg-primary/5 mb-3 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-mono font-black tracking-wider uppercase text-primary">
+                  {order.orderNumber || order.order_number}
+                </span>
+                <StatusBadge status={order.status} />
+              </div>
+              <div className="flex items-start gap-2 mb-4">
+                <MapPin className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-sm font-bold truncate leading-none mb-1">
+                    {order.customerName || order.customer_name}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-tight">
+                    {order.delivery_address || 'Madhepur Ward 3, House 12'}
+                  </p>
                 </div>
-                <div className="flex items-center gap-2 text-xs mb-2 text-muted-foreground">
-                  <MapPin className="w-3 h-3 shrink-0" />
-                  <span className="truncate">
-                    {order.vendorName ?? order.vendor_name} → {custName}, {village}
-                  </span>
+              </div>
+              <div className="flex items-center justify-between pt-3 border-t border-primary/10">
+                <div className="flex items-center gap-2">
+                   <Badge variant="secondary" className="bg-white text-primary border-primary/20 text-[9px]">₹{order.total}</Badge>
+                   <Badge variant="outline" className="text-[9px] border-primary/30 uppercase font-black">{order.paymentMethod || 'COD'}</Badge>
                 </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-[9px]">{payMethod}</Badge>
-                    <span className="text-sm font-bold">₹{total}</span>
-                  </div>
-                  <div className="flex gap-1">
-                    <Button size="sm" variant="outline" className="h-7 w-7 p-0">
-                      <Phone className="w-3 h-3" />
-                    </Button>
-                    {canDeliver && (
-                      <Button
-                        size="sm"
-                        className="h-7 text-xs bg-accent hover:bg-accent/90"
-                        disabled={delivering === order.id}
-                        onClick={() => handleDeliver(order.id, total)}
-                      >
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        {delivering === order.id
-                          ? <Loader2 className="w-3 h-3 animate-spin" />
-                          : 'Delivered'}
-                      </Button>
-                    )}
-                  </div>
+                <div className="flex gap-2">
+                   <Button size="icon" variant="outline" className="h-8 w-8 rounded-lg border-primary/30 bg-white">
+                      <Phone className="w-3.5 h-3.5 text-primary" />
+                   </Button>
+                   <Button
+                    size="sm"
+                    className="h-8 text-xs font-bold px-4 rounded-lg shadow-sm"
+                    disabled={delivering === order.id}
+                    onClick={() => handleDeliver(order.id, order.total)}
+                   >
+                     {delivering === order.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Mark Delivered'}
+                   </Button>
                 </div>
-              </Card>
-            );
-          })
+              </div>
+            </Card>
+          ))
         )}
       </div>
 
-      {/* Available orders (unassigned) */}
+      {/* Available orders */}
       {isOnline && (
         <div className="px-4 mb-4">
-          <h3 className="font-semibold text-sm mb-2">
-            Available Orders ({availableOrders.length})
-          </h3>
-          {availableOrders.length === 0 ? (
-            <Card className="p-4 border-border text-center">
-              <p className="text-sm text-muted-foreground">
-                No new orders right now. Stay online!
+          <h3 className="font-bold text-sm mb-3 px-1">Available Nearby ({availableOrders.length})</h3>
+          {availableOrders.slice(0, 3).map(order => (
+            <Card key={order.id} className="p-4 border-border mb-2 hover:border-primary/40 transition-colors cursor-pointer group">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-mono font-bold text-muted-foreground">{order.orderNumber || order.order_number}</span>
+                <Badge variant="outline" className="text-[9px] font-black uppercase">₹{order.total}</Badge>
+              </div>
+              <p className="text-sm font-bold group-hover:text-primary transition-colors">
+                {order.vendorName || order.vendor_name} → {order.village}
               </p>
+              <div className="flex items-center justify-between mt-3">
+                 <p className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
+                   <Clock className="w-3 h-3" /> Pickup within 10 mins
+                 </p>
+                 <Button
+                  size="sm"
+                  className="h-8 text-xs font-bold px-6 rounded-lg"
+                  disabled={accepting === order.id}
+                  onClick={() => handleAccept(order.id)}
+                 >
+                   {accepting === order.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Accept'}
+                 </Button>
+              </div>
             </Card>
-          ) : (
-            availableOrders.map(order => {
-              const orderNum  = order.orderNumber ?? order.order_number ?? '—';
-              const total     = order.total ?? 0;
-              const payMethod = order.paymentMethod ?? order.payment_method ?? 'COD';
-              const itemCount = (order.items ?? order.order_items ?? []).length;
-
-              return (
-                <Card key={order.id} className="p-3 border-border mb-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-mono font-bold">{orderNum}</span>
-                    <Badge variant="outline" className="text-[9px]">{payMethod}</Badge>
-                  </div>
-                  <p className="text-sm font-medium">
-                    {order.vendorName ?? order.vendor_name} → {order.village}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    ₹{total} · {itemCount} item{itemCount !== 1 ? 's' : ''}
-                  </p>
-                  <div className="flex items-center justify-between mt-2">
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Clock className="w-3 h-3" />
-                      <span>45s to auto-decline</span>
-                    </div>
-                    <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        className="h-7 text-xs"
-                        disabled={accepting === order.id}
-                        onClick={() => handleAccept(order.id)}
-                      >
-                        {accepting === order.id
-                          ? <Loader2 className="w-3 h-3 animate-spin" />
-                          : 'Accept'}
-                      </Button>
-                      <Button size="sm" variant="outline" className="h-7 text-xs">
-                        Decline
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
-              );
-            })
-          )}
+          ))}
         </div>
       )}
 
-      {/* COD balance */}
-      <div className="px-4">
-        <Card className="p-4 border-border">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground">COD Cash Balance</p>
-              <p className="text-xl font-bold">₹{rider.codBalance}</p>
-              <p className="text-xs text-muted-foreground">Deposit before end of shift</p>
-            </div>
-            <Link to="/rider/cod">
-              <Button variant="outline" size="sm" className="text-xs">Manage COD</Button>
-            </Link>
-          </div>
-        </Card>
-      </div>
-
-      {/* SOS */}
-      <div className="px-4 mt-3 mb-2">
-        <Link to="/rider/safety">
-          <Button
-            variant="outline"
-            className="w-full border-destructive/30 text-destructive gap-2"
-          >
-            <AlertTriangle className="w-4 h-4" /> Safety Center / SOS
-          </Button>
+      {/* Bottom Actions */}
+      <div className="px-4 grid grid-cols-2 gap-2 mt-4">
+        <Link to="/rider/cod" className="w-full">
+           <Button variant="outline" className="w-full h-12 rounded-xl text-xs gap-2 border-border shadow-sm">
+             <IndianRupee className="w-4 h-4 text-green-600" /> COD Balance
+           </Button>
+        </Link>
+        <Link to="/rider/safety" className="w-full">
+           <Button variant="outline" className="w-full h-12 rounded-xl text-xs gap-2 border-destructive/30 text-destructive shadow-sm">
+             <AlertTriangle className="w-4 h-4" /> SOS / Support
+           </Button>
         </Link>
       </div>
     </div>

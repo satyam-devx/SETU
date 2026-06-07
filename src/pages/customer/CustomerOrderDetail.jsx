@@ -13,6 +13,7 @@ import { useRealtimeOrder } from '@/hooks/useRealtimeOrders';
 import { useStore, canTransition, ORDER_STATUS } from '@/lib/store';
 import { OrderAPI } from '@/lib/api';
 import { ORDERS } from '@/lib/mockData';
+import OrderTrackingMap from '@/components/maps/OrderTrackingMap';
 
 // ── Timeline config per status ──────────────────────────
 const TIMELINE = {
@@ -177,6 +178,17 @@ export default function CustomerOrderDetail() {
         showBack
         backTo="/customer/orders"
       />
+
+      {/* Real-time Tracking Map for active orders */}
+      {isLive && (order.status === 'picked_up' || order.status === 'on_the_way') && (
+        <div className="px-4 mt-4">
+           <OrderTrackingMap
+              riderId={order.rider_id || order.riderId}
+              vendorLoc={order.vendor_location} // Ensure this is provided in API
+              customerLoc={order.customer_location} // Ensure this is provided in API
+           />
+        </div>
+      )}
 
       {/* Status hero */}
       <div className={`px-4 py-5 ${
