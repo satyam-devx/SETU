@@ -79,7 +79,16 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    const MAX_RETRIES = 3;
+    // Short initial delay so the JWT is fully propagated before the
+    // first DB query. Without this, RLS sees auth.uid()=null on the
+    // first request after OAuth, returns PGRST116, and the profile
+    // appears missing even though it exists.
+    await new Promise(res => setTimeout(res, 300));
+
+    // Retry loop: handles both network errors and RLS timing issues.
+    // notFound is only trusted after auth is confirmed (see getProfile).
+    // Backoff: 800ms, 1600ms, 3200ms
+    const MAX_RETRIES = 4;
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       const { data, notFound, error } = await getProfile(authUser.id);
@@ -90,19 +99,19 @@ export function AuthProvider({ children }) {
       }
 
       if (notFound) {
-        // New user — no profile row yet. Expected for first-time logins.
+        // getProfile confirmed auth.uid() is valid and row truly does not exist.
         setProfile(null);
         return;
       }
 
       if (error) {
         if (attempt < MAX_RETRIES - 1) {
-          // Exponential backoff: 600ms, 1200ms, 2400ms
-          const delay = 600 * Math.pow(2, attempt);
+          const delay = 800 * Math.pow(2, attempt);
+          console.warn(`[SETU Auth] Profile fetch attempt ${attempt + 1} failed, retrying in ${delay}ms`);
           await new Promise(res => setTimeout(res, delay));
           continue;
         }
-        // All retries exhausted
+        // All retries exhausted — show error
         console.error('[SETU Auth] Could not load profile after retries:', error);
         setProfile(null);
         setAuthError('Could not load your profile. Please check your connection and try again.');
@@ -342,6 +351,7 @@ export function AuthProvider({ children }) {
     setuScore:  profile?.setu_score ?? 500,
     isVerified: profile?.is_verified ?? false,
     portalPath: profile ? getPortalPath(profile.role) : '/',
+    reloadProfile: () => { if (user) loadProfile(user); },
   };
 
   return (
