@@ -207,15 +207,36 @@ export function AuthProvider({ children }) {
   }, []);
 
   // ── Create profile (called from onboarding after first OTP verify) ──
+  // ── Create / complete profile (called from onboarding) ──
+  //
+  // WHY UPSERT, NOT INSERT:
+  // The handle_new_user trigger on auth.users fires immediately when a
+  // user signs up (phone OTP or Google OAuth) and inserts a skeleton
+  // profile row with a generated name ("SETU User" / Google display name).
+  // By the time the user reaches /onboarding/register and clicks Continue,
+  // that row ALREADY EXISTS. A plain INSERT hits the PRIMARY KEY unique
+  // constraint → "duplicate key value violates unique constraint profiles_pkey"
+  // → Supabase returns an error → frontend shows "Could not create your profile."
+  //
+  // Fix: use upsert() which maps to INSERT ... ON CONFLICT (id) DO UPDATE.
+  // When the trigger row exists → we UPDATE name, phone, role with real values.
+  // When no row exists (e.g. trigger failed) → we INSERT a fresh row.
+  // Either way the operation succeeds and the profile reflects what the user entered.
   const createProfile = useCallback(async (userId, profileData) => {
     if (!isSupabaseConfigured) return { error: null };
 
-    const { error } = await supabase.from('profiles').insert({
-      id:    userId,
-      phone: profileData.phone || '',
-      name:  profileData.name || null,
-      role:  profileData.role || 'customer',
-    });
+    const { error } = await supabase.from('profiles').upsert(
+      {
+        id:    userId,
+        phone: profileData.phone || '',
+        name:  profileData.name || null,
+        role:  profileData.role || 'customer',
+      },
+      {
+        onConflict: 'id',          // conflict target = primary key
+        ignoreDuplicates: false,   // DO UPDATE (not DO NOTHING) so name gets saved
+      }
+    );
 
     if (!error) {
       // Re-fetch to get the full profile row with DB defaults applied
