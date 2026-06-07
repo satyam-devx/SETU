@@ -133,6 +133,7 @@ function setuReducer(state, action) {
           isVerified: profile.is_verified ?? false,
         },
       };
+    }
 
     case 'CLEAR_CURRENT_USER':
       return { ...state, currentUser: null };
