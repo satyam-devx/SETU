@@ -1,21 +1,32 @@
 // ═══════════════════════════════════════════════════════════
 // SETU PLATFORM — AUTH CONTEXT  (production-hardened)
 //
-// KEY FIXES APPLIED:
-//  1. Removed redundant getSession() bootstrap — onAuthStateChange
-//     fires INITIAL_SESSION on mount; using it as single source of truth
-//     eliminates the dual-call race condition.
-//  2. verifyOTP no longer fetches profile directly — state updates flow
-//     exclusively through onAuthStateChange to prevent race conditions.
-//  3. isAuthenticated is now session-based (!!user) not profile-based,
-//     so a profile load failure doesn't silently log the user out.
-//  4. loadProfile returns typed results, distinguishing "not found" from
-//     real errors, so retries are only performed on transient failures.
-//  5. signOut uses onAuthStateChange-driven state clearing, not
-//     window.location.href, preserving SPA navigation.
-//  6. Removed unused useNavigate import (AuthProvider is outside Router).
-//  7. signInWithGoogle whitespace typo fixed.
-//  8. Demo OTP strictly validates '1234'.
+// BUGS FIXED IN THIS VERSION:
+//
+//  BUG — Google OAuth drops session after redirect:
+//    redirectTo was set to window.location.origin (e.g. http://localhost:5173).
+//    Supabase appends the token to the hash: http://localhost:5173/#access_token=...
+//    When the SPA router loads '/', the RoleSelect component immediately
+//    calls navigate() which strips the hash. The Supabase client never sees
+//    the token → session is lost → user is redirected back to /login.
+//
+//    Fix: redirectTo now points to `${window.location.origin}/auth/callback`.
+//    The new AuthCallback.jsx component renders at /auth/callback and waits
+//    for Supabase to exchange the hash token BEFORE any navigation occurs.
+//
+//    REQUIRED ACTION: Add the callback URL to Supabase Dashboard →
+//    Authentication → URL Configuration → Redirect URLs:
+//      http://localhost:5173/auth/callback
+//      https://your-production-domain.com/auth/callback
+//
+// All other fixes from previous version are preserved:
+//  1. onAuthStateChange as single source of truth (no dual getSession race).
+//  2. verifyOTP does not fetch profile — state flows through onAuthStateChange.
+//  3. isAuthenticated is session-based (!!user), not profile-based.
+//  4. loadProfile distinguishes "not found" from real DB errors.
+//  5. signOut uses reactive state clearing, not window.location.href.
+//  6. No useNavigate in AuthProvider (AuthProvider is outside Router).
+//  7. Demo OTP strictly validates '1234'.
 // ═══════════════════════════════════════════════════════════
 
 import React, {
@@ -48,17 +59,15 @@ export function AuthProvider({ children }) {
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
 
-  // FIX (Issue 3): isAuthenticated is session-based only.
+  // isAuthenticated is session-based only.
   // Profile availability is tracked separately via isProfileLoaded.
   // This prevents a profile fetch failure from silently logging users out.
   const isAuthenticated  = !!user;
   const isProfileLoaded  = !!profile;
 
   // ── Load profile for a given user ──
-  // FIX (Issue 4): Uses typed getProfile result to distinguish
-  // "no row" (new user) from transient network errors.
-  // Only retries on real errors; immediately returns null for new users.
-  // FIX (Issue 19): Exponential backoff on retries.
+  // Uses typed getProfile result to distinguish "no row" (new user)
+  // from transient network errors. Only retries on real errors.
   const loadProfile = useCallback(async (authUser) => {
     if (!authUser) {
       setProfile(null);
@@ -81,7 +90,7 @@ export function AuthProvider({ children }) {
       }
 
       if (notFound) {
-        // New user — no profile row yet. This is expected, not an error.
+        // New user — no profile row yet. Expected for first-time logins.
         setProfile(null);
         return;
       }
@@ -103,13 +112,12 @@ export function AuthProvider({ children }) {
   }, []);
 
   // ── Bootstrap: subscribe to auth state changes ──
-  // FIX (Issue 1): Removed redundant getSession() call.
   // Supabase fires INITIAL_SESSION via onAuthStateChange on mount —
-  // using that as the single source of truth eliminates the dual-call
-  // race condition where loadProfile was being called twice.
+  // this is the single source of truth, eliminating the dual-call
+  // race condition that caused duplicate loadProfile calls.
   useEffect(() => {
     let mounted = true;
-    let initialised = false; // Guard: setIsLoading(false) only once, after first event
+    let initialised = false; // Guard: setIsLoading(false) only once
 
     if (!isSupabaseConfigured) {
       setUser({ id: DEMO_PROFILE.id, phone: DEMO_PROFILE.phone });
@@ -137,8 +145,6 @@ export function AuthProvider({ children }) {
         }
 
         // Only set isLoading(false) once — on the very first auth event.
-        // Subsequent events (TOKEN_REFRESHED, USER_UPDATED) must not
-        // retrigger the loading spinner and risk breaking active sessions.
         if (!initialised) {
           initialised = true;
           if (mounted) setIsLoading(false);
@@ -153,14 +159,11 @@ export function AuthProvider({ children }) {
   }, [loadProfile]);
 
   // ── Sign Out ──
-  // FIX (Issue 6): Removed window.location.href — Supabase fires SIGNED_OUT
-  // on onAuthStateChange which clears state reactively. No full reload needed.
   const signOut = useCallback(async () => {
     if (isSupabaseConfigured) {
       await supabase.auth.signOut();
       // State cleared by SIGNED_OUT event in onAuthStateChange above.
     } else {
-      // Demo mode — clear manually since there's no Supabase subscription
       setUser(null);
       setSession(null);
       setProfile(null);
@@ -180,13 +183,11 @@ export function AuthProvider({ children }) {
   }, []);
 
   // ── Verify OTP ──
-  // FIX (Issue 2): No longer fetches profile directly. Supabase will fire
-  // SIGNED_IN on onAuthStateChange, which calls loadProfile. OTPVerify.jsx
-  // should react to the isAuthenticated / profile state change via useEffect
-  // rather than navigating from the response of this function.
+  // Does NOT fetch profile directly. Supabase fires SIGNED_IN on
+  // onAuthStateChange, which calls loadProfile. Navigation is handled
+  // reactively in OTPVerify.jsx after auth state resolves.
   const verifyOTP = useCallback(async (phone, token) => {
     if (!isSupabaseConfigured) {
-      // FIX (Issue 12): Demo mode strictly validates '1234', not any 4 digits.
       if (token === '1234') {
         setUser({ id: DEMO_PROFILE.id, phone });
         setProfile({ ...DEMO_PROFILE, phone });
@@ -211,7 +212,7 @@ export function AuthProvider({ children }) {
 
     const { error } = await supabase.from('profiles').insert({
       id:    userId,
-      phone: profileData.phone,
+      phone: profileData.phone || '',
       name:  profileData.name || null,
       role:  profileData.role || 'customer',
     });
@@ -241,14 +242,32 @@ export function AuthProvider({ children }) {
   }, []);
 
   // ── Google OAuth ──
-  // FIX (Issue 18): Removed trailing whitespace from error message string.
+  // FIX: redirectTo now points to /auth/callback instead of origin root.
+  //
+  // BEFORE (broken):
+  //   redirectTo: window.location.origin
+  //   → Supabase redirects to http://localhost:5173/#access_token=...
+  //   → RoleSelect renders, calls navigate('/')
+  //   → Hash is stripped → Supabase never sees token → session lost
+  //
+  // AFTER (fixed):
+  //   redirectTo: window.location.origin + '/auth/callback'
+  //   → Supabase redirects to http://localhost:5173/auth/callback#access_token=...
+  //   → AuthCallback.jsx renders, does NOT navigate before token exchange
+  //   → Supabase client exchanges token → SIGNED_IN fires → session saved
+  //
+  // REQUIRED: Add to Supabase Dashboard → Auth → URL Configuration → Redirect URLs:
+  //   http://localhost:5173/auth/callback
+  //   https://your-production-domain.com/auth/callback
   const signInWithGoogle = useCallback(async () => {
     if (!isSupabaseConfigured) {
       return { error: { message: 'Supabase not configured' } };
     }
     return await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin },
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
     });
   }, []);
 
@@ -260,7 +279,6 @@ export function AuthProvider({ children }) {
       .update({ ...updates, updated_at: new Date().toISOString() })
       .eq('id', user.id);
     if (!error) {
-      // Re-fetch to ensure local state matches DB exactly
       const { data } = await getProfile(user.id);
       if (data) setProfile(data);
     }
