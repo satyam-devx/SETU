@@ -186,10 +186,6 @@ function RoleError() {
 // ── APP ───────────────────────────────────────────────────
 function App() {
   return (
-    // Router is the outermost wrapper so any component inside
-    // AuthProvider can safely call useNavigate.
-    {/* basename tells React Router that all routes are under /SETU/ on GitHub Pages.
-    import.meta.env.BASE_URL is "/SETU/" in prod (set by vite base) and "/" in dev. */}
     <Router basename={import.meta.env.BASE_URL}>
       <AuthProvider>
         <SetuStoreProvider>
