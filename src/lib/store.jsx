@@ -42,17 +42,7 @@ export function canTransition(from, to) {
 }
 
 // ── FALLBACK USER ─────────────────────────────────────────
-const FALLBACK_USER = {
-  id:         'u1',
-  name:       'Anita Devi',
-  phone:      '+91 98765 43200',
-  village:    'Madhepur',
-  village_id: 'v1',
-  role:       'customer',
-  setuScore:  720,
-  language:   'hi',
-  isVerified: true,
-};
+const FALLBACK_USER = null;
 
 // ── INITIAL STATE ─────────────────────────────────────────
 const initialState = {
@@ -60,7 +50,7 @@ const initialState = {
   riders:          RIDERS,
   notifications:   NOTIFICATIONS,
   wallet:          WALLET,
-  currentUser:     FALLBACK_USER,
+  currentUser:     null,
   riderOnline:     true,
   vendorOnline:    true,
   unreadCount:     NOTIFICATIONS.filter(n => !n.isRead).length,
@@ -123,25 +113,29 @@ function setuReducer(state, action) {
     // ── Phase 1: user sync ──
     case 'SET_CURRENT_USER': {
       const { profile } = action.payload;
-      if (!profile) return state;
+
+      if (!profile || typeof profile !== 'object' || !profile.id) {
+        console.warn('[SETU Store] SET_CURRENT_USER: invalid profile payload', profile);
+        return state;
+      }
+
       return {
         ...state,
         currentUser: {
           id:         profile.id,
-          name:       profile.name       ?? FALLBACK_USER.name,
-          phone:      profile.phone      ?? FALLBACK_USER.phone,
-          village:    profile.village    ?? FALLBACK_USER.village,
-          village_id: profile.village_id ?? FALLBACK_USER.village_id,
-          role:       profile.role       ?? FALLBACK_USER.role,
-          setuScore:  profile.setu_score ?? FALLBACK_USER.setuScore,
-          language:   profile.language   ?? FALLBACK_USER.language,
+          name:       profile.name       ?? 'SETU User',
+          phone:      profile.phone      ?? '',
+          village:    profile.village    ?? null,
+          village_id: profile.village_id ?? null,
+          role:       profile.role       ?? 'customer',
+          setuScore:  profile.setu_score ?? 500,
+          language:   profile.language   ?? 'hi',
           isVerified: profile.is_verified ?? false,
         },
       };
-    }
 
     case 'CLEAR_CURRENT_USER':
-      return { ...state, currentUser: FALLBACK_USER };
+      return { ...state, currentUser: null };
 
     // ── Phase 2: DB hydration ──────────────────────────────
 
@@ -324,7 +318,7 @@ function setuReducer(state, action) {
             status:          ORDER_STATUS.DELIVERED,
             deliveredAt:     new Date().toISOString(),
             deliveryPhotoUrl: photoUrl,
-            codCollected:    codCollected ?? false,
+            codCollected:    codCollected ?? o.is_cod,
             _source:         'optimistic',
           } : o
         ),
@@ -504,5 +498,14 @@ export function useRiderState() {
   return {
     isOnline:     state.riderOnline,
     toggleOnline: () => dispatch({ type: 'RIDER_TOGGLE_ONLINE' }),
+  };
+}
+
+
+export function useVendorState() {
+  const { state, dispatch } = useStore();
+  return {
+    isOnline:     state.vendorOnline,
+    toggleOnline: () => dispatch({ type: 'VENDOR_TOGGLE_ONLINE' }),
   };
 }
