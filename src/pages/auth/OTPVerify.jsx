@@ -1,13 +1,25 @@
 // ═══════════════════════════════════════════════════════════
 // SETU PLATFORM — OTP VERIFY  (production-hardened)
 //
-// KEY FIXES APPLIED:
-//  1. Navigation after OTP success is now driven by auth state changes
-//     (isAuthenticated, isProfileLoaded) rather than the verifyOTP response,
-//     eliminating the race between onAuthStateChange and direct profile fetch.
-//  2. eslint-disable comment removed from auto-submit useEffect; deps corrected.
-//  3. "New user" detection now uses isAuthenticated && !isProfileLoaded,
-//     so navigation to onboarding only happens after auth state settles.
+// BUGS FIXED IN THIS VERSION:
+//
+//  BUG 1 — WHITE SCREEN (Critical):
+//    handleVerify was declared with useCallback AFTER the useEffect
+//    that listed it in its dependency array. A `const` declared with
+//    useCallback is in the temporal dead zone at the point the useEffect
+//    closure is created — this causes a ReferenceError which React
+//    catches as a render error, producing a completely blank page.
+//    Fix: handleVerify useCallback is now declared BEFORE any useEffect
+//    that references it.
+//
+//  BUG 2 — Redirect after auth state change:
+//    Navigation after OTP success is driven by auth state changes
+//    (isAuthenticated, isProfileLoaded) rather than the verifyOTP
+//    return value, eliminating the race condition.
+//
+//  BUG 3 — New user detection:
+//    isAuthenticated && !isProfileLoaded correctly routes new users
+//    (no profile row) to onboarding instead of crashing.
 // ═══════════════════════════════════════════════════════════
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
@@ -18,7 +30,7 @@ import { Card } from '@/components/ui/card';
 import { useAuth } from '@/lib/AuthContext';
 import { getPortalPath } from '@/lib/supabase';
 
-const OTP_LENGTH      = 4;
+const OTP_LENGTH      = 6; // Supabase default OTP length is 6 digits
 const RESEND_COOLDOWN = 30; // seconds
 
 export default function OTPVerify() {
@@ -44,15 +56,50 @@ export default function OTPVerify() {
   const [resending, setResending]         = useState(false);
   const inputRefs = useRef([]);
 
+  // ─────────────────────────────────────────────────────────
+  // handleVerify MUST be declared before any useEffect that
+  // references it in a dependency array. Declaring it after
+  // (as was the case before) puts it in the temporal dead zone
+  // at the time the useEffect closure is created, causing a
+  // ReferenceError → blank white screen.
+  // ─────────────────────────────────────────────────────────
+  const handleVerify = useCallback(async (tokenOverride) => {
+    const token = tokenOverride ?? digits.join('');
+    if (token.length !== OTP_LENGTH) {
+      setError(`Please enter all ${OTP_LENGTH} digits.`);
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    const { error: verifyError } = await verifyOTP(phone, token);
+    setLoading(false);
+
+    if (verifyError) {
+      setDigits(Array(OTP_LENGTH).fill(''));
+      inputRefs.current[0]?.focus();
+      if (verifyError.message?.includes('expired')) {
+        setError('OTP has expired. Please request a new one.');
+      } else if (verifyError.message?.includes('invalid') || verifyError.message?.includes('Invalid')) {
+        setError('Incorrect OTP. Please try again.');
+      } else {
+        setError(verifyError.message || 'Verification failed. Please try again.');
+      }
+      return;
+    }
+
+    // Mark success — the useEffect below will handle navigation
+    // once onAuthStateChange fires and auth state settles.
+    setSuccess(true);
+  }, [digits, phone, verifyOTP]);
+
   // If no phone in query params, back to login
   useEffect(() => {
     if (!phone) navigate('/login', { replace: true });
   }, [phone, navigate]);
 
-  // FIX (Issue 2): Navigation after OTP success is now driven by auth state,
-  // not the return value of verifyOTP. This prevents the race condition between
-  // onAuthStateChange setting state and the old direct getProfile() call.
-  //
+  // Navigation after OTP success is driven by auth state changes.
   // Flow:
   //  - User enters OTP → handleVerify calls verifyOTP (no profile fetch)
   //  - Supabase fires SIGNED_IN → onAuthStateChange → loadProfile → sets profile
@@ -71,7 +118,7 @@ export default function OTPVerify() {
         navigate('/onboarding/register', { state: { phone } });
       }
     }
-  }, [success, isLoading, isAuthenticated, isProfileLoaded, profile, phone, navigate, portalPath]);
+  }, [success, isLoading, isAuthenticated, isProfileLoaded, profile, phone, navigate]);
 
   // If already authenticated before this page loaded, redirect immediately
   useEffect(() => {
@@ -97,8 +144,9 @@ export default function OTPVerify() {
     inputRefs.current[0]?.focus();
   }, []);
 
-  // Auto-submit when all digits filled
-  // FIX (Issue 16): Removed eslint-disable; corrected dep array.
+  // Auto-submit when all digits filled.
+  // handleVerify is declared above this useEffect, so it is safe
+  // to include in the dependency array.
   useEffect(() => {
     const token = digits.join('');
     if (token.length === OTP_LENGTH && !loading && !success) {
@@ -107,6 +155,7 @@ export default function OTPVerify() {
   }, [digits, loading, success, handleVerify]);
 
   const handleDigitChange = (index, value) => {
+    // Accept pasted multi-char input per-cell (take last char only)
     const digit = value.replace(/\D/g, '').slice(-1);
     setError('');
     const newDigits = [...digits];
@@ -148,40 +197,6 @@ export default function OTPVerify() {
     inputRefs.current[focusIdx]?.focus();
   };
 
-  // FIX (Issue 2): handleVerify no longer navigates — it only verifies.
-  // Navigation is handled reactively by the useEffect above that watches
-  // isAuthenticated / isProfileLoaded after success is set.
-  const handleVerify = useCallback(async (tokenOverride) => {
-    const token = tokenOverride ?? digits.join('');
-    if (token.length !== OTP_LENGTH) {
-      setError(`Please enter all ${OTP_LENGTH} digits.`);
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-
-    const { error: verifyError } = await verifyOTP(phone, token);
-    setLoading(false);
-
-    if (verifyError) {
-      setDigits(Array(OTP_LENGTH).fill(''));
-      inputRefs.current[0]?.focus();
-      if (verifyError.message?.includes('expired')) {
-        setError('OTP has expired. Please request a new one.');
-      } else if (verifyError.message?.includes('invalid') || verifyError.message?.includes('Invalid')) {
-        setError('Incorrect OTP. Please try again.');
-      } else {
-        setError(verifyError.message || 'Verification failed. Please try again.');
-      }
-      return;
-    }
-
-    // Mark success — the useEffect above will handle navigation
-    // once onAuthStateChange fires and auth state settles.
-    setSuccess(true);
-  }, [digits, phone, verifyOTP]);
-
   const handleResend = async () => {
     setResending(true);
     setError('');
@@ -198,14 +213,12 @@ export default function OTPVerify() {
     }
   };
 
-  // FIX (Issue 13): More robust phone masking that handles variable-length numbers
+  // Robust phone masking
   const maskedPhone = phone
     ? (() => {
         if (phone.startsWith('+91') && phone.length === 13) {
-          // +91XXXXXXXXXX → +91 XXX ****XX
           return `${phone.slice(0, 3)} ${phone.slice(3, 6)} ****${phone.slice(-2)}`;
         }
-        // Generic fallback: show first 4 and last 2 chars
         return `${phone.slice(0, 4)}****${phone.slice(-2)}`;
       })()
     : '';
@@ -250,7 +263,7 @@ export default function OTPVerify() {
 
         {!success && (
           <>
-            <div className="flex justify-center gap-3 mb-4" onPaste={handlePaste}>
+            <div className="flex justify-center gap-2 mb-4" onPaste={handlePaste}>
               {digits.map((digit, index) => (
                 <input
                   key={index}
@@ -263,7 +276,7 @@ export default function OTPVerify() {
                   onKeyDown={e => handleKeyDown(index, e)}
                   disabled={loading}
                   className={`
-                    w-14 h-14 text-center text-2xl font-bold rounded-2xl border-2
+                    w-11 h-12 text-center text-xl font-bold rounded-xl border-2
                     bg-background outline-none transition-all
                     focus:border-primary focus:ring-2 focus:ring-primary/20
                     ${digit ? 'border-primary bg-primary/5' : 'border-border'}
