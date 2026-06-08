@@ -192,6 +192,7 @@ function App() {
         <SetuStoreProvider>
           <AuthStoreBridge />
           <CartProvider>
+            <VillageProvider>
             <ScrollToTop />
             <Routes>
 
@@ -351,6 +352,7 @@ function App() {
               <Route path="*" element={<NotFound />} />
 
             </Routes>
+            </VillageProvider>
             <Toaster />
           </CartProvider>
         </SetuStoreProvider>
