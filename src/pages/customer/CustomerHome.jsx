@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { CATEGORIES, VENDORS, PRODUCTS, SCHEMES } from '@/lib/mockData';
 import { AIAPI } from '@/lib/api';
 import { useStore } from '@/lib/store';
+import { useVillage } from '@/lib/village';
+import { useAuth } from '@/lib/AuthContext';
 
 const BANNERS = [
   { id: 1, title: 'Chhath Festival Sale', subtitle: 'Up to 30% off on pooja essentials', bg: 'bg-gradient-to-r from-primary to-primary/70', link: '/customer/search?category=c6' },
@@ -16,11 +18,15 @@ const BANNERS = [
 export default function CustomerHome() {
   const navigate  = useNavigate();
   const { state } = useStore();
+  const { village } = useVillage();
+  const { user }  = useAuth();
   const [query, setQuery]         = useState('');
   const [listening, setListening] = useState(false);
 
+  // Filter live orders to the authenticated user's ID — never hardcode 'u1'
   const liveOrders = state.orders.filter(o =>
-    o.customerId === 'u1' && !['delivered', 'cancelled'].includes(o.status)
+    user?.id && (o.customerId === user.id || o.customer_id === user.id)
+    && !['delivered', 'cancelled'].includes(o.status)
   );
 
   const handleSearch = (e) => {
@@ -41,7 +47,7 @@ export default function CustomerHome() {
           <MapPin className="w-4 h-4 text-primary shrink-0" />
           <div className="min-w-0">
             <p className="text-xs text-muted-foreground">Delivering to</p>
-            <p className="text-sm font-semibold text-foreground">Madhepur, Madhubani</p>
+            <p className="text-sm font-semibold text-foreground">{village.name}, {village.district}</p>
           </div>
           <ChevronRight className="w-4 h-4 text-muted-foreground" />
         </div>

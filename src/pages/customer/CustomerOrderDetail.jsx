@@ -9,11 +9,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import AppHeader from '@/components/shared/AppHeader';
+import OrderTrackingMap from '@/components/maps/OrderTrackingMap';
 import { useRealtimeOrder } from '@/hooks/useRealtimeOrders';
 import { useStore, canTransition, ORDER_STATUS } from '@/lib/store';
 import { OrderAPI } from '@/lib/api';
 import { ORDERS } from '@/lib/mockData';
-import OrderTrackingMap from '@/components/maps/OrderTrackingMap';
 
 // ── Timeline config per status ──────────────────────────
 const TIMELINE = {
@@ -179,14 +179,14 @@ export default function CustomerOrderDetail() {
         backTo="/customer/orders"
       />
 
-      {/* Real-time Tracking Map for active orders */}
-      {isLive && (order.status === 'picked_up' || order.status === 'on_the_way') && (
-        <div className="px-4 mt-4">
-           <OrderTrackingMap
-              riderId={order.rider_id || order.riderId}
-              vendorLoc={order.vendor_location} // Ensure this is provided in API
-              customerLoc={order.customer_location} // Ensure this is provided in API
-           />
+      {/* Map for Live Orders */}
+      {isLive && (
+        <div className="w-full h-64 border-b border-border">
+          <OrderTrackingMap 
+            riderId={order.rider_id} 
+            vendorLoc={{ lat: 26.350, lng: 86.070 }} 
+            customerLoc={{ lat: 26.355, lng: 86.075 }} 
+          />
         </div>
       )}
 

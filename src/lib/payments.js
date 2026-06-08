@@ -1,18 +1,14 @@
 // ═══════════════════════════════════════════════════════════
-// SETU PLATFORM — RAZORPAY INTEGRATION
+// SETU PLATFORM — RAZORPAY HELPERS
 // ═══════════════════════════════════════════════════════════
 
 import { supabase } from './supabase';
 
 /**
- * Dynamically loads the Razorpay Checkout script.
+ * Dynamically loads the Razorpay Checkout script
  */
-export function loadRazorpay() {
+export function loadRazorpayScript() {
   return new Promise((resolve) => {
-    if (window.Razorpay) {
-      resolve(true);
-      return;
-    }
     const script = document.createElement('script');
     script.src = 'https://checkout.razorpay.com/v1/checkout.js';
     script.onload = () => resolve(true);
@@ -22,53 +18,57 @@ export function loadRazorpay() {
 }
 
 /**
- * Initiates a UPI / Card payment via Razorpay.
+ * Initiates a Razorpay payment via Edge Function
  */
-export async function initiateUPIPayment({ amount, orderId, customerName, phone }) {
-  const isLoaded = await loadRazorpay();
-  if (!isLoaded) {
-    throw new Error('Razorpay SDK failed to load. Check your internet connection.');
-  }
+export async function initiatePayment({ amount, orderId, customerId, customerName, customerPhone, type = 'order_payment' }) {
+  try {
+    // 1. Create Razorpay Order via Edge Function
+    const { data: rzpOrder, error: funcError } = await supabase.functions.invoke('create-razorpay-order', {
+      body: { amount, orderId, customerId, type }
+    });
 
-  // 1. Call Edge Function to create Razorpay Order
-  const { data, error } = await supabase.functions.invoke('create-razorpay-order', {
-    body: { amount, orderId, customerId: (await supabase.auth.getUser()).data.user?.id }
-  });
+    if (funcError || !rzpOrder) throw funcError || new Error('Failed to create payment order');
 
-  if (error) throw error;
-
-  const { razorpayOrderId } = data;
-
-  return new Promise((resolve, reject) => {
-    const options = {
-      key: import.meta.env.VITE_RAZORPAY_KEY_ID,
-      amount: data.amount,
-      currency: data.currency,
-      name: 'SETU Platform',
-      description: `Order #${orderId}`,
-      order_id: razorpayOrderId,
-      handler: function (response) {
-        resolve({
-          razorpayPaymentId: response.razorpay_payment_id,
-          razorpayOrderId: response.razorpay_order_id,
-          razorpaySignature: response.razorpay_signature,
-        });
-      },
-      prefill: {
-        name: customerName,
-        contact: phone,
-      },
-      theme: {
-        color: '#0ea5e9', // primary-500
-      },
-      modal: {
-        ondismiss: function () {
-          resolve({ cancelled: true });
+    // 2. Open Razorpay Checkout
+    return new Promise((resolve, reject) => {
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID,
+        amount: rzpOrder.amount,
+        currency: rzpOrder.currency,
+        name: 'SETU Platform',
+        description: type === 'wallet_topup' ? 'Wallet Topup' : `Order #${orderId}`,
+        order_id: rzpOrder.id,
+        handler: function (response) {
+          // Success: Razorpay gives payment_id, order_id, and signature
+          resolve({
+            success: true,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_signature: response.razorpay_signature,
+          });
         },
-      },
-    };
+        prefill: {
+          name: customerName,
+          contact: customerPhone,
+        },
+        theme: {
+          color: '#F97316', // primary-orange
+        },
+        modal: {
+          ondismiss: function () {
+            resolve({ cancelled: true });
+          }
+        }
+      };
 
-    const rzp = new window.Razorpay(options);
-    rzp.open();
-  });
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', function (response) {
+        reject(new Error(response.error.description));
+      });
+      rzp.open();
+    });
+  } catch (error) {
+    console.error('[SETU Payments] Error:', error);
+    return { error: error.message };
+  }
 }

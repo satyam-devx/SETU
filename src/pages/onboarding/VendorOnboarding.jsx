@@ -7,6 +7,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { kyc as kycService } from '@/lib/kyc';
+import { useAuth } from '@/lib/AuthContext';
 
 const STEPS = [
   { id: 1, label: 'Identity', sublabel: 'Aadhaar + Face' },
@@ -37,6 +39,24 @@ function StepIndicator({ current }) {
 }
 
 function Step1({ onNext }) {
+  const { user } = useAuth();
+  const [aadhaar, setAadhaar] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+
+  const handleVerify = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await kycService.verifyAadhaar(user.id, aadhaar);
+      if (error) throw error;
+      setOtpSent(true);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="px-4 py-6 space-y-5">
       <div>
@@ -45,9 +65,23 @@ function Step1({ onNext }) {
       </div>
       <Card className="p-4 border-border">
         <h3 className="font-semibold text-sm mb-3">Aadhaar Verification</h3>
-        <Input placeholder="Aadhaar Number (12 digits)" className="mb-2 font-mono tracking-widest" maxLength={12} />
-        <Input placeholder="Registered Mobile OTP" className="mb-2" />
-        <Button variant="outline" size="sm" className="w-full text-xs">Request OTP via UIDAI</Button>
+        <Input 
+          placeholder="Aadhaar Number (12 digits)" 
+          className="mb-2 font-mono tracking-widest" 
+          maxLength={12} 
+          value={aadhaar}
+          onChange={(e) => setAadhaar(e.target.value)}
+        />
+        {otpSent && <Input placeholder="Registered Mobile OTP" className="mb-2" />}
+        <Button 
+          variant="outline" 
+          size="sm" 
+          className="w-full text-xs"
+          onClick={otpSent ? onNext : handleVerify}
+          disabled={loading || aadhaar.length !== 12}
+        >
+          {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : (otpSent ? 'Confirm OTP & Continue' : 'Request OTP via UIDAI')}
+        </Button>
       </Card>
       <Card className="p-4 border-border">
         <h3 className="font-semibold text-sm mb-1">Selfie Verification</h3>

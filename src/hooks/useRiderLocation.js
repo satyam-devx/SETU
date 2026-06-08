@@ -2,74 +2,71 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
 /**
- * Tracks rider's GPS and syncs to Supabase.
- * @param {string} riderId - DB uuid of the rider
- * @param {boolean} enabled - whether to track
+ * Hook for tracking and reporting rider GPS location
  */
-export function useRiderLocation(riderId, enabled = false) {
+export function useRiderLocation(riderId, isOnline = false) {
   const [location, setLocation] = useState(null);
   const [error, setError] = useState(null);
   const watchId = useRef(null);
-  const lastSync = useRef(0);
+  const lastUpdate = useRef(0);
+
+  const UPDATE_INTERVAL = 10000; // 10 seconds
 
   useEffect(() => {
-    if (!enabled || !riderId || !navigator.geolocation) return;
+    if (!riderId || !isOnline) {
+      if (watchId.current) {
+        navigator.geolocation.clearWatch(watchId.current);
+        watchId.current = null;
+      }
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      setError('Geolocation not supported');
+      return;
+    }
 
     watchId.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        const { latitude, longitude, accuracy } = pos.coords;
-        const newLoc = { lat: latitude, lng: longitude, accuracy };
-        setLocation(newLoc);
-
-        // Sync to Supabase every 15 seconds to save battery
+      async (pos) => {
+        const { latitude: lat, longitude: lng, accuracy } = pos.coords;
         const now = Date.now();
-        if (now - lastSync.current > 15000) {
-          syncLocation(riderId, newLoc);
-          lastSync.current = now;
+        
+        setLocation({ lat, lng, accuracy });
+
+        // Throttle database updates
+        if (now - lastUpdate.current > UPDATE_INTERVAL) {
+          try {
+            await supabase.from('rider_locations').upsert({
+              rider_id: riderId,
+              lat,
+              lng,
+              accuracy,
+              recorded_at: new Date().toISOString()
+            }, { onConflict: 'rider_id' });
+            
+            lastUpdate.current = now;
+          } catch (err) {
+            console.error('[GPS] Upsert failed:', err);
+          }
         }
       },
       (err) => {
-        console.error('[GPS Error]', err);
         setError(err.message);
+        console.error('[GPS] Error:', err);
       },
       {
         enableHighAccuracy: true,
-        maximumAge: 10000,
-        timeout: 20000
+        timeout: 15000,
+        maximumAge: 10000
       }
     );
 
     return () => {
-      if (watchId.current !== null) {
+      if (watchId.current) {
         navigator.geolocation.clearWatch(watchId.current);
       }
     };
-  }, [riderId, enabled]);
-
-  const syncLocation = async (id, loc) => {
-    try {
-      await supabase
-        .from('rider_locations')
-        .upsert({
-          rider_id: id,
-          lat: loc.lat,
-          lng: loc.lng,
-          accuracy: loc.accuracy,
-          recorded_at: new Date().toISOString()
-        });
-
-      // Also log to history
-      await supabase
-        .from('rider_location_history')
-        .insert({
-          rider_id: id,
-          lat: loc.lat,
-          lng: loc.lng
-        });
-    } catch (e) {
-      console.error('[Sync Location Failed]', e);
-    }
-  };
+  }, [riderId, isOnline]);
 
   return { location, error };
 }

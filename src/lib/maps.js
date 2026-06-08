@@ -11,7 +11,7 @@ export const BIHAR_BOUNDS = [
 ];
 
 /**
- * Static coordinates for villages if geocoding fails or for quick lookup
+ * Static coordinates for villages
  */
 export const VILLAGE_COORDINATES = {
   'Madhepur': { lat: 26.350, lng: 86.070 },
@@ -47,11 +47,26 @@ export async function loadMapbox() {
 }
 
 /**
- * Calculate ETA (Mock for MVP)
+ * Calculate ETA (Rural Bihar constants)
  */
 export function calculateETA(distanceInKm) {
-  const avgSpeedKmH = 25; // Rural Bihar average with bike
+  const avgSpeedKmH = 20; // 20km/h for rural roads
   const timeHours = distanceInKm / avgSpeedKmH;
-  const timeMinutes = Math.round(timeHours * 60) + 5; // +5 mins for village turns
+  const timeMinutes = Math.round(timeHours * 60) + 5; // +5 mins for turns
   return timeMinutes;
+}
+
+/**
+ * Haversine distance
+ */
+export function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
 }

@@ -1,171 +1,288 @@
-import React, { useState } from 'react';
-import { IndianRupee, CheckCircle, Clock, AlertTriangle, Camera, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { IndianRupee, CheckCircle, Clock, AlertCircle, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
-import { useStore } from '@/lib/store';
-import { RiderAPI } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
+import { RiderAPI } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
+
+const STATUS_CONFIG = {
+  pending_confirmation: { label: 'Pending',   color: 'bg-amber-100 text-amber-700'  },
+  confirmed:            { label: 'Confirmed', color: 'bg-green-100 text-green-700'  },
+  rejected:             { label: 'Rejected',  color: 'bg-red-100 text-red-700'      },
+};
+
+const DENOMINATIONS = [2000, 500, 200, 100, 50, 20, 10];
 
 export default function RiderCOD() {
-  const { state }     = useStore();
-  const { profile }   = useAuth();
-  const riderUuid     = profile?.rider_id;
-  const riderStore    = state.riders.find(r => r.id === riderUuid || r.user_id === profile?.id) || { codBalance: profile?.cod_balance || 0 };
+  const { user } = useAuth();
 
-  const deliveredOrders = state.orders.filter(o =>
-    o.status === 'delivered' && (o.paymentMethod === 'COD' || o.is_cod)
-  );
+  const [deposits, setDeposits]         = useState([]);
+  const [loadingDeposits, setLoadingDeposits] = useState(true);
+  const [codBalance, setCodBalance]     = useState(0);
 
-  const [depositAmount, setDepositAmount] = useState('');
-  const [depositing, setDepositing]       = useState(false);
-  const [deposited, setDeposited]         = useState(false);
-  const [denominations, setDenominations] = useState({
-    '500': '', '200': '', '100': '', '50': '', '20': '', '10': ''
-  });
+  const [showForm, setShowForm]         = useState(false);
+  const [amount, setAmount]             = useState('');
+  const [denomMap, setDenomMap]         = useState({});
+  const [submitting, setSubmitting]     = useState(false);
+  const [submitError, setSubmitError]   = useState(null);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
 
-  const denomTotal = Object.entries(denominations).reduce(
-    (sum, [note, count]) => sum + (parseInt(note) * (parseInt(count) || 0)), 0
-  );
+  // ── Load rider's COD balance and deposit history ─────────
+  useEffect(() => {
+    if (!user?.id) return;
 
-  const handleDeposit = async () => {
-    const amount = parseInt(depositAmount, 10);
-    if (!amount || amount <= 0) return;
+    async function loadData() {
+      setLoadingDeposits(true);
 
-    setDepositing(true);
-    try {
-      const { data, error } = await RiderAPI.submitCODDeposit(riderUuid, amount, denominations);
-      if (error) throw error;
-      setDeposited(true);
-    } catch (err) {
-      console.error('[RiderCOD] deposit failed:', err);
-      alert('Failed to record deposit. Please try again.');
-    } finally {
-      setDepositing(false);
+      // COD balance from riders table
+      const { data: riderRow } = await supabase
+        .from('riders')
+        .select('cod_balance')
+        .eq('id', user.id)
+        .single();
+
+      if (riderRow) setCodBalance(riderRow.cod_balance ?? 0);
+
+      // Deposit history
+      const { data: deps } = await supabase
+        .from('cod_deposits')
+        .select('*')
+        .eq('rider_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      setDeposits(deps ?? []);
+      setLoadingDeposits(false);
     }
+
+    loadData();
+
+    // Realtime: update when admin confirms/rejects
+    const channel = supabase
+      .channel(`cod-deposits-${user.id}`)
+      .on('postgres_changes', {
+        event:  '*',
+        schema: 'public',
+        table:  'cod_deposits',
+        filter: `rider_id=eq.${user.id}`,
+      }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setDeposits(prev => [payload.new, ...prev]);
+        } else if (payload.eventType === 'UPDATE') {
+          setDeposits(prev => prev.map(d => d.id === payload.new.id ? payload.new : d));
+          // If confirmed, refresh COD balance
+          if (payload.new.status === 'confirmed') {
+            setCodBalance(0);
+          }
+        }
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, [user?.id]);
+
+  // ── Denomination helper ───────────────────────────────────
+  const computedDenomTotal = Object.entries(denomMap).reduce(
+    (sum, [denom, count]) => sum + (Number(denom) * Number(count || 0)),
+    0
+  );
+
+  const handleDenomChange = (denom, value) => {
+    const count = parseInt(value, 10);
+    setDenomMap(prev => ({
+      ...prev,
+      [denom]: isNaN(count) || count < 0 ? 0 : count,
+    }));
+    // Auto-fill amount if denominations are used
+    const newTotal = Object.entries({ ...denomMap, [denom]: count || 0 })
+      .reduce((s, [d, c]) => s + (Number(d) * Number(c || 0)), 0);
+    if (newTotal > 0) setAmount(String(newTotal));
   };
 
-  const codBalance = riderStore.codBalance;
+  // ── Submit deposit ────────────────────────────────────────
+  const handleSubmit = async () => {
+    const n = parseFloat(amount);
+    if (!n || n <= 0) {
+      setSubmitError('Please enter a valid deposit amount.');
+      return;
+    }
+    if (n > codBalance) {
+      setSubmitError(`Deposit amount (₹${n}) cannot exceed COD balance (₹${codBalance}).`);
+      return;
+    }
+
+    setSubmitting(true);
+    setSubmitError(null);
+
+    const { data, error } = await RiderAPI.submitCODDeposit(
+      user.id,
+      n,
+      computedDenomTotal > 0 ? denomMap : null
+    );
+
+    if (error) {
+      setSubmitError(error.message ?? 'Submission failed. Please try again.');
+      setSubmitting(false);
+      return;
+    }
+
+    setSubmitSuccess(true);
+    setShowForm(false);
+    setAmount('');
+    setDenomMap({});
+    setTimeout(() => setSubmitSuccess(false), 4000);
+    setSubmitting(false);
+  };
 
   return (
     <div className="pb-20">
-      <AppHeader title="COD Management" showBack />
-      <div className="px-4 py-4 space-y-4">
+      <AppHeader title="COD Deposit" subtitle="Cash on Delivery Management" showBack />
 
-        {/* Summary */}
-        <Card className="p-5 border-border bg-gradient-to-br from-primary/5 to-background shadow-sm">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">COD Cash on Hand</p>
-          <div className="flex items-baseline gap-1 mt-1">
-            <span className="text-2xl font-bold text-primary">₹</span>
-            <p className="text-4xl font-black text-primary tracking-tight">{codBalance.toLocaleString()}</p>
+      <div className="px-4 py-4 space-y-4">
+        {/* Balance card */}
+        <Card className="p-5 border-primary/20 bg-gradient-to-br from-primary/10 to-primary/5">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
+            Current COD Balance
+          </p>
+          <div className="flex items-baseline gap-1">
+            <IndianRupee className="w-6 h-6 text-primary" />
+            <p className="text-4xl font-bold text-primary">{codBalance.toLocaleString()}</p>
           </div>
           <p className="text-xs text-muted-foreground mt-2">
-            Collected from {deliveredOrders.length} deliveries today
+            Collected from cash-on-delivery orders. Deposit before end of shift.
           </p>
+          {submitSuccess && (
+            <p className="text-xs text-green-600 font-medium mt-2 flex items-center gap-1">
+              <CheckCircle className="w-3.5 h-3.5" /> Deposit submitted. Pending admin confirmation.
+            </p>
+          )}
         </Card>
 
-        {/* COD deliveries */}
-        {deliveredOrders.length > 0 && (
-          <div>
-            <h3 className="font-bold text-sm mb-2 px-1">Today's Collections</h3>
-            <div className="space-y-2">
-              {deliveredOrders.map(o => (
-                <Card key={o.id} className="p-3 border-border flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center shrink-0">
-                    <CheckCircle className="w-4 h-4 text-green-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-mono font-bold truncate">{o.orderNumber || o.order_number}</p>
-                    <p className="text-[10px] text-muted-foreground">{o.customerName || o.customer_name} · {o.village}</p>
-                  </div>
-                  <p className="text-sm font-black text-green-600 shrink-0">+₹{o.total}</p>
-                </Card>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Denomination logger */}
+        {/* Submit deposit */}
         <Card className="p-4 border-border">
-          <h3 className="font-bold text-sm mb-4 flex items-center gap-2">
-            <IndianRupee className="w-4 h-4 text-primary" /> Denomination Count
-          </h3>
-          <div className="grid grid-cols-3 gap-3">
-            {['500', '200', '100', '50', '20', '10'].map(note => (
-              <div key={note}>
-                <Label className="text-[10px] font-bold mb-1 block text-muted-foreground">₹{note}</Label>
+          <button
+            className="w-full flex items-center justify-between"
+            onClick={() => setShowForm(v => !v)}
+          >
+            <p className="font-semibold text-sm">Submit Cash Deposit</p>
+            {showForm ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+
+          {showForm && (
+            <div className="mt-4 space-y-4">
+              {submitError && (
+                <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-xl flex items-start gap-2 text-destructive">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <p className="text-xs font-medium">{submitError}</p>
+                </div>
+              )}
+
+              {/* Total amount */}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                  Deposit Amount (₹)
+                </label>
                 <Input
                   type="number"
-                  placeholder="0"
-                  className="h-9 text-sm text-center rounded-lg"
-                  value={denominations[note]}
-                  onChange={e => setDenominations(d => ({ ...d, [note]: e.target.value }))}
+                  placeholder="Enter amount"
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  className="text-lg font-bold"
                 />
               </div>
-            ))}
-          </div>
-          {denomTotal > 0 && (
-            <div className={`mt-4 p-2.5 rounded-xl text-xs font-bold text-center border ${
-              denomTotal === codBalance
-                ? 'bg-green-50 text-green-700 border-green-200'
-                : 'bg-amber-50 text-amber-700 border-amber-200'
-            }`}>
-              Count Total: ₹{denomTotal.toLocaleString()}
-              {denomTotal === codBalance ? ' (Matches)' : ` (Diff: ₹${Math.abs(denomTotal - codBalance)})`}
+
+              {/* Optional denomination breakdown */}
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">
+                  Denomination Breakdown (optional)
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {DENOMINATIONS.map(denom => (
+                    <div key={denom} className="flex items-center gap-2">
+                      <span className="text-xs font-medium w-12 shrink-0">₹{denom}</span>
+                      <Input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={denomMap[denom] || ''}
+                        onChange={e => handleDenomChange(denom, e.target.value)}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                  ))}
+                </div>
+                {computedDenomTotal > 0 && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Denomination total: ₹{computedDenomTotal.toLocaleString()}
+                    {computedDenomTotal !== parseFloat(amount) && amount && (
+                      <span className="text-amber-600 ml-2">
+                        ⚠ Doesn't match amount
+                      </span>
+                    )}
+                  </p>
+                )}
+              </div>
+
+              <Button
+                className="w-full"
+                onClick={handleSubmit}
+                disabled={submitting || !amount || parseFloat(amount) <= 0}
+              >
+                {submitting
+                  ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Submitting...</>
+                  : `Submit ₹${parseFloat(amount) || 0} Deposit`}
+              </Button>
             </div>
           )}
         </Card>
 
-        {/* Deposit */}
-        {!deposited ? (
-          <Card className="p-4 border-primary/20 shadow-md">
-            <h3 className="font-bold text-sm mb-3 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-primary" /> Submit Deposit to Hub
-            </h3>
-            <div className="relative mb-3">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">₹</span>
-              <Input
-                type="number"
-                placeholder={`Balance: ₹${codBalance}`}
-                className="pl-7 h-11 text-base font-bold"
-                value={depositAmount}
-                onChange={e => setDepositAmount(e.target.value)}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2 mb-3">
-               <Button variant="outline" className="h-10 text-xs gap-2 rounded-xl">
-                 <Camera className="w-3.5 h-3.5" /> Photo Proof
-               </Button>
-               <Button
-                className="h-10 text-xs font-bold rounded-xl"
-                disabled={!depositAmount || depositing || Number(depositAmount) > codBalance}
-                onClick={handleDeposit}
-               >
-                 {depositing ? <Loader2 className="w-4 h-4 animate-spin" /> : `Deposit ₹${depositAmount || '0'}`}
-               </Button>
-            </div>
-            {Number(depositAmount) > codBalance && (
-              <p className="text-[10px] text-destructive font-bold text-center">⚠ Amount exceeds your cash balance</p>
-            )}
-          </Card>
-        ) : (
-          <Card className="p-6 border-green-200 bg-green-50 text-center animate-in zoom-in-95">
-            <div className="w-12 h-12 rounded-full bg-green-200 flex items-center justify-center mx-auto mb-3">
-               <CheckCircle className="w-7 h-7 text-green-600" />
-            </div>
-            <p className="text-sm font-bold text-green-800">Deposit Submitted!</p>
-            <p className="text-xs text-green-700 mt-1">₹{depositAmount} pending reconciliation by admin</p>
-          </Card>
-        )}
+        {/* Deposit history */}
+        <div>
+          <h3 className="font-semibold text-sm mb-2">Deposit History</h3>
 
-        <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl">
-          <p className="text-[10px] text-amber-700 font-medium flex items-start gap-2">
-            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-            Warning: All cash must be deposited at the Madhepur Hub before 9 PM. Any shortage will be deducted from earnings.
-          </p>
+          {loadingDeposits ? (
+            <div className="space-y-2 animate-pulse">
+              {[1, 2, 3].map(i => <div key={i} className="h-16 bg-muted rounded-xl" />)}
+            </div>
+          ) : deposits.length === 0 ? (
+            <Card className="p-4 text-center border-border">
+              <p className="text-sm text-muted-foreground">No deposits yet</p>
+            </Card>
+          ) : (
+            deposits.map(dep => {
+              const cfg = STATUS_CONFIG[dep.status] ?? STATUS_CONFIG.pending_confirmation;
+              const date = new Date(dep.created_at).toLocaleDateString('en-IN', {
+                day: '2-digit', month: 'short', year: 'numeric',
+              });
+              return (
+                <Card key={dep.id} className="p-3 border-border mb-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-bold">₹{Number(dep.amount).toLocaleString()}</p>
+                      <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                        <Clock className="w-3 h-3" /> {date}
+                      </p>
+                    </div>
+                    <Badge className={`text-[9px] border-0 ${cfg.color}`}>
+                      {cfg.label}
+                    </Badge>
+                  </div>
+                  {dep.rejection_reason && (
+                    <p className="text-xs text-destructive mt-1">{dep.rejection_reason}</p>
+                  )}
+                  {dep.admin_confirmed_at && (
+                    <p className="text-xs text-green-600 mt-1">
+                      Confirmed {new Date(dep.admin_confirmed_at).toLocaleDateString('en-IN')}
+                    </p>
+                  )}
+                </Card>
+              );
+            })
+          )}
         </div>
       </div>
     </div>
