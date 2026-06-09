@@ -1,135 +1,236 @@
+// ═══════════════════════════════════════════════════════════
+// SETU — CustomerProfile (v2)
+// Fixes:
+//  - Reads from useAuth (real profile) not store mock user
+//  - Name edit calls updateProfile API — not just local state
+//  - No hardcoded 'u1' order counts
+//  - Shows phone number properly (Google users may have none)
+//  - Sign out with confirmation
+//  - Initials avatar from real name
+// ═══════════════════════════════════════════════════════════
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { User, Phone, MapPin, Star, ShoppingBag, Wallet, Gift, Settings, ChevronRight, Edit2, CheckCircle } from 'lucide-react';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  User, Phone, MapPin, Star, ShoppingBag, Wallet,
+  Gift, Settings, ChevronRight, Edit2, CheckCircle,
+  LogOut, Shield, HeadphonesIcon,
+} from 'lucide-react';
 import AppHeader from '@/components/shared/AppHeader';
+import { useAuth } from '@/lib/AuthContext';
 import { useStore } from '@/lib/store';
+import { updateProfile } from '@/lib/api';
+import { formatCurrency, initials, formatPhone } from '@/lib/utils';
 
 export default function CustomerProfile() {
-  const { state } = useStore();
-  const user = state.currentUser;
+  const navigate         = useNavigate();
+  const { profile, user, signOut } = useAuth();
+  const { state }        = useStore();
 
-  const [editing, setEditing] = useState(false);
-  const [name, setName]       = useState(user.name);
-  const [saved, setSaved]     = useState(false);
+  const [editing, setEditing]   = useState(false);
+  const [name, setName]         = useState(profile?.name || '');
+  const [saving, setSaving]     = useState(false);
+  const [saved, setSaved]       = useState(false);
+  const [showSignout, setShowSignout] = useState(false);
 
-  const totalOrders = state.orders.filter(o => o.customerId === 'u1' || !o.customerId).length;
-  const delivered   = state.orders.filter(o => o.status === 'delivered').length;
+  // Real counts from store (updated by realtime)
+  const myOrders   = state.orders.filter(o =>
+    user?.id && (o.customerId === user.id || o.customer_id === user.id)
+  );
+  const delivered  = myOrders.filter(o => o.status === 'delivered').length;
+  const setuScore  = profile?.setu_score ?? 500;
 
-  const handleSave = () => {
-    setSaved(true);
-    setEditing(false);
-    setTimeout(() => setSaved(false), 2000);
+  const handleSaveName = async () => {
+    if (!name.trim() || name.trim() === profile?.name) { setEditing(false); return; }
+    setSaving(true);
+    const { error } = await updateProfile(user.id, { name: name.trim() });
+    setSaving(false);
+    if (!error) {
+      setSaved(true);
+      setEditing(false);
+      setTimeout(() => setSaved(false), 2500);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/login', { replace: true });
   };
 
   const MENU_ITEMS = [
-    { label: 'My Orders',         icon: ShoppingBag, path: '/customer/orders',       badge: null },
-    { label: 'Wallet & Payments', icon: Wallet,      path: '/customer/wallet',       badge: null },
-    { label: 'SETU Credit',       icon: Star,        path: '/customer/credit',       badge: null },
-    { label: 'My Addresses',      icon: MapPin,      path: '/customer/addresses',    badge: null },
-    { label: 'Refer & Earn',      icon: Gift,        path: '/customer/referral',     badge: '₹100' },
-    { label: 'Settings',          icon: Settings,    path: '/customer/settings',     badge: null },
+    { label: 'My Orders',         icon: ShoppingBag,      path: '/customer/orders',    badge: null },
+    { label: 'Wallet & Payments', icon: Wallet,           path: '/customer/wallet',    badge: null },
+    { label: 'SETU Credit',       icon: Star,             path: '/customer/credit',    badge: null },
+    { label: 'My Addresses',      icon: MapPin,           path: '/customer/addresses', badge: null },
+    { label: 'Refer & Earn',      icon: Gift,             path: '/customer/referral',  badge: '₹100' },
+    { label: 'Help & Support',    icon: HeadphonesIcon,   path: '/customer/support',   badge: null },
+    { label: 'Settings',          icon: Settings,         path: '/customer/settings',  badge: null },
   ];
 
+  const phone = profile?.phone || user?.phone || '';
+  const displayInitials = initials(name || profile?.name || 'S U');
+
   return (
-    <div className="pb-20">
-      <AppHeader title="My Profile" showBack />
+    <div className="pb-nav animate-fade-in" role="main">
+      <AppHeader title="My Profile" />
+
       <div className="px-4 py-4 space-y-4">
 
         {/* Profile card */}
-        <Card className="p-4 border-border">
+        <div className="setu-card p-4">
           <div className="flex items-center gap-4 mb-4">
-            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary shrink-0">
-              {name[0]}
+            {/* Avatar */}
+            <div
+              className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary shrink-0"
+              aria-hidden="true"
+            >
+              {displayInitials}
             </div>
+
+            {/* Info */}
             <div className="flex-1 min-w-0">
               {editing ? (
                 <div className="flex gap-2">
-                  <Input value={name} onChange={e => setName(e.target.value)} className="h-8 text-sm flex-1" />
-                  <Button size="sm" className="h-8" onClick={handleSave}>Save</Button>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleSaveName()}
+                    className="input-field h-9 text-sm flex-1"
+                    autoFocus
+                    aria-label="Edit name"
+                    maxLength={60}
+                  />
+                  <button
+                    onClick={handleSaveName}
+                    disabled={saving}
+                    className="btn-primary h-9 px-3 text-sm min-w-[60px]"
+                  >
+                    {saving ? '...' : 'Save'}
+                  </button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-bold truncate">{name}</h2>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setEditing(true)}>
+                  <h2 className="text-lg font-bold truncate">{profile?.name || 'SETU User'}</h2>
+                  <button
+                    onClick={() => { setName(profile?.name || ''); setEditing(true); }}
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
+                    aria-label="Edit name"
+                  >
                     <Edit2 className="w-3.5 h-3.5" />
-                  </Button>
+                  </button>
                 </div>
               )}
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <Phone className="w-3.5 h-3.5 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">{user.phone}</p>
-              </div>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">{user.village}</p>
-              </div>
+
+              {phone && (
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <Phone className="w-3.5 h-3.5 text-muted-foreground" aria-hidden="true" />
+                  <p className="text-sm text-muted-foreground">{formatPhone(phone)}</p>
+                </div>
+              )}
+              {profile?.village && (
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <MapPin className="w-3.5 h-3.5 text-muted-foreground" aria-hidden="true" />
+                  <p className="text-sm text-muted-foreground">{profile.village}</p>
+                </div>
+              )}
             </div>
           </div>
 
           {saved && (
-            <div className="flex items-center gap-2 text-green-600 text-xs mb-3">
-              <CheckCircle className="w-3.5 h-3.5" /> Profile updated
+            <div className="flex items-center gap-2 text-green-600 text-xs mb-3" role="status" aria-live="polite">
+              <CheckCircle className="w-3.5 h-3.5" aria-hidden="true" /> Profile updated successfully
             </div>
           )}
 
           {/* Stats row */}
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div className="p-2 bg-muted/40 rounded-xl">
-              <p className="text-lg font-bold">{totalOrders}</p>
-              <p className="text-[10px] text-muted-foreground">Orders</p>
+          <div className="grid grid-cols-3 gap-2 text-center" role="region" aria-label="Your stats">
+            <div className="bg-muted/50 rounded-xl p-3">
+              <p className="text-xl font-bold text-foreground">{myOrders.length}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Orders</p>
             </div>
-            <div className="p-2 bg-muted/40 rounded-xl">
-              <p className="text-lg font-bold text-primary">{user.setuScore}</p>
-              <p className="text-[10px] text-muted-foreground">SETU Score</p>
+            <div className="bg-muted/50 rounded-xl p-3">
+              <p className="text-xl font-bold text-foreground">{delivered}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Delivered</p>
             </div>
-            <div className="p-2 bg-muted/40 rounded-xl">
-              <p className="text-lg font-bold text-green-600">{delivered}</p>
-              <p className="text-[10px] text-muted-foreground">Delivered</p>
+            <div className="bg-primary/10 rounded-xl p-3">
+              <p className="text-xl font-bold text-primary">{setuScore}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">SETU Score</p>
             </div>
           </div>
-        </Card>
 
-        {/* SETU Score card */}
-        <Card className="p-4 border-border">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">SETU Score</p>
-              <p className="text-3xl font-bold text-primary">{user.setuScore}</p>
-              <Badge className="mt-1 text-[9px] bg-green-100 text-green-700 border-0">Good Standing</Badge>
+          {/* Verified badge */}
+          {profile?.is_verified && (
+            <div className="flex items-center gap-1.5 mt-3 text-xs text-green-600 font-medium">
+              <Shield className="w-3.5 h-3.5" aria-hidden="true" />
+              Verified SETU Member
             </div>
-            <div className="text-right">
-              <p className="text-xs text-muted-foreground">Perks unlocked</p>
-              <p className="text-sm font-medium">Credit · Schemes</p>
-              <Link to="/customer/trust">
-                <Button variant="ghost" size="sm" className="text-xs text-primary px-0 h-6">
-                  View details →
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </Card>
+          )}
+        </div>
 
         {/* Menu */}
-        <Card className="border-border divide-y divide-border">
-          {MENU_ITEMS.map(item => (
-            <Link key={item.path} to={item.path}>
-              <div className="flex items-center gap-3 p-4 hover:bg-muted/30 transition-colors">
-                <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                  <item.icon className="w-4 h-4 text-primary" />
-                </div>
-                <span className="text-sm font-medium flex-1">{item.label}</span>
+        <div className="setu-card overflow-hidden" role="list">
+          {MENU_ITEMS.map((item, i) => (
+            <Link
+              key={item.path}
+              to={item.path}
+              role="listitem"
+              className={`flex items-center gap-3 px-4 py-3.5 active:bg-muted/50 transition-colors ${
+                i < MENU_ITEMS.length - 1 ? 'border-b border-border' : ''
+              }`}
+              aria-label={item.label}
+            >
+              <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0" aria-hidden="true">
+                <item.icon className="w-4 h-4 text-muted-foreground" />
+              </div>
+              <span className="flex-1 text-sm font-medium">{item.label}</span>
+              <div className="flex items-center gap-2">
                 {item.badge && (
-                  <Badge className="text-[9px] bg-accent/10 text-accent border-0">{item.badge}</Badge>
+                  <span className="text-[10px] bg-primary/10 text-primary font-semibold px-2 py-0.5 rounded-full">
+                    {item.badge}
+                  </span>
                 )}
-                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                <ChevronRight className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
               </div>
             </Link>
           ))}
-        </Card>
+        </div>
+
+        {/* Sign out */}
+        {!showSignout ? (
+          <button
+            onClick={() => setShowSignout(true)}
+            className="w-full flex items-center gap-3 px-4 py-3.5 setu-card text-destructive"
+            aria-label="Sign out"
+          >
+            <div className="w-8 h-8 rounded-lg bg-destructive/10 flex items-center justify-center shrink-0">
+              <LogOut className="w-4 h-4" />
+            </div>
+            <span className="text-sm font-medium">Sign Out</span>
+          </button>
+        ) : (
+          <div className="setu-card p-4 text-center border-destructive/30">
+            <p className="text-sm font-medium mb-3">Are you sure you want to sign out?</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowSignout(false)}
+                className="flex-1 py-2.5 rounded-xl border border-border text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSignOut}
+                className="flex-1 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-medium"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* App version */}
+        <p className="text-center text-[10px] text-muted-foreground pb-2">
+          SETU v1.0.0 · {profile?.id?.slice(0,8)}
+        </p>
       </div>
     </div>
   );
