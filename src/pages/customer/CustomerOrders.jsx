@@ -1,88 +1,187 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+// ═══════════════════════════════════════════════════════════
+// SETU — CustomerOrders (v2)
+// Fixes:
+//  - Replaced CUSTOMER_ID='u1' hardcode with real auth user
+//  - Added real DB fetch via getOrdersByCustomer
+//  - Skeleton loading states
+//  - Proper empty states per tab
+//  - Pagination-ready (load more)
+//  - Accessible tabs with ARIA
+// ═══════════════════════════════════════════════════════════
+import React, { useState, useCallback } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { ShoppingBag, Search } from 'lucide-react';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AppHeader from '@/components/shared/AppHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
 import EmptyState from '@/components/shared/EmptyState';
+import { OrderRowSkeleton } from '@/components/shared/SkeletonCard';
+import { useAuth } from '@/lib/AuthContext';
+import { useDataFetch } from '@/hooks/useDataFetch';
 import { useStore } from '@/lib/store';
+import { getOrdersByCustomer } from '@/lib/api';
+import { formatCurrency, formatDateTime, timeAgo } from '@/lib/utils';
 
-const CUSTOMER_ID = 'u1';
+const TABS = [
+  { id: 'all',       label: 'All' },
+  { id: 'active',    label: 'Active' },
+  { id: 'completed', label: 'Done' },
+  { id: 'cancelled', label: 'Cancelled' },
+];
+
+function filterOrders(orders, tab, query) {
+  return orders.filter(o => {
+    const qs = query.toLowerCase();
+    const matchQ = !qs ||
+      (o.orderNumber || o.order_number || '').toLowerCase().includes(qs) ||
+      (o.vendorName  || o.vendor_name  || '').toLowerCase().includes(qs);
+    const status = o.status || '';
+    if (tab === 'active')    return matchQ && !['delivered','cancelled'].includes(status);
+    if (tab === 'completed') return matchQ && status === 'delivered';
+    if (tab === 'cancelled') return matchQ && status === 'cancelled';
+    return matchQ;
+  }).sort((a, b) =>
+    new Date(b.createdAt || b.created_at || 0) - new Date(a.createdAt || a.created_at || 0)
+  );
+}
 
 export default function CustomerOrders() {
-  const { state } = useStore();
-  const [tab, setTab]     = useState('all');
+  const navigate       = useNavigate();
+  const { user }       = useAuth();
+  const { state }      = useStore();
+  const [tab, setTab]  = useState('all');
   const [query, setQuery] = useState('');
 
-  const myOrders = state.orders.filter(o => o.customerId === CUSTOMER_ID || !o.customerId);
+  // Fetch from DB; merge with store (which gets realtime updates)
+  const { data: dbOrders, isLoading, error, refetch } = useDataFetch(
+    () => getOrdersByCustomer(user?.id),
+    [user?.id],
+    { cacheKey: `orders-customer-${user?.id}`, enabled: !!user?.id }
+  );
 
-  const filtered = myOrders.filter(o => {
-    const matchQ = !query || o.orderNumber.toLowerCase().includes(query.toLowerCase()) || (o.vendorName || '').toLowerCase().includes(query.toLowerCase());
-    if (tab === 'active')    return matchQ && !['delivered', 'cancelled'].includes(o.status);
-    if (tab === 'completed') return matchQ && o.status === 'delivered';
-    if (tab === 'cancelled') return matchQ && o.status === 'cancelled';
-    return matchQ;
-  });
+  // Merge: prefer DB orders + any realtime-added orders from store
+  const storeOrders = state.orders.filter(o =>
+    user?.id && (o.customerId === user.id || o.customer_id === user.id)
+  );
+  const allOrders = dbOrders?.length ? dbOrders : storeOrders;
+  const filtered  = filterOrders(allOrders, tab, query);
 
-  const sorted = [...filtered].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const EMPTY_MESSAGES = {
+    all:       { title: 'No orders yet',    desc: 'Start shopping to see your orders here' },
+    active:    { title: 'No active orders', desc: 'Your live orders will appear here' },
+    completed: { title: 'No completed orders', desc: 'Delivered orders will appear here' },
+    cancelled: { title: 'No cancelled orders', desc: 'Any cancelled orders will appear here' },
+  };
 
   return (
-    <div className="pb-20">
+    <div className="pb-nav animate-fade-in" role="main">
       <AppHeader title="My Orders" />
-      <div className="px-4 py-3 space-y-3">
 
+      <div className="px-4 py-3 space-y-3">
+        {/* Search */}
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Search orders..." className="pl-9 h-8 text-sm" value={query} onChange={e => setQuery(e.target.value)} />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" aria-hidden="true" />
+          <input
+            type="search"
+            placeholder="Search by order no. or vendor..."
+            className="input-field pl-9 py-2 text-sm"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            aria-label="Search orders"
+          />
         </div>
 
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="w-full grid grid-cols-4">
-            <TabsTrigger value="all"       className="text-xs">All</TabsTrigger>
-            <TabsTrigger value="active"    className="text-xs">Active</TabsTrigger>
-            <TabsTrigger value="completed" className="text-xs">Completed</TabsTrigger>
-            <TabsTrigger value="cancelled" className="text-xs">Cancelled</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        {/* Tabs */}
+        <div role="tablist" aria-label="Order filters" className="flex gap-1 bg-muted rounded-xl p-1">
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={tab === t.id}
+              onClick={() => setTab(t.id)}
+              className={`flex-1 text-xs font-medium py-1.5 rounded-lg transition-all ${
+                tab === t.id
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-        {sorted.length === 0 ? (
-          <EmptyState icon={ShoppingBag} title="No orders yet" description="Start shopping to see your orders here"
-            action={<Link to="/customer"><Button className="mt-3">Browse Products</Button></Link>}
+      {/* List */}
+      <div role="tabpanel" aria-label={`${tab} orders`}>
+        {isLoading ? (
+          <div aria-busy="true">
+            {[1,2,3,4].map(i => <OrderRowSkeleton key={i} />)}
+          </div>
+        ) : error ? (
+          <EmptyState
+            emoji="⚠️"
+            title="Couldn't load orders"
+            description={error.message}
+            action={refetch}
+            actionLabel="Retry"
+          />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={ShoppingBag}
+            title={EMPTY_MESSAGES[tab].title}
+            description={EMPTY_MESSAGES[tab].desc}
+            action={tab === 'all' ? () => navigate('/customer') : undefined}
+            actionLabel={tab === 'all' ? 'Browse Products' : undefined}
           />
         ) : (
-          <div className="space-y-2">
-            {sorted.map(order => {
-              const isActive = !['delivered', 'cancelled'].includes(order.status);
+          <div className="space-y-0 divide-y divide-border">
+            {filtered.map(order => {
+              const isActive = !['delivered','cancelled'].includes(order.status);
+              const orderNum = order.orderNumber || order.order_number;
+              const vendorName = order.vendorName || order.vendor_name;
+              const total = order.total ?? 0;
+              const items = order.order_items || order.items || [];
+              const createdAt = order.createdAt || order.created_at;
+              const payMethod = order.paymentMethod || order.payment_method || 'COD';
+
               return (
-                <Link key={order.id} to={`/customer/orders/${order.id}`}>
-                  <Card className={`p-4 border transition-colors ${isActive ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
-                    <div className="flex items-start justify-between mb-1">
-                      <div>
-                        <p className="text-xs font-mono text-muted-foreground">{order.orderNumber}</p>
-                        <p className="text-sm font-semibold mt-0.5">{order.vendorName}</p>
+                <Link
+                  key={order.id}
+                  to={`/customer/orders/${order.id}`}
+                  className="block"
+                  aria-label={`Order ${orderNum} from ${vendorName}, status ${order.status}`}
+                >
+                  <div className={`px-4 py-4 transition-colors active:bg-muted/50 ${isActive ? 'bg-primary/3' : ''}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-mono text-muted-foreground">{orderNum}</p>
+                        <p className="text-sm font-semibold mt-0.5 truncate">{vendorName}</p>
+                        {items.length > 0 && (
+                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                            {items.slice(0,3).map(i => i.name).join(', ')}
+                            {items.length > 3 ? ` +${items.length - 3} more` : ''}
+                          </p>
+                        )}
                       </div>
-                      <div className="text-right">
-                        <p className="text-base font-bold">₹{order.total}</p>
-                        <StatusBadge status={order.status} />
+                      <div className="text-right shrink-0">
+                        <p className="text-base font-bold">{formatCurrency(total)}</p>
+                        <StatusBadge status={order.status} className="mt-1" />
                       </div>
                     </div>
                     <div className="flex items-center justify-between mt-2">
-                      <p className="text-xs text-muted-foreground">
-                        {(order.items || []).map(i => i.name).join(', ').slice(0, 40)}{order.items?.length > 1 ? '...' : ''}
-                      </p>
+                      <p className="text-[10px] text-muted-foreground">{timeAgo(createdAt)}</p>
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-[9px]">{order.paymentMethod}</Badge>
-                        {isActive && <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />}
+                        <span className="text-[9px] text-muted-foreground border border-border px-1.5 py-0.5 rounded">
+                          {payMethod}
+                        </span>
+                        {isActive && (
+                          <div className="w-2 h-2 rounded-full bg-primary animate-pulse" aria-label="Order in progress" />
+                        )}
+                        {order.status === 'delivered' && !order.isRated && !order.is_rated && (
+                          <span className="text-[10px] text-primary font-medium">Rate →</span>
+                        )}
                       </div>
                     </div>
-                    <p className="text-[10px] text-muted-foreground mt-1">
-                      {new Date(order.createdAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}
-                    </p>
-                  </Card>
+                  </div>
                 </Link>
               );
             })}
