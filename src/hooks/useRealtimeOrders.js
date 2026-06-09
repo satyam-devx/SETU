@@ -4,26 +4,44 @@
 // Constitution: "Realtime order tracking for customers, vendors, riders"
 //
 // Design:
-//  - Subscribes to INSERT + UPDATE on orders table
-//  - Filters by role: customer_id / vendor_id / rider_id
-//  - Updates global store optimistically
+//  - Returns { orders, isLoading } — consistent signature for all callers
+//  - orders: filtered from global store by role + id (derived, no duplication)
+//  - isLoading: true until the initial subscription is SUBSCRIBED
+//  - Supabase channel is a side-effect only; it writes into the store
 //  - Cleans up subscription on unmount
 //  - Falls back gracefully when offline or Supabase unavailable
 // ═══════════════════════════════════════════════════════════
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/AuthContext';
 
 /**
- * @param {string} role  - 'customer' | 'vendor' | 'rider' | 'admin'
- * @param {string} [entityId] - vendor UUID or rider UUID (override for vendor/rider)
+ * Subscribe to realtime order updates for a given role and return the
+ * matching slice of orders from the global store.
+ *
+ * @param {'customer'|'vendor'|'rider'|'admin'} role
+ * @param {string|null} [entityId]  - override entity UUID (defaults to auth user id)
+ * @returns {{ orders: object[], isLoading: boolean }}
  */
 export function useRealtimeOrders(role, entityId = null) {
   const { user } = useAuth();
-  const { dispatch } = useStore();
+  const { state, dispatch } = useStore();
   const channelRef = useRef(null);
+  const [isLoading, setIsLoading] = useState(true);
 
+  // ── Derived: filter global store orders by role + id ────
+  const uid = entityId || user?.id;
+  const orders = useMemo(() => {
+    if (!uid || !state.orders) return [];
+    if (role === 'customer')  return state.orders.filter(o => o.customer_id === uid);
+    if (role === 'vendor')    return state.orders.filter(o => o.vendor_id   === uid);
+    if (role === 'rider')     return state.orders.filter(o => o.rider_id    === uid);
+    if (role === 'admin')     return state.orders; // all orders
+    return [];
+  }, [state.orders, role, uid]);
+
+  // ── Realtime side-effect: push DB events into the store ─
   const handlePayload = useCallback((payload) => {
     const order = payload.new;
     if (!order) return;
@@ -36,17 +54,19 @@ export function useRealtimeOrders(role, entityId = null) {
   }, [dispatch]);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !user) return;
+    if (!isSupabaseConfigured || !user || !uid) {
+      setIsLoading(false);
+      return;
+    }
 
-    const uid = entityId || user.id;
+    setIsLoading(true);
     const channelName = `orders-${role}-${uid}`;
 
-    // Build filter based on role
     let filter;
     if (role === 'customer') filter = `customer_id=eq.${uid}`;
     else if (role === 'vendor') filter = `vendor_id=eq.${uid}`;
     else if (role === 'rider')  filter = `rider_id=eq.${uid}`;
-    // admin: no filter — listens to all orders
+    // admin: no filter — receives all order events
 
     const channelConfig = {
       event:  '*',
@@ -60,18 +80,24 @@ export function useRealtimeOrders(role, entityId = null) {
       .on('postgres_changes', channelConfig, handlePayload)
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
+          setIsLoading(false);
           console.debug(`[SETU Realtime] Subscribed: ${channelName}`);
         }
         if (status === 'CHANNEL_ERROR') {
+          setIsLoading(false);
           console.warn(`[SETU Realtime] Channel error: ${channelName}`);
         }
       });
 
     return () => {
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
-  }, [user, role, entityId, handlePayload]);
+  }, [user, role, uid, handlePayload]);
+
+  return { orders, isLoading };
 }
 
 // ── useRealtimeNotifications ──────────────────────────────
@@ -98,8 +124,10 @@ export function useRealtimeNotifications() {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
   }, [user, dispatch]);
 }
@@ -128,8 +156,10 @@ export function useRealtimeOrder(orderId) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
   }, [orderId, dispatch]);
 }
