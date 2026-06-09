@@ -36,7 +36,7 @@ begin
   -- Generate order number: SETU-YYYY-XXXX
   v_order_id     := gen_random_uuid();
   v_order_number := 'SETU-' || to_char(now(), 'YYYY') || '-' ||
-                    lpad(( select count(*) + 1 from orders )::text, 4, '0');
+                    lpad(nextval('order_number_seq')::text, 4, '0');
 
   -- Insert order
   insert into orders (
@@ -283,3 +283,36 @@ as $$
   group by o.id
   order by o.created_at desc;
 $$;
+
+-- ═══════════════════════════════════════════════════════════
+-- AUTH TRIGGER: Auto-create profile on user sign-up
+-- Handles phone OTP users (phone set) and OAuth users (phone null).
+-- ═══════════════════════════════════════════════════════════
+create or replace function handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id, phone, name, role)
+  values (
+    new.id,
+    new.phone,  -- null for OAuth users — allowed since NOT NULL removed
+    coalesce(
+      new.raw_user_meta_data->>'full_name',
+      new.raw_user_meta_data->>'name',
+      'SETU User'
+    ),
+    'customer'
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+-- Drop + recreate so re-running the migration is idempotent
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function handle_new_user();
