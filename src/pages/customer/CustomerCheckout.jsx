@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, MapPin, Smartphone, CreditCard, Wallet, CheckCircle, ChevronRight, Shield, Loader2, AlertCircle } from 'lucide-react';
+import {
+  ArrowLeft, MapPin, Smartphone, CreditCard, Wallet,
+  CheckCircle, Shield, Loader2, AlertCircle,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -13,23 +16,56 @@ import { OrderAPI, PaymentAPI } from '@/lib/api';
 import { loadRazorpayScript, initiatePayment } from '@/lib/payments';
 
 const PAY_METHODS = [
-  { id: 'cod',    label: 'Cash on Delivery', sub: 'Pay when order arrives',   icon: CreditCard   },
-  { id: 'upi',    label: 'UPI Payment',      sub: 'Google Pay, PhonePe, BHIM', icon: Smartphone   },
-  { id: 'wallet', label: 'SETU Wallet',      sub: 'Pay from balance',          icon: Wallet       },
+  { id: 'cod',    label: 'Cash on Delivery', sub: 'Pay when order arrives',    icon: CreditCard  },
+  { id: 'upi',    label: 'UPI Payment',      sub: 'Google Pay, PhonePe, BHIM', icon: Smartphone  },
+  { id: 'wallet', label: 'SETU Wallet',      sub: 'Pay from balance',          icon: Wallet      },
 ];
 
+// ── Helper: derive complete vendor context from first cart item ──
+function resolveVendor(firstItem) {
+  if (!firstItem) return { id: null, name: null };
+
+  // The vendor object may be nested (from getProductById's join) or flat
+  const nested = firstItem.vendors; // { id?, name?, village? } if joined
+
+  const id =
+    nested?.id         ??
+    firstItem.vendor_id ??
+    firstItem.vendorId  ??
+    null;
+
+  const name =
+    nested?.name            ??
+    firstItem.vendor_name   ??
+    firstItem.vendorName    ??
+    'Vendor';
+
+  const village =
+    nested?.village         ??
+    firstItem.vendor_village ??
+    firstItem.vendorVillage  ??
+    null;
+
+  const phone =
+    nested?.phone           ??
+    firstItem.vendor_phone  ??
+    null;
+
+  return { id, name, village, phone };
+}
+
 export default function CustomerCheckout() {
-  const { items, totalPrice, clearCart } = useCart();
-  const { state, dispatch } = useStore();
-  const { user, profile }   = useAuth();
-  const { village }         = useVillage();
-  const navigate            = useNavigate();
+  const { items, totalPrice, clearCart }  = useCart();
+  const { state, dispatch }               = useStore();
+  const { user, profile }                 = useAuth();
+  const { village }                       = useVillage();
+  const navigate                          = useNavigate();
 
   const [payMethod, setPayMethod] = useState('cod');
   const [useCredit, setUseCredit] = useState(false);
-  const [placing, setPlacing]     = useState(false);
-  const [error, setError]         = useState(null);
-  const [placed, setPlaced]       = useState(false);
+  const [placing,   setPlacing]   = useState(false);
+  const [error,     setError]     = useState(null);
+  const [placed,    setPlaced]    = useState(false);
 
   // Wallet balance from store (hydrated from Supabase on app load)
   const walletBalance = state.wallet?.balance ?? 0;
@@ -40,18 +76,25 @@ export default function CustomerCheckout() {
   const platformFee    = Math.round(finalTotal * 0.01);
   const grandTotal     = finalTotal + deliveryFee + platformFee;
 
-  // Derived: can the user afford wallet payment
   const walletSufficient = walletBalance >= grandTotal;
+
+  // Derive vendor from first item (single-vendor cart is enforced by cartContext)
+  const vendor = resolveVendor(items[0]);
 
   useEffect(() => {
     loadRazorpayScript();
   }, []);
 
   const handlePlaceOrder = async () => {
+    if (!vendor.id) {
+      setError('Cannot determine vendor. Please clear cart and try again.');
+      return;
+    }
+
     setPlacing(true);
     setError(null);
 
-    // ── Pre-flight: wallet balance check ────────────────────
+    // ── Pre-flight: wallet balance check ─────────────────────
     if (payMethod === 'wallet' && !walletSufficient) {
       setError(`Insufficient wallet balance. Available: ₹${walletBalance}, Required: ₹${grandTotal}`);
       setPlacing(false);
@@ -59,25 +102,32 @@ export default function CustomerCheckout() {
     }
 
     try {
-      // 1. Create Order in DB
+      // 1. Build order payload — all vendor fields from resolved vendor object
       const orderPayload = {
-        customer_id:    user.id,
-        customer_name:  profile?.name || 'Customer',
-        vendor_id:      items[0]?.vendor_id || items[0]?.vendorId,
-        vendor_name:    items[0]?.vendorName || items[0]?.vendor_name || 'Vendor',
-        village_id:     village?.id ?? profile?.village_id ?? null,
-        village:        village?.name ?? profile?.village ?? 'Madhepur',
-        items:          items.map(i => ({ product_id: i.id, name: i.name, qty: i.quantity, price: i.price })),
-        payment_method: payMethod.toUpperCase(),
-        delivery_address: profile?.village ?? village?.name ?? '',
+        customer_id:      user.id,
+        customer_name:    profile?.name || 'Customer',
+        vendor_id:        vendor.id,
+        vendor_name:      vendor.name,
+        village_id:       village?.id   ?? profile?.village_id ?? null,
+        village:          village?.name ?? profile?.village    ?? vendor.village ?? 'Village',
+        items:            items.map(i => ({
+          product_id: i.id,
+          name:       i.name,
+          qty:        i.quantity,
+          price:      i.price,
+        })),
+        payment_method:   payMethod.toUpperCase(),
+        delivery_address: profile?.address
+          ?? profile?.village
+          ?? village?.name
+          ?? '',
       };
 
       const { data: order, error: orderError } = await OrderAPI.create(orderPayload);
       if (orderError) throw orderError;
 
-      // 2. Handle Payment Flow
+      // 2. Handle payment
       if (payMethod === 'upi') {
-        // ── UPI via Razorpay ──────────────────────────────────
         const rzpResult = await initiatePayment({
           amount:        grandTotal,
           orderId:       order.id,
@@ -88,39 +138,36 @@ export default function CustomerCheckout() {
 
         if (rzpResult.error) throw new Error(rzpResult.error);
         if (rzpResult.cancelled) {
-          // User dismissed modal — cancel the pending order
-          await OrderAPI.advanceStatus(order.id, 'cancelled', { cancel_reason: 'Payment cancelled by user' });
+          await OrderAPI.advanceStatus(order.id, 'cancelled', {
+            cancel_reason: 'Payment cancelled by user',
+          });
           setPlacing(false);
           return;
         }
-        // Webhook will confirm payment and update order status to 'confirmed'
+        // Webhook confirms payment → order status updated server-side
 
       } else if (payMethod === 'wallet') {
-        // ── Wallet deduction ──────────────────────────────────
-        // Debit the wallet first. If this fails, cancel the order.
         const { error: walletError } = await PaymentAPI.walletPay(user.id, grandTotal, order.id);
         if (walletError) {
-          // Rollback: cancel the order that was created
-          await OrderAPI.advanceStatus(order.id, 'cancelled', { cancel_reason: 'Wallet payment failed' });
+          await OrderAPI.advanceStatus(order.id, 'cancelled', {
+            cancel_reason: 'Wallet payment failed',
+          });
           throw new Error(walletError.message ?? 'Wallet payment failed. Please try again.');
         }
 
-        // Mark order as paid immediately (wallet is synchronous, no webhook needed)
         await OrderAPI.advanceStatus(order.id, 'confirmed', {
           payment_status: 'paid',
           payment_method: 'WALLET',
         });
 
-        // Optimistically update local wallet balance
         dispatch({
           type:    'UPDATE_WALLET_BALANCE',
           payload: { balance: walletBalance - grandTotal },
         });
-
       }
-      // COD: no payment action needed, order stays as 'pending' for vendor to confirm
+      // COD: no payment action — stays 'pending'
 
-      // 3. Success UI
+      // 3. Success
       clearCart();
       setPlaced(true);
       setTimeout(() => navigate(`/customer/orders/${order.id}`), 2500);
@@ -133,6 +180,7 @@ export default function CustomerCheckout() {
     }
   };
 
+  // ── Success screen ────────────────────────────────────────
   if (placed) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-6 text-center bg-background">
@@ -142,9 +190,9 @@ export default function CustomerCheckout() {
         <h2 className="text-2xl font-bold">Order Placed!</h2>
         <p className="text-muted-foreground text-sm max-w-xs">
           Your order has been placed successfully.
-          {payMethod === 'upi'    ? ' We are verifying your payment.'         : ''}
+          {payMethod === 'upi'    ? ' We are verifying your payment.'          : ''}
           {payMethod === 'wallet' ? ' Payment deducted from your SETU Wallet.' : ''}
-          {payMethod === 'cod'    ? ' The vendor will confirm it shortly.'     : ''}
+          {payMethod === 'cod'    ? ' The vendor will confirm it shortly.'      : ''}
         </p>
         <p className="text-xs text-muted-foreground">Redirecting to order details...</p>
       </div>
@@ -154,7 +202,9 @@ export default function CustomerCheckout() {
   return (
     <div className="pb-24 max-w-md mx-auto">
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-3">
-        <Link to="/customer/cart" className="p-1 -ml-1"><ArrowLeft className="w-5 h-5" /></Link>
+        <Link to="/customer/cart" className="p-1 -ml-1">
+          <ArrowLeft className="w-5 h-5" />
+        </Link>
         <span className="font-semibold text-sm">Checkout</span>
         <Shield className="w-4 h-4 text-green-600 ml-auto" />
         <span className="text-xs text-green-600 font-medium">Secure</span>
@@ -175,9 +225,23 @@ export default function CustomerCheckout() {
           </h3>
           <p className="text-sm">{profile?.address || 'House No. 12, Ward 3'}</p>
           <p className="text-xs text-muted-foreground">
-            Near Shiv Temple · {village?.name ?? profile?.village ?? 'Village'}, {village?.district ?? ''}
+            Near Shiv Temple · {village?.name ?? profile?.village ?? 'Village'}
+            {village?.district ? `, ${village.district}` : ''}
           </p>
         </Card>
+
+        {/* Vendor summary (derived from cart) */}
+        {vendor.id && (
+          <Card className="p-3 border-border">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">
+              Ordering from
+            </p>
+            <p className="text-sm font-semibold">{vendor.name}</p>
+            {vendor.village && (
+              <p className="text-xs text-muted-foreground">{vendor.village}</p>
+            )}
+          </Card>
+        )}
 
         {/* Payment Method */}
         <Card className="p-4 border-border">
@@ -203,7 +267,7 @@ export default function CustomerCheckout() {
                     <p className="text-sm font-medium">{pm.label}</p>
                     <p className="text-xs text-muted-foreground">
                       {isWallet
-                        ? `Balance: ₹${walletBalance}${!walletSufficient ? ' (insufficient)' : ''}`
+                        ? `Balance: ₹${walletBalance.toLocaleString('en-IN')}${!walletSufficient ? ' (insufficient)' : ''}`
                         : pm.sub}
                     </p>
                   </div>
@@ -215,7 +279,7 @@ export default function CustomerCheckout() {
           </div>
         </Card>
 
-        {/* SETU Credit */}
+        {/* SETU Credit toggle */}
         <Card className="p-4 border-border">
           <div className="flex items-center justify-between">
             <div>
@@ -232,7 +296,9 @@ export default function CustomerCheckout() {
           <div className="space-y-2">
             {items.map(i => (
               <div key={i.id} className="flex justify-between text-sm">
-                <span className="text-muted-foreground truncate mr-2">{i.name} × {i.quantity}</span>
+                <span className="text-muted-foreground truncate mr-2">
+                  {i.name} × {i.quantity}
+                </span>
                 <span className="shrink-0">₹{i.price * i.quantity}</span>
               </div>
             ))}
