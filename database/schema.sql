@@ -44,7 +44,7 @@ create trigger trg_villages_updated_at before update on villages
 -- ─────────────────────────────────────────────────────────
 create table if not exists profiles (
   id           uuid primary key references auth.users(id) on delete cascade,
-  phone        text unique not null,
+  phone        text unique,
   name         text,
   role         text not null default 'customer'
                  check (role in ('customer','vendor','rider','seva_provider','anchor','admin','super_admin')),
@@ -205,6 +205,8 @@ create index if not exists idx_rider_locations_recorded_at on rider_locations(re
 -- ─────────────────────────────────────────────────────────
 -- ORDERS
 -- ─────────────────────────────────────────────────────────
+create sequence if not exists order_number_seq start 1;
+
 create table if not exists orders (
   id               uuid primary key default uuid_generate_v4(),
   order_number     text unique not null,
