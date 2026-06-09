@@ -37,7 +37,7 @@ export default function CustomerCheckout() {
   const creditDiscount = useCredit ? Math.min(totalPrice * 0.1, 500) : 0;
   const finalTotal     = totalPrice - creditDiscount;
   const deliveryFee    = totalPrice >= 200 ? 0 : 20;
-  const platformFee    = Math.round(finalTotal * 0.02);
+  const platformFee    = Math.round(finalTotal * 0.01);
   const grandTotal     = finalTotal + deliveryFee + platformFee;
 
   // Derived: can the user afford wallet payment
@@ -61,18 +61,15 @@ export default function CustomerCheckout() {
     try {
       // 1. Create Order in DB
       const orderPayload = {
-        customerId:    user.id,
-        customerName:  profile?.name || 'Customer',
-        vendorId:      items[0]?.vendorId,
-        vendorName:    items[0]?.vendorName || 'Vendor',
-        items:         items.map(i => ({ product_id: i.id, name: i.name, qty: i.quantity, price: i.price })),
-        subtotal:      totalPrice,
-        deliveryFee,
-        platformFee,
-        total:         grandTotal,
-        paymentMethod: payMethod.toUpperCase(),
-        village:       village?.name ?? profile?.village ?? 'Madhepur',
-        useCredit,
+        customer_id:    user.id,
+        customer_name:  profile?.name || 'Customer',
+        vendor_id:      items[0]?.vendor_id || items[0]?.vendorId,
+        vendor_name:    items[0]?.vendorName || items[0]?.vendor_name || 'Vendor',
+        village_id:     village?.id ?? profile?.village_id ?? null,
+        village:        village?.name ?? profile?.village ?? 'Madhepur',
+        items:          items.map(i => ({ product_id: i.id, name: i.name, qty: i.quantity, price: i.price })),
+        payment_method: payMethod.toUpperCase(),
+        delivery_address: profile?.village ?? village?.name ?? '',
       };
 
       const { data: order, error: orderError } = await OrderAPI.create(orderPayload);
