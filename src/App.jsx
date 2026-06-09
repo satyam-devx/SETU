@@ -1,25 +1,21 @@
 // ═══════════════════════════════════════════════════════════
-// SETU PLATFORM — APP ROOT  (production-hardened)
+// SETU PLATFORM — APP ROOT
 //
-// CHANGE IN THIS VERSION:
-//  Added /auth/callback route for Google OAuth session exchange.
+// Changes in this version:
+//  1. All portal page components converted to React.lazy() so each
+//     portal's JS chunk is only fetched when the user first navigates
+//     there. Auth + onboarding routes stay eager (tiny, always needed).
+//  2. Each portal is wrapped in its own <Suspense> with a shared
+//     <PortalFallback> spinner so the rest of the app never blocks.
 //
-//  WHY:
-//  Without a dedicated /auth/callback route, Google OAuth redirects
-//  land on / or /login, which immediately navigate away — stripping
-//  the #access_token hash before Supabase can exchange it for a session.
-//  The AuthCallback component handles the exchange and only navigates
-//  after the session is confirmed.
-//
-// All other fixes from previous version are preserved:
-//  1. Router wraps AuthProvider (useNavigate works inside AuthProvider children).
-//  2. AuthStoreBridge syncs AuthContext profile into SetuStore.
-//  3. /onboarding/register route present (new users don't 404).
-//  4. /role-error route present for unknown roles.
+// Preserved from previous version:
+//  - /auth/callback route for Google OAuth session exchange
+//  - AuthStoreBridge syncing AuthContext → SetuStore
+//  - /onboarding/register, /role-error routes
 // ═══════════════════════════════════════════════════════════
 
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
-import { useEffect } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import { Toaster } from '@/components/ui/toaster';
 import ScrollToTop from './components/ScrollToTop';
 import { CartProvider } from '@/lib/cartContext';
@@ -29,122 +25,130 @@ import { VillageProvider } from '@/lib/village';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ErrorBoundary from '@/components/shared/ErrorBoundary';
 
-// Auth
-import LoginOTP    from '@/pages/auth/LoginOTP';
-import OTPVerify   from '@/pages/auth/OTPVerify';
-import AuthCallback from '@/pages/auth/AuthCallback'; // NEW: Google OAuth callback handler
+// ── Eager: Auth & onboarding — tiny, always needed first ─
+import LoginOTP           from '@/pages/auth/LoginOTP';
+import OTPVerify          from '@/pages/auth/OTPVerify';
+import AuthCallback       from '@/pages/auth/AuthCallback';
+import RoleSelect         from '@/pages/RoleSelect';
+import RegisterOnboarding from '@/pages/onboarding/RegisterOnboarding';
+import VendorOnboarding   from '@/pages/onboarding/VendorOnboarding';
+import RiderOnboarding    from '@/pages/onboarding/RiderOnboarding';
+import SevaVerification   from '@/pages/onboarding/SevaVerification';
 
-// Role select & Onboarding
-import RoleSelect          from '@/pages/RoleSelect';
-import RegisterOnboarding  from '@/pages/onboarding/RegisterOnboarding';
-import VendorOnboarding    from '@/pages/onboarding/VendorOnboarding';
-import RiderOnboarding     from '@/pages/onboarding/RiderOnboarding';
-import SevaVerification    from '@/pages/onboarding/SevaVerification';
+// ── Lazy: Customer portal ─────────────────────────────────
+const CustomerLayout        = lazy(() => import('@/pages/customer/CustomerLayout'));
+const CustomerHome          = lazy(() => import('@/pages/customer/CustomerHome'));
+const CustomerOrders        = lazy(() => import('@/pages/customer/CustomerOrders'));
+const CustomerOrderDetail   = lazy(() => import('@/pages/customer/CustomerOrderDetail'));
+const CustomerWallet        = lazy(() => import('@/pages/customer/CustomerWallet'));
+const CustomerCredit        = lazy(() => import('@/pages/customer/CustomerCredit'));
+const CustomerSchemes       = lazy(() => import('@/pages/customer/CustomerSchemes'));
+const CustomerVoice         = lazy(() => import('@/pages/customer/CustomerVoice'));
+const CustomerOffline       = lazy(() => import('@/pages/customer/CustomerOffline'));
+const CustomerLanguage      = lazy(() => import('@/pages/customer/CustomerLanguage'));
+const CustomerFraudReport   = lazy(() => import('@/pages/customer/CustomerFraudReport'));
+const CustomerTrust         = lazy(() => import('@/pages/customer/CustomerTrust'));
+const CustomerProfile       = lazy(() => import('@/pages/customer/CustomerProfile'));
+const CustomerNotifications = lazy(() => import('@/pages/customer/CustomerNotifications'));
+const CustomerSupport       = lazy(() => import('@/pages/customer/CustomerSupport'));
+const CustomerSettings      = lazy(() => import('@/pages/customer/CustomerSettings'));
+const CustomerSearch        = lazy(() => import('@/pages/customer/CustomerSearch'));
+const CustomerProductDetail = lazy(() => import('@/pages/customer/CustomerProductDetail'));
+const CustomerVendorProfile = lazy(() => import('@/pages/customer/CustomerVendorProfile'));
+const CustomerCart          = lazy(() => import('@/pages/customer/CustomerCart'));
+const CustomerCheckout      = lazy(() => import('@/pages/customer/CustomerCheckout'));
+const CustomerVendors       = lazy(() => import('@/pages/customer/CustomerVendors'));
+const CustomerAddresses     = lazy(() => import('@/pages/customer/CustomerAddresses'));
+const CustomerReferral      = lazy(() => import('@/pages/customer/CustomerReferral'));
+const CustomerReorder       = lazy(() => import('@/pages/customer/CustomerReorder'));
 
-// Customer
-import CustomerLayout        from '@/pages/customer/CustomerLayout';
-import CustomerHome          from '@/pages/customer/CustomerHome';
-import CustomerOrders        from '@/pages/customer/CustomerOrders';
-import CustomerOrderDetail   from '@/pages/customer/CustomerOrderDetail';
-import CustomerWallet        from '@/pages/customer/CustomerWallet';
-import CustomerCredit        from '@/pages/customer/CustomerCredit';
-import CustomerSchemes       from '@/pages/customer/CustomerSchemes';
-import CustomerVoice         from '@/pages/customer/CustomerVoice';
-import CustomerOffline       from '@/pages/customer/CustomerOffline';
-import CustomerLanguage      from '@/pages/customer/CustomerLanguage';
-import CustomerFraudReport   from '@/pages/customer/CustomerFraudReport';
-import CustomerTrust         from '@/pages/customer/CustomerTrust';
-import CustomerProfile       from '@/pages/customer/CustomerProfile';
-import CustomerNotifications from '@/pages/customer/CustomerNotifications';
-import CustomerSupport       from '@/pages/customer/CustomerSupport';
-import CustomerSettings      from '@/pages/customer/CustomerSettings';
-import CustomerSearch        from '@/pages/customer/CustomerSearch';
-import CustomerProductDetail from '@/pages/customer/CustomerProductDetail';
-import CustomerVendorProfile from '@/pages/customer/CustomerVendorProfile';
-import CustomerCart          from '@/pages/customer/CustomerCart';
-import CustomerCheckout      from '@/pages/customer/CustomerCheckout';
-import CustomerVendors       from '@/pages/customer/CustomerVendors';
-import CustomerAddresses     from '@/pages/customer/CustomerAddresses';
-import CustomerReferral      from '@/pages/customer/CustomerReferral';
-import CustomerReorder       from '@/pages/customer/CustomerReorder';
+// ── Lazy: Vendor portal ───────────────────────────────────
+const VendorLayout    = lazy(() => import('@/pages/vendor/VendorLayout'));
+const VendorDashboard = lazy(() => import('@/pages/vendor/VendorDashboard'));
+const VendorOrders    = lazy(() => import('@/pages/vendor/VendorOrders'));
+const VendorProducts  = lazy(() => import('@/pages/vendor/VendorProducts'));
+const VendorProfile   = lazy(() => import('@/pages/vendor/VendorProfile'));
+const VendorEarnings  = lazy(() => import('@/pages/vendor/VendorEarnings'));
+const VendorAnalytics = lazy(() => import('@/pages/vendor/VendorAnalytics'));
+const VendorSettings  = lazy(() => import('@/pages/vendor/VendorSettings'));
+const VendorCredit    = lazy(() => import('@/pages/vendor/VendorCredit'));
+const VendorCustomers = lazy(() => import('@/pages/vendor/VendorCustomers'));
+const VendorAddProduct = lazy(() => import('@/pages/vendor/VendorAddProduct'));
 
-// Vendor
-import VendorLayout    from '@/pages/vendor/VendorLayout';
-import VendorDashboard from '@/pages/vendor/VendorDashboard';
-import VendorOrders    from '@/pages/vendor/VendorOrders';
-import VendorProducts  from '@/pages/vendor/VendorProducts';
-import VendorProfile   from '@/pages/vendor/VendorProfile';
-import VendorEarnings  from '@/pages/vendor/VendorEarnings';
-import VendorAnalytics from '@/pages/vendor/VendorAnalytics';
-import VendorSettings  from '@/pages/vendor/VendorSettings';
-import VendorCredit    from '@/pages/vendor/VendorCredit';
-import VendorCustomers from '@/pages/vendor/VendorCustomers';
-import VendorAddProduct from '@/pages/vendor/VendorAddProduct';
+// ── Lazy: Rider portal ────────────────────────────────────
+const RiderLayout     = lazy(() => import('@/pages/rider/RiderLayout'));
+const RiderDashboard  = lazy(() => import('@/pages/rider/RiderDashboard'));
+const RiderDeliveries = lazy(() => import('@/pages/rider/RiderDeliveries'));
+const RiderEarnings   = lazy(() => import('@/pages/rider/RiderEarnings'));
+const RiderCOD        = lazy(() => import('@/pages/rider/RiderCOD'));
+const RiderProfile    = lazy(() => import('@/pages/rider/RiderProfile'));
+const RiderSafety     = lazy(() => import('@/pages/rider/RiderSafety'));
+const RiderIncentives = lazy(() => import('@/pages/rider/RiderIncentives'));
+const RiderSettings   = lazy(() => import('@/pages/rider/RiderSettings'));
 
-// Rider
-import RiderLayout     from '@/pages/rider/RiderLayout';
-import RiderDashboard  from '@/pages/rider/RiderDashboard';
-import RiderDeliveries from '@/pages/rider/RiderDeliveries';
-import RiderEarnings   from '@/pages/rider/RiderEarnings';
-import RiderCOD        from '@/pages/rider/RiderCOD';
-import RiderProfile    from '@/pages/rider/RiderProfile';
-import RiderSafety     from '@/pages/rider/RiderSafety';
-import RiderIncentives from '@/pages/rider/RiderIncentives';
-import RiderSettings   from '@/pages/rider/RiderSettings';
+// ── Lazy: Seva portal ─────────────────────────────────────
+const SevaLayout    = lazy(() => import('@/pages/seva/SevaLayout'));
+const SevaDashboard = lazy(() => import('@/pages/seva/SevaDashboard'));
+const SevaJobs      = lazy(() => import('@/pages/seva/SevaJobs'));
+const SevaJobDetail = lazy(() => import('@/pages/seva/SevaJobDetail'));
+const SevaEarnings  = lazy(() => import('@/pages/seva/SevaEarnings'));
+const SevaProfile   = lazy(() => import('@/pages/seva/SevaProfile'));
+const SevaSchedule  = lazy(() => import('@/pages/seva/SevaSchedule'));
+const SevaSettings  = lazy(() => import('@/pages/seva/SevaSettings'));
 
-// Seva
-import SevaLayout    from '@/pages/seva/SevaLayout';
-import SevaDashboard from '@/pages/seva/SevaDashboard';
-import SevaJobs      from '@/pages/seva/SevaJobs';
-import SevaJobDetail from '@/pages/seva/SevaJobDetail';
-import SevaEarnings  from '@/pages/seva/SevaEarnings';
-import SevaProfile   from '@/pages/seva/SevaProfile';
-import SevaSchedule  from '@/pages/seva/SevaSchedule';
-import SevaSettings  from '@/pages/seva/SevaSettings';
+// ── Lazy: Anchor portal ───────────────────────────────────
+const AnchorLayout      = lazy(() => import('@/pages/anchor/AnchorLayout'));
+const AnchorDashboard   = lazy(() => import('@/pages/anchor/AnchorDashboard'));
+const AnchorVillage     = lazy(() => import('@/pages/anchor/AnchorVillage'));
+const AnchorNoticeboard = lazy(() => import('@/pages/anchor/AnchorNoticeboard'));
+const AnchorDisputes    = lazy(() => import('@/pages/anchor/AnchorDisputes'));
+const AnchorReports     = lazy(() => import('@/pages/anchor/AnchorReports'));
+const AnchorKYC         = lazy(() => import('@/pages/anchor/AnchorKYC'));
+const AnchorEscalations = lazy(() => import('@/pages/anchor/AnchorEscalations'));
 
-// Anchor
-import AnchorLayout      from '@/pages/anchor/AnchorLayout';
-import AnchorDashboard   from '@/pages/anchor/AnchorDashboard';
-import AnchorVillage     from '@/pages/anchor/AnchorVillage';
-import AnchorNoticeboard from '@/pages/anchor/AnchorNoticeboard';
-import AnchorDisputes    from '@/pages/anchor/AnchorDisputes';
-import AnchorReports     from '@/pages/anchor/AnchorReports';
-import AnchorKYC         from '@/pages/anchor/AnchorKYC';
-import AnchorEscalations from '@/pages/anchor/AnchorEscalations';
+// ── Lazy: Admin portal ────────────────────────────────────
+const AdminLayout         = lazy(() => import('@/pages/admin/AdminLayout'));
+const AdminDashboard      = lazy(() => import('@/pages/admin/AdminDashboard'));
+const AdminOrders         = lazy(() => import('@/pages/admin/AdminOrders'));
+const AdminVendors        = lazy(() => import('@/pages/admin/AdminVendors'));
+const AdminVendorApproval = lazy(() => import('@/pages/admin/AdminVendorApproval'));
+const AdminRiders         = lazy(() => import('@/pages/admin/AdminRiders'));
+const AdminCash           = lazy(() => import('@/pages/admin/AdminCash'));
+const AdminSupport        = lazy(() => import('@/pages/admin/AdminSupport'));
+const AdminSevaProviders  = lazy(() => import('@/pages/admin/AdminSevaProviders'));
+const AdminVillages       = lazy(() => import('@/pages/admin/AdminVillages'));
+const AdminSettings       = lazy(() => import('@/pages/admin/AdminSettings'));
+const AdminCustomers      = lazy(() => import('@/pages/admin/AdminCustomers'));
+const AdminIncidents      = lazy(() => import('@/pages/admin/AdminIncidents'));
+const AdminMonitoring     = lazy(() => import('@/pages/admin/AdminMonitoring'));
 
-// Admin
-import AdminLayout         from '@/pages/admin/AdminLayout';
-import AdminDashboard      from '@/pages/admin/AdminDashboard';
-import AdminOrders         from '@/pages/admin/AdminOrders';
-import AdminVendors        from '@/pages/admin/AdminVendors';
-import AdminVendorApproval from '@/pages/admin/AdminVendorApproval';
-import AdminRiders         from '@/pages/admin/AdminRiders';
-import AdminCash           from '@/pages/admin/AdminCash';
-import AdminSupport        from '@/pages/admin/AdminSupport';
-import AdminSevaProviders  from '@/pages/admin/AdminSevaProviders';
-import AdminVillages       from '@/pages/admin/AdminVillages';
-import AdminSettings       from '@/pages/admin/AdminSettings';
-import AdminCustomers      from '@/pages/admin/AdminCustomers';
-import AdminIncidents      from '@/pages/admin/AdminIncidents';
-import AdminMonitoring     from '@/pages/admin/AdminMonitoring';
+// ── Lazy: Super Admin portal ──────────────────────────────
+const SuperAdminLayout     = lazy(() => import('@/pages/superadmin/SuperAdminLayout'));
+const SuperAdminDashboard  = lazy(() => import('@/pages/superadmin/SuperAdminDashboard'));
+const SuperAdminAnalytics  = lazy(() => import('@/pages/superadmin/SuperAdminAnalytics'));
+const SuperAdminCredit     = lazy(() => import('@/pages/superadmin/SuperAdminCredit'));
+const SuperAdminBlocks     = lazy(() => import('@/pages/superadmin/SuperAdminBlocks'));
+const SuperAdminSecurity   = lazy(() => import('@/pages/superadmin/SuperAdminSecurity'));
+const SuperAdminAuditLog   = lazy(() => import('@/pages/superadmin/SuperAdminAuditLog'));
+const SuperAdminConfig     = lazy(() => import('@/pages/superadmin/SuperAdminConfig'));
+const SuperAdminExpansion  = lazy(() => import('@/pages/superadmin/SuperAdminExpansion'));
+const SuperAdminCompliance = lazy(() => import('@/pages/superadmin/SuperAdminCompliance'));
+const SuperAdminHealth     = lazy(() => import('@/pages/superadmin/SuperAdminHealth'));
+const SuperAdminAI         = lazy(() => import('@/pages/superadmin/SuperAdminAI'));
 
-// Super Admin
-import SuperAdminLayout     from '@/pages/superadmin/SuperAdminLayout';
-import SuperAdminDashboard  from '@/pages/superadmin/SuperAdminDashboard';
-import SuperAdminAnalytics  from '@/pages/superadmin/SuperAdminAnalytics';
-import SuperAdminCredit     from '@/pages/superadmin/SuperAdminCredit';
-import SuperAdminBlocks     from '@/pages/superadmin/SuperAdminBlocks';
-import SuperAdminSecurity   from '@/pages/superadmin/SuperAdminSecurity';
-import SuperAdminAuditLog   from '@/pages/superadmin/SuperAdminAuditLog';
-import SuperAdminConfig     from '@/pages/superadmin/SuperAdminConfig';
-import SuperAdminExpansion  from '@/pages/superadmin/SuperAdminExpansion';
-import SuperAdminCompliance from '@/pages/superadmin/SuperAdminCompliance';
-import SuperAdminHealth     from '@/pages/superadmin/SuperAdminHealth';
-import SuperAdminAI         from '@/pages/superadmin/SuperAdminAI';
+// ── Portal loading fallback ───────────────────────────────
+function PortalFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        <p className="text-xs text-muted-foreground">Loading…</p>
+      </div>
+    </div>
+  );
+}
 
 // ── AUTH → STORE BRIDGE ───────────────────────────────────
-// Syncs the real authenticated profile into SetuStore so that
-// useCurrentUser() returns live data, not the hardcoded FALLBACK_USER.
 function AuthStoreBridge() {
   const { profile } = useAuth();
   const { dispatch } = useStore();
@@ -160,7 +164,7 @@ function AuthStoreBridge() {
   return null;
 }
 
-// ── PAGES ─────────────────────────────────────────────────
+// ── Static pages ─────────────────────────────────────────
 function NotFound() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background gap-3">
@@ -177,8 +181,7 @@ function RoleError() {
     <div className="min-h-screen flex flex-col items-center justify-center bg-background gap-4 p-6">
       <h1 className="text-2xl font-bold text-foreground">Access Error</h1>
       <p className="text-muted-foreground text-sm text-center max-w-xs">
-        Your account role ({userRole ?? 'unknown'}) is not recognised.
-        Please contact support.
+        Your account role ({userRole ?? 'unknown'}) is not recognised. Please contact support.
       </p>
       <button onClick={signOut} className="text-primary text-sm underline">Sign out</button>
     </div>
@@ -198,14 +201,11 @@ function App() {
             <ScrollToTop />
             <Routes>
 
-              {/* ── Public routes ── */}
+              {/* ── Public / auth routes (eager) ── */}
               <Route path="/"             element={<RoleSelect />} />
               <Route path="/login"        element={<LoginOTP />} />
               <Route path="/login/verify" element={<OTPVerify />} />
               <Route path="/role-error"   element={<RoleError />} />
-
-              {/* NEW: Google OAuth callback — MUST be public and rendered
-                  before any navigation occurs so the token hash is not lost */}
               <Route path="/auth/callback" element={<AuthCallback />} />
 
               {/* Onboarding — public, users may not yet have a role */}
@@ -217,137 +217,151 @@ function App() {
               {/* ── Customer portal ── */}
               <Route path="/customer" element={
                 <ProtectedRoute allowedRoles={['customer']}>
-                  <CustomerLayout />
+                  <Suspense fallback={<PortalFallback />}>
+                    <CustomerLayout />
+                  </Suspense>
                 </ProtectedRoute>
               }>
-                <Route index                         element={<CustomerHome />} />
-                <Route path="orders"                 element={<CustomerOrders />} />
-                <Route path="orders/:orderId"        element={<CustomerOrderDetail />} />
-                <Route path="wallet"                 element={<CustomerWallet />} />
-                <Route path="credit"                 element={<CustomerCredit />} />
-                <Route path="schemes"                element={<CustomerSchemes />} />
-                <Route path="voice"                  element={<CustomerVoice />} />
-                <Route path="offline"                element={<CustomerOffline />} />
-                <Route path="language"               element={<CustomerLanguage />} />
-                <Route path="fraud"                  element={<CustomerFraudReport />} />
-                <Route path="trust"                  element={<CustomerTrust />} />
-                <Route path="profile"                element={<CustomerProfile />} />
-                <Route path="notifications"          element={<CustomerNotifications />} />
-                <Route path="support"                element={<CustomerSupport />} />
-                <Route path="settings"               element={<CustomerSettings />} />
-                <Route path="search"                 element={<CustomerSearch />} />
-                <Route path="product/:productId"     element={<CustomerProductDetail />} />
-                <Route path="vendor/:vendorId"       element={<CustomerVendorProfile />} />
-                <Route path="vendors"                element={<CustomerVendors />} />
-                <Route path="cart"                   element={<CustomerCart />} />
-                <Route path="checkout"               element={<CustomerCheckout />} />
-                <Route path="addresses"              element={<CustomerAddresses />} />
-                <Route path="referral"               element={<CustomerReferral />} />
-                <Route path="reorder/:orderId"       element={<CustomerReorder />} />
+                <Route index                         element={<Suspense fallback={<PortalFallback />}><CustomerHome /></Suspense>} />
+                <Route path="orders"                 element={<Suspense fallback={<PortalFallback />}><CustomerOrders /></Suspense>} />
+                <Route path="orders/:orderId"        element={<Suspense fallback={<PortalFallback />}><CustomerOrderDetail /></Suspense>} />
+                <Route path="wallet"                 element={<Suspense fallback={<PortalFallback />}><CustomerWallet /></Suspense>} />
+                <Route path="credit"                 element={<Suspense fallback={<PortalFallback />}><CustomerCredit /></Suspense>} />
+                <Route path="schemes"                element={<Suspense fallback={<PortalFallback />}><CustomerSchemes /></Suspense>} />
+                <Route path="voice"                  element={<Suspense fallback={<PortalFallback />}><CustomerVoice /></Suspense>} />
+                <Route path="offline"                element={<Suspense fallback={<PortalFallback />}><CustomerOffline /></Suspense>} />
+                <Route path="language"               element={<Suspense fallback={<PortalFallback />}><CustomerLanguage /></Suspense>} />
+                <Route path="fraud"                  element={<Suspense fallback={<PortalFallback />}><CustomerFraudReport /></Suspense>} />
+                <Route path="trust"                  element={<Suspense fallback={<PortalFallback />}><CustomerTrust /></Suspense>} />
+                <Route path="profile"                element={<Suspense fallback={<PortalFallback />}><CustomerProfile /></Suspense>} />
+                <Route path="notifications"          element={<Suspense fallback={<PortalFallback />}><CustomerNotifications /></Suspense>} />
+                <Route path="support"                element={<Suspense fallback={<PortalFallback />}><CustomerSupport /></Suspense>} />
+                <Route path="settings"               element={<Suspense fallback={<PortalFallback />}><CustomerSettings /></Suspense>} />
+                <Route path="search"                 element={<Suspense fallback={<PortalFallback />}><CustomerSearch /></Suspense>} />
+                <Route path="product/:productId"     element={<Suspense fallback={<PortalFallback />}><CustomerProductDetail /></Suspense>} />
+                <Route path="vendor/:vendorId"       element={<Suspense fallback={<PortalFallback />}><CustomerVendorProfile /></Suspense>} />
+                <Route path="vendors"                element={<Suspense fallback={<PortalFallback />}><CustomerVendors /></Suspense>} />
+                <Route path="cart"                   element={<Suspense fallback={<PortalFallback />}><CustomerCart /></Suspense>} />
+                <Route path="checkout"               element={<Suspense fallback={<PortalFallback />}><CustomerCheckout /></Suspense>} />
+                <Route path="addresses"              element={<Suspense fallback={<PortalFallback />}><CustomerAddresses /></Suspense>} />
+                <Route path="referral"               element={<Suspense fallback={<PortalFallback />}><CustomerReferral /></Suspense>} />
+                <Route path="reorder/:orderId"       element={<Suspense fallback={<PortalFallback />}><CustomerReorder /></Suspense>} />
               </Route>
 
               {/* ── Vendor portal ── */}
               <Route path="/vendor" element={
                 <ProtectedRoute allowedRoles={['vendor']}>
-                  <VendorLayout />
+                  <Suspense fallback={<PortalFallback />}>
+                    <VendorLayout />
+                  </Suspense>
                 </ProtectedRoute>
               }>
-                <Route index                 element={<VendorDashboard />} />
-                <Route path="orders"         element={<VendorOrders />} />
-                <Route path="products"       element={<VendorProducts />} />
-                <Route path="products/new"   element={<VendorAddProduct />} />
-                <Route path="earnings"       element={<VendorEarnings />} />
-                <Route path="analytics"      element={<VendorAnalytics />} />
-                <Route path="credit"         element={<VendorCredit />} />
-                <Route path="customers"      element={<VendorCustomers />} />
-                <Route path="settings"       element={<VendorSettings />} />
-                <Route path="profile"        element={<VendorProfile />} />
+                <Route index                 element={<Suspense fallback={<PortalFallback />}><VendorDashboard /></Suspense>} />
+                <Route path="orders"         element={<Suspense fallback={<PortalFallback />}><VendorOrders /></Suspense>} />
+                <Route path="products"       element={<Suspense fallback={<PortalFallback />}><VendorProducts /></Suspense>} />
+                <Route path="products/new"   element={<Suspense fallback={<PortalFallback />}><VendorAddProduct /></Suspense>} />
+                <Route path="earnings"       element={<Suspense fallback={<PortalFallback />}><VendorEarnings /></Suspense>} />
+                <Route path="analytics"      element={<Suspense fallback={<PortalFallback />}><VendorAnalytics /></Suspense>} />
+                <Route path="credit"         element={<Suspense fallback={<PortalFallback />}><VendorCredit /></Suspense>} />
+                <Route path="customers"      element={<Suspense fallback={<PortalFallback />}><VendorCustomers /></Suspense>} />
+                <Route path="settings"       element={<Suspense fallback={<PortalFallback />}><VendorSettings /></Suspense>} />
+                <Route path="profile"        element={<Suspense fallback={<PortalFallback />}><VendorProfile /></Suspense>} />
               </Route>
 
               {/* ── Rider portal ── */}
               <Route path="/rider" element={
                 <ProtectedRoute allowedRoles={['rider']}>
-                  <RiderLayout />
+                  <Suspense fallback={<PortalFallback />}>
+                    <RiderLayout />
+                  </Suspense>
                 </ProtectedRoute>
               }>
-                <Route index                 element={<RiderDashboard />} />
-                <Route path="deliveries"     element={<RiderDeliveries />} />
-                <Route path="earnings"       element={<RiderEarnings />} />
-                <Route path="cod"            element={<RiderCOD />} />
-                <Route path="safety"         element={<RiderSafety />} />
-                <Route path="incentives"     element={<RiderIncentives />} />
-                <Route path="settings"       element={<RiderSettings />} />
-                <Route path="profile"        element={<RiderProfile />} />
+                <Route index                 element={<Suspense fallback={<PortalFallback />}><RiderDashboard /></Suspense>} />
+                <Route path="deliveries"     element={<Suspense fallback={<PortalFallback />}><RiderDeliveries /></Suspense>} />
+                <Route path="earnings"       element={<Suspense fallback={<PortalFallback />}><RiderEarnings /></Suspense>} />
+                <Route path="cod"            element={<Suspense fallback={<PortalFallback />}><RiderCOD /></Suspense>} />
+                <Route path="safety"         element={<Suspense fallback={<PortalFallback />}><RiderSafety /></Suspense>} />
+                <Route path="incentives"     element={<Suspense fallback={<PortalFallback />}><RiderIncentives /></Suspense>} />
+                <Route path="settings"       element={<Suspense fallback={<PortalFallback />}><RiderSettings /></Suspense>} />
+                <Route path="profile"        element={<Suspense fallback={<PortalFallback />}><RiderProfile /></Suspense>} />
               </Route>
 
               {/* ── Seva portal ── */}
               <Route path="/seva" element={
                 <ProtectedRoute allowedRoles={['seva_provider']}>
-                  <SevaLayout />
+                  <Suspense fallback={<PortalFallback />}>
+                    <SevaLayout />
+                  </Suspense>
                 </ProtectedRoute>
               }>
-                <Route index                 element={<SevaDashboard />} />
-                <Route path="jobs"           element={<SevaJobs />} />
-                <Route path="jobs/:jobId"    element={<SevaJobDetail />} />
-                <Route path="schedule"       element={<SevaSchedule />} />
-                <Route path="earnings"       element={<SevaEarnings />} />
-                <Route path="settings"       element={<SevaSettings />} />
-                <Route path="profile"        element={<SevaProfile />} />
+                <Route index                 element={<Suspense fallback={<PortalFallback />}><SevaDashboard /></Suspense>} />
+                <Route path="jobs"           element={<Suspense fallback={<PortalFallback />}><SevaJobs /></Suspense>} />
+                <Route path="jobs/:jobId"    element={<Suspense fallback={<PortalFallback />}><SevaJobDetail /></Suspense>} />
+                <Route path="schedule"       element={<Suspense fallback={<PortalFallback />}><SevaSchedule /></Suspense>} />
+                <Route path="earnings"       element={<Suspense fallback={<PortalFallback />}><SevaEarnings /></Suspense>} />
+                <Route path="settings"       element={<Suspense fallback={<PortalFallback />}><SevaSettings /></Suspense>} />
+                <Route path="profile"        element={<Suspense fallback={<PortalFallback />}><SevaProfile /></Suspense>} />
               </Route>
 
               {/* ── Anchor portal ── */}
               <Route path="/anchor" element={
                 <ProtectedRoute allowedRoles={['anchor']}>
-                  <AnchorLayout />
+                  <Suspense fallback={<PortalFallback />}>
+                    <AnchorLayout />
+                  </Suspense>
                 </ProtectedRoute>
               }>
-                <Route index                 element={<AnchorDashboard />} />
-                <Route path="village"        element={<AnchorVillage />} />
-                <Route path="noticeboard"    element={<AnchorNoticeboard />} />
-                <Route path="disputes"       element={<AnchorDisputes />} />
-                <Route path="reports"        element={<AnchorReports />} />
-                <Route path="kyc"            element={<AnchorKYC />} />
-                <Route path="escalations"    element={<AnchorEscalations />} />
+                <Route index                 element={<Suspense fallback={<PortalFallback />}><AnchorDashboard /></Suspense>} />
+                <Route path="village"        element={<Suspense fallback={<PortalFallback />}><AnchorVillage /></Suspense>} />
+                <Route path="noticeboard"    element={<Suspense fallback={<PortalFallback />}><AnchorNoticeboard /></Suspense>} />
+                <Route path="disputes"       element={<Suspense fallback={<PortalFallback />}><AnchorDisputes /></Suspense>} />
+                <Route path="reports"        element={<Suspense fallback={<PortalFallback />}><AnchorReports /></Suspense>} />
+                <Route path="kyc"            element={<Suspense fallback={<PortalFallback />}><AnchorKYC /></Suspense>} />
+                <Route path="escalations"    element={<Suspense fallback={<PortalFallback />}><AnchorEscalations /></Suspense>} />
               </Route>
 
               {/* ── Admin portal ── */}
               <Route path="/admin" element={
                 <ProtectedRoute allowedRoles={['admin']}>
-                  <AdminLayout />
+                  <Suspense fallback={<PortalFallback />}>
+                    <AdminLayout />
+                  </Suspense>
                 </ProtectedRoute>
               }>
-                <Route index                     element={<AdminDashboard />} />
-                <Route path="orders"             element={<AdminOrders />} />
-                <Route path="vendors"            element={<AdminVendors />} />
-                <Route path="vendor-approval"    element={<AdminVendorApproval />} />
-                <Route path="riders"             element={<AdminRiders />} />
-                <Route path="cash"               element={<AdminCash />} />
-                <Route path="support"            element={<AdminSupport />} />
-                <Route path="seva-providers"     element={<AdminSevaProviders />} />
-                <Route path="villages"           element={<AdminVillages />} />
-                <Route path="settings"           element={<AdminSettings />} />
-                <Route path="customers"          element={<AdminCustomers />} />
-                <Route path="incidents"          element={<AdminIncidents />} />
-                <Route path="monitoring"         element={<AdminMonitoring />} />
+                <Route index                     element={<Suspense fallback={<PortalFallback />}><AdminDashboard /></Suspense>} />
+                <Route path="orders"             element={<Suspense fallback={<PortalFallback />}><AdminOrders /></Suspense>} />
+                <Route path="vendors"            element={<Suspense fallback={<PortalFallback />}><AdminVendors /></Suspense>} />
+                <Route path="vendor-approval"    element={<Suspense fallback={<PortalFallback />}><AdminVendorApproval /></Suspense>} />
+                <Route path="riders"             element={<Suspense fallback={<PortalFallback />}><AdminRiders /></Suspense>} />
+                <Route path="cash"               element={<Suspense fallback={<PortalFallback />}><AdminCash /></Suspense>} />
+                <Route path="support"            element={<Suspense fallback={<PortalFallback />}><AdminSupport /></Suspense>} />
+                <Route path="seva-providers"     element={<Suspense fallback={<PortalFallback />}><AdminSevaProviders /></Suspense>} />
+                <Route path="villages"           element={<Suspense fallback={<PortalFallback />}><AdminVillages /></Suspense>} />
+                <Route path="settings"           element={<Suspense fallback={<PortalFallback />}><AdminSettings /></Suspense>} />
+                <Route path="customers"          element={<Suspense fallback={<PortalFallback />}><AdminCustomers /></Suspense>} />
+                <Route path="incidents"          element={<Suspense fallback={<PortalFallback />}><AdminIncidents /></Suspense>} />
+                <Route path="monitoring"         element={<Suspense fallback={<PortalFallback />}><AdminMonitoring /></Suspense>} />
               </Route>
 
               {/* ── Super Admin portal ── */}
               <Route path="/superadmin" element={
                 <ProtectedRoute allowedRoles={['super_admin']}>
-                  <SuperAdminLayout />
+                  <Suspense fallback={<PortalFallback />}>
+                    <SuperAdminLayout />
+                  </Suspense>
                 </ProtectedRoute>
               }>
-                <Route index                 element={<SuperAdminDashboard />} />
-                <Route path="analytics"      element={<SuperAdminAnalytics />} />
-                <Route path="credit"         element={<SuperAdminCredit />} />
-                <Route path="blocks"         element={<SuperAdminBlocks />} />
-                <Route path="security"       element={<SuperAdminSecurity />} />
-                <Route path="audit"          element={<SuperAdminAuditLog />} />
-                <Route path="config"         element={<SuperAdminConfig />} />
-                <Route path="expansion"      element={<SuperAdminExpansion />} />
-                <Route path="compliance"     element={<SuperAdminCompliance />} />
-                <Route path="health"         element={<SuperAdminHealth />} />
-                <Route path="ai"             element={<SuperAdminAI />} />
+                <Route index                 element={<Suspense fallback={<PortalFallback />}><SuperAdminDashboard /></Suspense>} />
+                <Route path="analytics"      element={<Suspense fallback={<PortalFallback />}><SuperAdminAnalytics /></Suspense>} />
+                <Route path="credit"         element={<Suspense fallback={<PortalFallback />}><SuperAdminCredit /></Suspense>} />
+                <Route path="blocks"         element={<Suspense fallback={<PortalFallback />}><SuperAdminBlocks /></Suspense>} />
+                <Route path="security"       element={<Suspense fallback={<PortalFallback />}><SuperAdminSecurity /></Suspense>} />
+                <Route path="audit"          element={<Suspense fallback={<PortalFallback />}><SuperAdminAuditLog /></Suspense>} />
+                <Route path="config"         element={<Suspense fallback={<PortalFallback />}><SuperAdminConfig /></Suspense>} />
+                <Route path="expansion"      element={<Suspense fallback={<PortalFallback />}><SuperAdminExpansion /></Suspense>} />
+                <Route path="compliance"     element={<Suspense fallback={<PortalFallback />}><SuperAdminCompliance /></Suspense>} />
+                <Route path="health"         element={<Suspense fallback={<PortalFallback />}><SuperAdminHealth /></Suspense>} />
+                <Route path="ai"             element={<Suspense fallback={<PortalFallback />}><SuperAdminAI /></Suspense>} />
               </Route>
 
               {/* ── Fallbacks ── */}
