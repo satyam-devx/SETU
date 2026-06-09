@@ -2,20 +2,38 @@ import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Home, Navigation, IndianRupee, User, Wallet } from 'lucide-react';
 import MobileNav from '@/components/shared/MobileNav';
+import ErrorBoundary from '@/components/shared/ErrorBoundary';
+import OfflineBanner from '@/components/shared/OfflineBanner';
+import { useRealtimeOrders, useRealtimeNotifications } from '@/hooks/useRealtimeOrders';
+import { useStore } from '@/lib/store';
 
-const navItems = [
-  { path: '/rider',             label: 'Home',       icon: Home },
-  { path: '/rider/deliveries',  label: 'Deliveries', icon: Navigation, badge: 2 },
-  { path: '/rider/earnings',    label: 'Earnings',   icon: IndianRupee },
-  { path: '/rider/cod',         label: 'COD',        icon: Wallet },
-  { path: '/rider/profile',     label: 'Profile',    icon: User },
-];
+function RiderContent() {
+  const { state } = useStore();
+  useRealtimeOrders('rider');
+  useRealtimeNotifications();
 
-export default function RiderLayout() {
+  const available = state.orders.filter(o => o.status === 'ready' && !o.riderId && !o.rider_id).length;
+
+  const navItems = [
+    { path: '/rider',            label: 'Home',       icon: Home },
+    { path: '/rider/deliveries', label: 'Deliveries', icon: Navigation, badge: available || null },
+    { path: '/rider/earnings',   label: 'Earnings',   icon: IndianRupee },
+    { path: '/rider/cod',        label: 'COD',        icon: Wallet },
+    { path: '/rider/profile',    label: 'Profile',    icon: User },
+  ];
   return (
-    <div className="max-w-md mx-auto bg-background min-h-screen relative">
+    <div className="page-container relative">
+      <OfflineBanner />
       <Outlet />
       <MobileNav items={navItems} />
     </div>
+  );
+}
+
+export default function RiderLayout() {
+  return (
+    <ErrorBoundary portal="Rider" fallbackRoute="/rider">
+      <RiderContent />
+    </ErrorBoundary>
   );
 }
