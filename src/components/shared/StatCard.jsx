@@ -1,27 +1,48 @@
+// ═══════════════════════════════════════════════════════════
+// SETU — StatCard (production version)
+// ═══════════════════════════════════════════════════════════
 import React from 'react';
-import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
-export default function StatCard({ title, value, subtitle, icon: Icon, trend, trendUp, className }) {
+export default function StatCard({ title, value, subtitle, icon: Icon, trend, trendValue, className, accent }) {
+  const trendPositive = trend === 'up';
+  const trendNeutral  = trend === 'neutral' || !trend;
+
   return (
-    <Card className={cn('p-4 border border-border', className)}>
-      <div className="flex items-start justify-between">
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{title}</p>
-          <p className="text-2xl font-bold text-foreground mt-1 truncate">{value}</p>
-          {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
-          {trend && (
-            <p className={cn('text-xs font-medium mt-1', trendUp ? 'text-green-600' : 'text-red-500')}>
-              {trendUp ? '↑' : '↓'} {trend}
-            </p>
-          )}
-        </div>
+    <div className={cn(
+      'rounded-xl border border-border bg-card p-4 flex flex-col gap-1',
+      accent && 'border-primary/20 bg-primary/5',
+      className
+    )}>
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{title}</span>
         {Icon && (
-          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-            <Icon className="w-5 h-5 text-primary" />
+          <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', accent ? 'bg-primary/10' : 'bg-muted')}>
+            <Icon className={cn('w-4 h-4', accent ? 'text-primary' : 'text-muted-foreground')} />
           </div>
         )}
       </div>
-    </Card>
+      <div className="text-xl font-bold text-foreground">{value ?? '—'}</div>
+      {(subtitle || trendValue) && (
+        <div className="flex items-center gap-1 mt-0.5">
+          {trend && !trendNeutral && (
+            trendPositive
+              ? <TrendingUp className="w-3 h-3 text-green-500" />
+              : <TrendingDown className="w-3 h-3 text-red-500" />
+          )}
+          {trendNeutral && trendValue && <Minus className="w-3 h-3 text-muted-foreground" />}
+          {(trendValue || subtitle) && (
+            <span className={cn(
+              'text-xs',
+              trendNeutral ? 'text-muted-foreground' : trendPositive ? 'text-green-600' : 'text-red-500'
+            )}>
+              {trendValue || subtitle}
+            </span>
+          )}
+          {subtitle && trendValue && <span className="text-xs text-muted-foreground">{subtitle}</span>}
+        </div>
+      )}
+    </div>
   );
 }
