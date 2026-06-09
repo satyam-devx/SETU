@@ -1,32 +1,13 @@
 // ═══════════════════════════════════════════════════════════
-// SETU PLATFORM — AUTH CONTEXT  (production-hardened)
+// SETU PLATFORM — AUTH CONTEXT  (v3 — production hardened)
 //
-// BUGS FIXED IN THIS VERSION:
-//
-//  BUG — Google OAuth drops session after redirect:
-//    redirectTo was set to window.location.origin (e.g. http://localhost:5173).
-//    Supabase appends the token to the hash: http://localhost:5173/#access_token=...
-//    When the SPA router loads '/', the RoleSelect component immediately
-//    calls navigate() which strips the hash. The Supabase client never sees
-//    the token → session is lost → user is redirected back to /login.
-//
-//    Fix: redirectTo now points to `${window.location.origin}/auth/callback`.
-//    The new AuthCallback.jsx component renders at /auth/callback and waits
-//    for Supabase to exchange the hash token BEFORE any navigation occurs.
-//
-//    REQUIRED ACTION: Add the callback URL to Supabase Dashboard →
-//    Authentication → URL Configuration → Redirect URLs:
-//      http://localhost:5173/auth/callback
-//      https://your-production-domain.com/auth/callback
-//
-// All other fixes from previous version are preserved:
-//  1. onAuthStateChange as single source of truth (no dual getSession race).
-//  2. verifyOTP does not fetch profile — state flows through onAuthStateChange.
-//  3. isAuthenticated is session-based (!!user), not profile-based.
-//  4. loadProfile distinguishes "not found" from real DB errors.
-//  5. signOut uses reactive state clearing, not window.location.href.
-//  6. No useNavigate in AuthProvider (AuthProvider is outside Router).
-//  7. Demo OTP strictly validates '1234'.
+// Fixes over v2:
+//  1. GitHub Pages base path: redirectTo now uses BASE_URL env var
+//     so /SETU/auth/callback works on GitHub Pages.
+//  2. authError exposed in context (was internal-only before).
+//  3. Retry jitter — prevents thundering herd on server restart.
+//  4. Profile cache invalidation on updateProfile.
+//  5. clearError helper for consuming UI.
 // ═══════════════════════════════════════════════════════════
 
 import React, {
@@ -37,10 +18,10 @@ import React, {
   useCallback,
 } from 'react';
 import { supabase, getProfile, getPortalPath, isSupabaseConfigured } from './supabase';
+import { clearCache } from '@/hooks/useDataFetch';
 
 const AuthContext = createContext(null);
 
-// ── DEMO MODE PROFILE ─────────────────────────────────────
 const DEMO_PROFILE = {
   id:          'u1',
   phone:       '+919876543200',
@@ -51,67 +32,55 @@ const DEMO_PROFILE = {
   setu_score:  720,
 };
 
-// ── PROVIDER ──────────────────────────────────────────────
+// ── GitHub Pages / Vite base-path aware callback URL ─────
+function getCallbackUrl() {
+  const base = import.meta.env.BASE_URL || '/';
+  // Remove trailing slash, add /auth/callback
+  const basePath = base.endsWith('/') ? base.slice(0, -1) : base;
+  return `${window.location.origin}${basePath}/auth/callback`;
+}
+
+// ── Retry with jitter ────────────────────────────────────
+function retryDelay(attempt) {
+  const base  = 800 * Math.pow(2, attempt);     // exponential: 800, 1600, 3200
+  const jitter = Math.random() * 200;           // 0–200ms jitter
+  return Math.min(base + jitter, 5000);         // cap at 5s
+}
+
 export function AuthProvider({ children }) {
-  const [user,     setUser]     = useState(null);
-  const [session,  setSession]  = useState(null);
-  const [profile,  setProfile]  = useState(null);
+  const [user,      setUser]      = useState(null);
+  const [session,   setSession]   = useState(null);
+  const [profile,   setProfile]   = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
 
-  // isAuthenticated is session-based only.
-  // Profile availability is tracked separately via isProfileLoaded.
-  // This prevents a profile fetch failure from silently logging users out.
-  const isAuthenticated  = !!user;
-  const isProfileLoaded  = !!profile;
+  const isAuthenticated = !!user;
+  const isProfileLoaded = !!profile;
 
-  // ── Load profile for a given user ──
-  // Uses typed getProfile result to distinguish "no row" (new user)
-  // from transient network errors. Only retries on real errors.
+  const clearError = useCallback(() => setAuthError(null), []);
+
+  // ── Load profile ──────────────────────────────────────
   const loadProfile = useCallback(async (authUser) => {
-    if (!authUser) {
-      setProfile(null);
-      return;
-    }
+    if (!authUser)          { setProfile(null); return; }
+    if (!isSupabaseConfigured) { setProfile(DEMO_PROFILE); return; }
 
-    if (!isSupabaseConfigured) {
-      setProfile(DEMO_PROFILE);
-      return;
-    }
-
-    // Short initial delay so the JWT is fully propagated before the
-    // first DB query. Without this, RLS sees auth.uid()=null on the
-    // first request after OAuth, returns PGRST116, and the profile
-    // appears missing even though it exists.
+    // 300ms initial delay — lets JWT propagate through RLS
     await new Promise(res => setTimeout(res, 300));
 
-    // Retry loop: handles both network errors and RLS timing issues.
-    // notFound is only trusted after auth is confirmed (see getProfile).
-    // Backoff: 800ms, 1600ms, 3200ms
     const MAX_RETRIES = 4;
-
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       const { data, notFound, error } = await getProfile(authUser.id);
 
-      if (data) {
-        setProfile(data);
-        return;
-      }
-
-      if (notFound) {
-        // getProfile confirmed auth.uid() is valid and row truly does not exist.
-        setProfile(null);
-        return;
-      }
+      if (data)     { setProfile(data);  return; }
+      if (notFound) { setProfile(null);  return; }
 
       if (error) {
         if (attempt < MAX_RETRIES - 1) {
-          const delay = 800 * Math.pow(2, attempt);
-          console.warn(`[SETU Auth] Profile fetch attempt ${attempt + 1} failed, retrying in ${delay}ms`);
+          const delay = retryDelay(attempt);
+          console.warn(`[SETU Auth] Profile fetch attempt ${attempt + 1} failed, retrying in ${Math.round(delay)}ms`);
           await new Promise(res => setTimeout(res, delay));
           continue;
         }
-        // All retries exhausted — show error
         console.error('[SETU Auth] Could not load profile after retries:', error);
         setProfile(null);
         setAuthError('Could not load your profile. Please check your connection and try again.');
@@ -120,13 +89,10 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  // ── Bootstrap: subscribe to auth state changes ──
-  // Supabase fires INITIAL_SESSION via onAuthStateChange on mount —
-  // this is the single source of truth, eliminating the dual-call
-  // race condition that caused duplicate loadProfile calls.
+  // ── Auth state subscription ───────────────────────────
   useEffect(() => {
-    let mounted = true;
-    let initialised = false; // Guard: setIsLoading(false) only once
+    let mounted    = true;
+    let initialised = false;
 
     if (!isSupabaseConfigured) {
       setUser({ id: DEMO_PROFILE.id, phone: DEMO_PROFILE.phone });
@@ -145,15 +111,13 @@ export function AuthProvider({ children }) {
 
         if (event === 'SIGNED_OUT') {
           setProfile(null);
+          clearCache(); // invalidate all data-fetch caches on sign out
         } else if (s?.user) {
-          // Await profile load before declaring initialisation complete,
-          // so ProtectedRoute never flashes "unauthenticated" mid-load.
           await loadProfile(s.user);
         } else {
           setProfile(null);
         }
 
-        // Only set isLoading(false) once — on the very first auth event.
         if (!initialised) {
           initialised = true;
           if (mounted) setIsLoading(false);
@@ -161,29 +125,21 @@ export function AuthProvider({ children }) {
       }
     );
 
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
+    return () => { mounted = false; subscription.unsubscribe(); };
   }, [loadProfile]);
 
-  // ── Sign Out ──
+  // ── signOut ───────────────────────────────────────────
   const signOut = useCallback(async () => {
     if (isSupabaseConfigured) {
       await supabase.auth.signOut();
-      // State cleared by SIGNED_OUT event in onAuthStateChange above.
     } else {
-      setUser(null);
-      setSession(null);
-      setProfile(null);
+      setUser(null); setSession(null); setProfile(null);
     }
   }, []);
 
-  // ── Send OTP ──
+  // ── sendOTP ───────────────────────────────────────────
   const sendOTP = useCallback(async (phone) => {
-    if (!isSupabaseConfigured) {
-      return { error: null };
-    }
+    if (!isSupabaseConfigured) return { error: null };
     const { error } = await supabase.auth.signInWithOtp({
       phone,
       options: { channel: 'sms' },
@@ -191,10 +147,7 @@ export function AuthProvider({ children }) {
     return { error };
   }, []);
 
-  // ── Verify OTP ──
-  // Does NOT fetch profile directly. Supabase fires SIGNED_IN on
-  // onAuthStateChange, which calls loadProfile. Navigation is handled
-  // reactively in OTPVerify.jsx after auth state resolves.
+  // ── verifyOTP ─────────────────────────────────────────
   const verifyOTP = useCallback(async (phone, token) => {
     if (!isSupabaseConfigured) {
       if (token === '1234') {
@@ -202,119 +155,43 @@ export function AuthProvider({ children }) {
         setProfile({ ...DEMO_PROFILE, phone });
         return { error: null };
       }
-      return { error: { message: 'Demo OTP is 1234. Enter 1234 to continue.' } };
+      return { error: { message: 'Demo OTP is 1234.' } };
     }
-
-    const { error } = await supabase.auth.verifyOtp({
-      phone,
-      token,
-      type: 'sms',
-    });
-
+    const { error } = await supabase.auth.verifyOtp({ phone, token, type: 'sms' });
     return { error };
-    // State (user, session, profile) is set by onAuthStateChange.
   }, []);
 
-  // ── Create profile (called from onboarding after first OTP verify) ──
-  // ── Create / complete profile (called from onboarding) ──
-  //
-  // STRATEGY: explicit UPDATE first, INSERT as fallback.
-  //
-  // Why not upsert(): supabase-js upsert() with RLS can silently fail in
-  // PostgREST when conflict resolution touches both INSERT and UPDATE RLS
-  // policies in one request.
-  //
-  // Why not plain INSERT: the handle_new_user DB trigger fires immediately
-  // on signup and creates a skeleton row, so INSERT hits the PK constraint.
-  //
-  // UPDATE + fallback INSERT: clean, each call matches exactly one RLS policy.
+  // ── createProfile (onboarding) ────────────────────────
   const createProfile = useCallback(async (userId, profileData) => {
     if (!isSupabaseConfigured) return { error: null };
 
     const payload = {
       name:       profileData.name  || null,
-      phone:      profileData.phone || '',
+      phone:      profileData.phone || null,
       role:       profileData.role  || 'customer',
       updated_at: new Date().toISOString(),
     };
 
-    // Step 1: UPDATE — handles the 99% case where the trigger row exists
-    const { error: updateError, count } = await supabase
+    // UPDATE first (trigger row already exists)
+    const { error: updateError } = await supabase
       .from('profiles')
       .update(payload)
-      .eq('id', userId)
-      .select('id', { count: 'exact', head: true });
+      .eq('id', userId);
 
     if (updateError) {
-      console.error('[SETU] createProfile UPDATE error:', updateError);
-      return { error: updateError };
-    }
-
-    // Step 2: INSERT fallback — only if trigger somehow did not fire
-    if (count === 0) {
+      // Fallback: INSERT if row doesn't exist
       const { error: insertError } = await supabase
         .from('profiles')
         .insert({ id: userId, ...payload });
-
-      if (insertError) {
-        console.error('[SETU] createProfile INSERT error:', insertError);
-        return { error: insertError };
-      }
+      if (insertError) return { error: insertError };
     }
 
-    // Re-fetch to sync local state with DB
     const { data } = await getProfile(userId);
     if (data) setProfile(data);
-
     return { error: null };
   }, []);
 
-  // ── Email / Password sign-in (admin/dev use) ──
-  const signInWithEmail = useCallback(async (email, password) => {
-    if (!isSupabaseConfigured) {
-      return { error: { message: 'Supabase not configured' } };
-    }
-    return await supabase.auth.signInWithPassword({ email, password });
-  }, []);
-
-  const signUpWithEmail = useCallback(async (email, password) => {
-    if (!isSupabaseConfigured) {
-      return { error: { message: 'Supabase not configured' } };
-    }
-    return await supabase.auth.signUp({ email, password });
-  }, []);
-
-  // ── Google OAuth ──
-  // FIX: redirectTo now points to /auth/callback instead of origin root.
-  //
-  // BEFORE (broken):
-  //   redirectTo: window.location.origin
-  //   → Supabase redirects to http://localhost:5173/#access_token=...
-  //   → RoleSelect renders, calls navigate('/')
-  //   → Hash is stripped → Supabase never sees token → session lost
-  //
-  // AFTER (fixed):
-  //   redirectTo: window.location.origin + '/auth/callback'
-  //   → Supabase redirects to http://localhost:5173/auth/callback#access_token=...
-  //   → AuthCallback.jsx renders, does NOT navigate before token exchange
-  //   → Supabase client exchanges token → SIGNED_IN fires → session saved
-  //
-  // REQUIRED: Add to Supabase Dashboard → Auth → URL Configuration → Redirect URLs:
-  //   http://localhost:5173/auth/callback
-  //   https://your-production-domain.com/auth/callback
-  const signInWithGoogle = useCallback(async () => {
-    if (!isSupabaseConfigured) {
-      return { error: { message: 'Supabase not configured' } };
-    }
-    return await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
-  }, []);
-
-  // ── Update profile ──
+  // ── updateProfile ─────────────────────────────────────
   const updateProfile = useCallback(async (updates) => {
     if (!user || !isSupabaseConfigured) return { error: null };
     const { error } = await supabase
@@ -323,35 +200,49 @@ export function AuthProvider({ children }) {
       .eq('id', user.id);
     if (!error) {
       const { data } = await getProfile(user.id);
-      if (data) setProfile(data);
+      if (data) {
+        setProfile(data);
+        clearCache(`orders-customer-${user.id}`); // bust order cache on profile change
+      }
     }
     return { error };
   }, [user]);
 
+  // ── signInWithGoogle ──────────────────────────────────
+  const signInWithGoogle = useCallback(async () => {
+    if (!isSupabaseConfigured) return { error: { message: 'Supabase not configured' } };
+    return await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options:  { redirectTo: getCallbackUrl() },
+    });
+  }, []);
+
+  // ── signInWithEmail (admin/dev) ───────────────────────
+  const signInWithEmail = useCallback(async (email, password) => {
+    if (!isSupabaseConfigured) return { error: { message: 'Supabase not configured' } };
+    return await supabase.auth.signInWithPassword({ email, password });
+  }, []);
+
+  const signUpWithEmail = useCallback(async (email, password) => {
+    if (!isSupabaseConfigured) return { error: { message: 'Supabase not configured' } };
+    return await supabase.auth.signUp({ email, password });
+  }, []);
+
   const value = {
-    user,
-    session,
-    profile,
-    isLoading,
-    isAuthenticated,
-    isProfileLoaded,
-    signOut,
-    sendOTP,
-    verifyOTP,
-    signInWithEmail,
-    signUpWithEmail,
-    signInWithGoogle,
-    createProfile,
-    updateProfile,
-    // Convenience getters
-    userRole:   profile?.role      ?? null,
-    userName:   profile?.name      ?? null,
-    userPhone:  profile?.phone     ?? user?.phone ?? null,
+    user, session, profile,
+    isLoading, isAuthenticated, isProfileLoaded,
+    authError, clearError,
+    signOut, sendOTP, verifyOTP,
+    signInWithEmail, signUpWithEmail, signInWithGoogle,
+    createProfile, updateProfile,
+    // Convenience
+    userRole:   profile?.role       ?? null,
+    userName:   profile?.name       ?? null,
+    userPhone:  profile?.phone      ?? user?.phone ?? null,
     setuScore:  profile?.setu_score ?? 500,
     isVerified: profile?.is_verified ?? false,
     portalPath: profile ? getPortalPath(profile.role) : '/',
     reloadProfile: () => { if (user) loadProfile(user); },
-    loadProfileForUser: loadProfile,
   };
 
   return (
