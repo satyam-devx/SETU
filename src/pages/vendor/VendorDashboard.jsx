@@ -1,62 +1,126 @@
-import React, { useState, useEffect } from 'react';
+// ═══════════════════════════════════════════════════════════
+// SETU — VendorDashboard (v2)
+// Fixes:
+//  - Removed hardcoded VENDOR_ID = 'vn1'
+//  - Fetches vendor profile from DB using authenticated user
+//  - Real orders from store (populated via realtime)
+//  - Skeleton loading states
+//  - Stats computed from real data
+// ═══════════════════════════════════════════════════════════
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ShoppingBag, Package, IndianRupee, Users, TrendingUp, ChevronRight, AlertCircle } from 'lucide-react';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import {
+  ShoppingBag, Package, IndianRupee, TrendingUp,
+  ChevronRight, AlertCircle, RefreshCw,
+} from 'lucide-react';
 import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
 import StatusBadge from '@/components/shared/StatusBadge';
+import EmptyState from '@/components/shared/EmptyState';
+import { StatCardSkeleton, OrderRowSkeleton } from '@/components/shared/SkeletonCard';
 import { useStore } from '@/lib/store';
-import { AIAPI } from '@/lib/api';
-import { VENDORS, PRODUCTS } from '@/lib/mockData';
-
-const VENDOR_ID = 'vn1';
-const vendor = VENDORS[0];
+import { useAuth } from '@/lib/AuthContext';
+import { useDataFetch } from '@/hooks/useDataFetch';
+import { getVendorByOwnerId, getProducts } from '@/lib/api';
+import { formatCurrency, timeAgo } from '@/lib/utils';
 
 export default function VendorDashboard() {
+  const { user } = useAuth();
   const { state } = useStore();
-  const [forecast, setForecast] = useState(null);
 
-  useEffect(() => {
-    AIAPI.getDemandForecast(VENDOR_ID).then(({ data }) => data && setForecast(data));
-  }, []);
+  // Fetch vendor profile for this authenticated user
+  const { data: vendor, isLoading: vendorLoading } = useDataFetch(
+    () => getVendorByOwnerId(user?.id),
+    [user?.id],
+    { cacheKey: `vendor-profile-${user?.id}`, enabled: !!user?.id }
+  );
 
-  const vendorOrders  = state.orders.filter(o => o.vendorId === VENDOR_ID);
+  const { data: products, isLoading: productsLoading } = useDataFetch(
+    () => getProducts({ vendorId: vendor?.id }),
+    [vendor?.id],
+    { cacheKey: `vendor-products-${vendor?.id}`, enabled: !!vendor?.id }
+  );
+
+  // Orders from realtime store (filtered to this vendor)
+  const vendorOrders = state.orders.filter(o =>
+    vendor?.id && (o.vendorId === vendor.id || o.vendor_id === vendor.id)
+  );
+
   const pendingOrders = vendorOrders.filter(o => o.status === 'pending');
-  const todayOrders   = vendorOrders.filter(o => new Date(o.createdAt).toDateString() === new Date().toDateString());
-  const todayRevenue  = todayOrders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + (o.total || 0), 0);
-  const vendorProducts = PRODUCTS.filter(p => p.vendorId === VENDOR_ID);
-  const lowStock      = vendorProducts.filter(p => p.stock < 5);
+  const todayOrders   = vendorOrders.filter(o => {
+    const d = new Date(o.createdAt || o.created_at);
+    return d.toDateString() === new Date().toDateString();
+  });
+  const todayRevenue  = todayOrders
+    .filter(o => o.status !== 'cancelled')
+    .reduce((s, o) => s + (o.total || 0), 0);
+
+  const lowStock = (products || []).filter(p => (p.stock ?? 99) < 5 && p.is_available);
+
+  const isLoading = vendorLoading || productsLoading;
 
   return (
-    <div className="pb-20">
+    <div className="pb-nav animate-fade-in" role="main">
       <AppHeader
-        title={vendor.name}
-        subtitle={`${vendor.village} · ${vendor.category}`}
+        title={vendor?.name || 'My Shop'}
+        subtitle={vendor ? `${vendor.village || ''} · ${vendor.category}` : 'Loading...'}
         notificationCount={pendingOrders.length}
-        rightAction={
-          <Badge className={`text-xs border-0 ${vendor.isOpen ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-            {vendor.isOpen ? '● Open' : '● Closed'}
-          </Badge>
-        }
+        notificationPath="/vendor/orders"
+        rightAction={vendor && (
+          <span className={`text-xs font-medium px-2 py-0.5 rounded-full border-0 ${
+            vendor.is_open ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+          }`}>
+            {vendor.is_open ? '● Open' : '● Closed'}
+          </span>
+        )}
       />
 
       <div className="px-4 py-4 space-y-4">
-        <div className="grid grid-cols-2 gap-2">
-          <StatCard title="Today's Revenue" value={`₹${todayRevenue.toLocaleString()}`} icon={IndianRupee} />
-          <StatCard title="Today's Orders"  value={String(todayOrders.length)} icon={ShoppingBag} subtitle={`${pendingOrders.length} pending`} />
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <StatCard title="Products" value={String(vendorProducts.length)} icon={Package} subtitle={`${vendorProducts.filter(p => p.isAvailable !== false).length} available`} />
-          <StatCard title="Trust Score" value={String(vendor.trustScore)} icon={TrendingUp} trend="Top 20%" trendUp />
-        </div>
+        {/* Stats */}
+        {isLoading ? (
+          <div className="grid grid-cols-2 gap-2">
+            {[1,2,3,4].map(i => <StatCardSkeleton key={i} />)}
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <StatCard
+                title="Today's Revenue"
+                value={formatCurrency(todayRevenue)}
+                icon={IndianRupee}
+                accent
+              />
+              <StatCard
+                title="Today's Orders"
+                value={String(todayOrders.length)}
+                icon={ShoppingBag}
+                subtitle={pendingOrders.length ? `${pendingOrders.length} pending` : 'All clear'}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <StatCard
+                title="Products"
+                value={String((products || []).length)}
+                icon={Package}
+                subtitle={`${(products || []).filter(p => p.is_available).length} available`}
+              />
+              <StatCard
+                title="Trust Score"
+                value={String(vendor?.trust_score ?? 500)}
+                icon={TrendingUp}
+                trendValue={vendor?.trust_score >= 700 ? 'Top 20%' : undefined}
+                trend={vendor?.trust_score >= 700 ? 'up' : 'neutral'}
+              />
+            </div>
+          </>
+        )}
 
+        {/* Pending orders alert */}
         {pendingOrders.length > 0 && (
-          <Link to="/vendor/orders">
-            <Card className="p-3 border-amber-300 bg-amber-50/60 flex items-center gap-3">
+          <Link to="/vendor/orders" className="block">
+            <div className="setu-card p-3 border-amber-300 bg-amber-50/60 flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
-                <AlertCircle className="w-4 h-4 text-amber-600" />
+                <AlertCircle className="w-4 h-4 text-amber-600" aria-hidden="true" />
               </div>
               <div className="flex-1">
                 <p className="text-sm font-semibold text-amber-800">
@@ -64,91 +128,79 @@ export default function VendorDashboard() {
                 </p>
                 <p className="text-xs text-amber-700">Tap to accept or reject</p>
               </div>
-              <ChevronRight className="w-4 h-4 text-amber-600 shrink-0" />
-            </Card>
+              <ChevronRight className="w-4 h-4 text-amber-600 shrink-0" aria-hidden="true" />
+            </div>
           </Link>
         )}
 
+        {/* Recent orders */}
         <div>
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold text-sm">Recent Orders</h3>
-            <Link to="/vendor/orders" className="text-xs text-primary font-medium">View all</Link>
+          <div className="section-header">
+            <h3 className="section-title">Recent Orders</h3>
+            <Link to="/vendor/orders" className="section-link">View All</Link>
           </div>
-          {vendorOrders.length === 0 ? (
-            <Card className="p-6 border-border text-center">
-              <ShoppingBag className="w-7 h-7 text-muted-foreground mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">No orders yet</p>
-            </Card>
+          {isLoading ? (
+            <div>{[1,2].map(i => <OrderRowSkeleton key={i} />)}</div>
+          ) : vendorOrders.length === 0 ? (
+            <EmptyState icon={ShoppingBag} title="No orders yet" description="Orders will appear here as customers place them" size="sm" />
           ) : (
             <div className="space-y-2">
               {vendorOrders.slice(0, 3).map(o => (
-                <Card key={o.id} className="p-3 border-border flex items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-mono text-muted-foreground">{o.orderNumber}</p>
-                    <p className="text-sm font-medium">{o.customerName || 'Customer'}</p>
-                    <p className="text-xs text-muted-foreground truncate">{(o.items || []).map(i => i.name).join(', ')}</p>
+                <Link key={o.id} to={`/vendor/orders`} className="block">
+                  <div className="setu-card p-3 flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] font-mono text-muted-foreground">
+                        {o.orderNumber || o.order_number}
+                      </p>
+                      <p className="text-sm font-medium">{o.customerName || o.customer_name || 'Customer'}</p>
+                      <p className="text-xs text-muted-foreground">{timeAgo(o.createdAt || o.created_at)}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-bold">{formatCurrency(o.total)}</p>
+                      <StatusBadge status={o.status} className="mt-1" />
+                    </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-bold">₹{o.total}</p>
-                    <StatusBadge status={o.status} />
-                  </div>
-                </Card>
+                </Link>
               ))}
             </div>
           )}
         </div>
 
+        {/* Low stock alert */}
         {lowStock.length > 0 && (
-          <Card className="p-3 border-destructive/30 bg-destructive/5">
+          <div className="setu-card p-3 border-destructive/30 bg-destructive/5">
             <p className="text-xs font-semibold text-destructive mb-2">⚠ Low Stock Alert</p>
-            {lowStock.map(p => (
-              <div key={p.id} className="flex items-center justify-between text-xs py-0.5">
-                <span>{p.name}</span>
-                <Badge className="text-[9px] bg-red-100 text-red-700 border-0">Only {p.stock} left</Badge>
-              </div>
-            ))}
-            <Link to="/vendor/products">
-              <Button size="sm" variant="outline" className="w-full mt-2 h-7 text-xs">Manage Products</Button>
-            </Link>
-          </Card>
-        )}
-
-        {forecast && (
-          <Card className="p-4 border-border">
-            <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-primary" /> AI Demand Forecast
-            </h3>
-            {forecast.festivalAlert && (
-              <div className="p-2 bg-amber-50 rounded-lg mb-3 text-xs text-amber-800">🎉 {forecast.festivalAlert}</div>
-            )}
-            <div className="space-y-2">
-              {forecast.forecasts.map(f => (
-                <div key={f.product} className="flex items-center gap-2 text-xs">
-                  <span className="flex-1 truncate">{f.product}</span>
-                  <span className="text-muted-foreground shrink-0">Pred: {f.nextWeekDemand}</span>
-                  <Badge className="text-[9px] bg-primary/10 text-primary border-0 shrink-0">Order {f.reorderSuggestion}</Badge>
+            <div className="space-y-1">
+              {lowStock.map(p => (
+                <div key={p.id} className="flex items-center justify-between text-xs">
+                  <span className="truncate">{p.name}</span>
+                  <span className="text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full ml-2 shrink-0">
+                    Only {p.stock} left
+                  </span>
                 </div>
               ))}
             </div>
-          </Card>
+            <Link to="/vendor/products">
+              <button className="w-full mt-2 h-8 text-xs border border-border rounded-lg">
+                Manage Products
+              </button>
+            </Link>
+          </div>
         )}
 
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            { label: 'Add Product', path: '/vendor/products/new', icon: Package },
-            { label: 'Analytics',   path: '/vendor/analytics',    icon: TrendingUp },
-            { label: 'Customers',   path: '/vendor/customers',    icon: Users },
-            { label: 'Credit',      path: '/vendor/credit',       icon: IndianRupee },
-          ].map(q => (
-            <Link key={q.path} to={q.path}>
-              <Card className="p-3 border-border flex items-center gap-2 hover:bg-muted/40 transition-colors">
-                <q.icon className="w-4 h-4 text-primary shrink-0" />
-                <span className="text-sm font-medium">{q.label}</span>
-                <ChevronRight className="w-3 h-3 text-muted-foreground ml-auto" />
-              </Card>
-            </Link>
-          ))}
-        </div>
+        {/* KYC reminder if not verified */}
+        {vendor && !vendor.is_verified && (
+          <div className="setu-card p-4 border-primary/30 bg-primary/5 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+              <span className="text-sm">🛡</span>
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold">Complete KYC</p>
+              <p className="text-xs text-muted-foreground">Get verified to build customer trust</p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-primary shrink-0" aria-hidden="true" />
+          </div>
+        )}
       </div>
     </div>
   );
