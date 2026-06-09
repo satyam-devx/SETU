@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   CheckCircle, Clock, Package, Bike, MapPin, Phone,
-  AlertTriangle, Copy, MessageSquare, RefreshCw, X, Loader2
+  AlertTriangle, Copy, MessageSquare, RefreshCw, X, Loader2, AlertCircle
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,8 +12,8 @@ import AppHeader from '@/components/shared/AppHeader';
 import OrderTrackingMap from '@/components/maps/OrderTrackingMap';
 import { useRealtimeOrder } from '@/hooks/useRealtimeOrders';
 import { useStore, canTransition, ORDER_STATUS } from '@/lib/store';
-import { OrderAPI } from '@/lib/api';
-import { ORDERS } from '@/lib/mockData';
+import { useDataFetch } from '@/hooks/useDataFetch';
+import { getOrderById, rateOrder, updateOrderStatus } from '@/lib/api';
 
 // ── Timeline config per status ──────────────────────────
 const TIMELINE = {
@@ -79,7 +79,7 @@ function OrderSkeleton() {
       <div className="h-14 bg-muted" />
       <div className="h-24 bg-primary/5 border-b border-border" />
       <div className="px-4 py-4 space-y-3">
-        {[1,2,3].map(i => (
+        {[1, 2, 3].map(i => (
           <div key={i} className="h-16 bg-muted rounded-xl" />
         ))}
       </div>
@@ -93,17 +93,17 @@ function useLastUpdated(order) {
 
   useEffect(() => {
     if (!order) return;
-    const ts = order.updatedAt || order.updated_at || order.createdAt;
+    const ts = order.updatedAt || order.updated_at || order.createdAt || order.created_at;
     if (!ts) return;
 
     const update = () => {
       const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
-      if (diff < 60)       setLabel(`Updated ${diff}s ago`);
+      if (diff < 60)        setLabel(`Updated ${diff}s ago`);
       else if (diff < 3600) setLabel(`Updated ${Math.floor(diff / 60)}m ago`);
       else                  setLabel(`Updated ${Math.floor(diff / 3600)}h ago`);
     };
     update();
-    const t = setInterval(update, 10000);
+    const t = setInterval(update, 10_000);
     return () => clearInterval(t);
   }, [order]);
 
@@ -112,15 +112,27 @@ function useLastUpdated(order) {
 
 // ── MAIN COMPONENT ───────────────────────────────────────
 export default function CustomerOrderDetail() {
-  const { orderId }   = useParams();
-  const navigate      = useNavigate();
-  const { dispatch }  = useStore();
+  const { orderId }  = useParams();
+  const navigate     = useNavigate();
+  const { state, dispatch } = useStore();
 
-  // Realtime subscription for this single order
-  const { order: liveOrder, isLoading } = useRealtimeOrder(orderId);
+  // 1. Check global store first (hydrated by CustomerOrders)
+  const storeOrder = state.orders.find(o => o.id === orderId);
 
-  // Fall back to seed data if realtime hasn't loaded yet
-  const order = liveOrder ?? ORDERS.find(o => o.id === orderId) ?? ORDERS[0];
+  // 2. Fetch from DB only when not in store
+  const { data: fetchedOrder, isLoading: fetchLoading } = useDataFetch(
+    () => getOrderById(orderId),
+    [orderId],
+    { cacheKey: `order:${orderId}`, enabled: !storeOrder && !!orderId }
+  );
+
+  // 3. Realtime subscription merges live updates into store
+  useRealtimeOrder(orderId);
+
+  // Prefer realtime-updated store copy, fall back to fetched
+  const order = state.orders.find(o => o.id === orderId) ?? fetchedOrder;
+  const isLoading = fetchLoading && !order;
+
   const lastUpdated = useLastUpdated(order);
 
   const [rating,          setRating]          = useState(0);
@@ -132,17 +144,41 @@ export default function CustomerOrderDetail() {
   const [copied,          setCopied]          = useState(false);
   const [actionLoading,   setActionLoading]   = useState(false);
 
-  const isLive    = !['delivered', 'cancelled'].includes(order?.status);
-  const canCancel = order ? canTransition(order.status, ORDER_STATUS.CANCELLED) : false;
-  const timeline  = TIMELINE[order?.status] ?? TIMELINE.pending;
+  if (isLoading) return <OrderSkeleton />;
+
+  if (!order) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 px-6 text-center">
+        <AlertCircle className="w-10 h-10 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">Order not found.</p>
+        <Button onClick={() => navigate('/customer/orders')}>Back to Orders</Button>
+      </div>
+    );
+  }
+
+  // Normalise field names
+  const orderNumber  = order.orderNumber   ?? order.order_number ?? '—';
+  const createdAt    = order.createdAt     ?? order.created_at;
+  const riderId      = order.rider_id      ?? order.riderId;
+  const riderName    = order.riderName     ?? order.rider_name;
+  const cancelReason2 = order.cancelReason ?? order.cancel_reason;
+  const paymentMethod = order.paymentMethod ?? order.payment_method;
+  const paymentStatus = order.paymentStatus ?? order.payment_status;
+  const vendorName   = order.vendorName    ?? order.vendor_name;
+  const deliveryFee  = order.deliveryFee   ?? order.delivery_fee  ?? 0;
+  const platformFee  = order.platformFee   ?? order.platform_fee  ?? 0;
+  const isRated      = order.isRated       ?? order.is_rated       ?? false;
+  const items        = order.items         ?? order.order_items    ?? [];
+
+  const isLive    = !['delivered', 'cancelled'].includes(order.status);
+  const canCancel = canTransition(order.status, ORDER_STATUS.CANCELLED);
+  const timeline  = TIMELINE[order.status] ?? TIMELINE.pending;
 
   const handleCancel = async () => {
     if (!cancelReason.trim()) return;
     setCancelling(true);
-    // Optimistic update
     dispatch({ type: 'ORDER_CANCEL', payload: { orderId: order.id, reason: cancelReason } });
-    // Persist to DB
-    await OrderAPI.cancel(order.id, cancelReason);
+    await updateOrderStatus(order.id, 'cancelled', { cancel_reason: cancelReason });
     setCancelling(false);
     setShowCancelModal(false);
   };
@@ -150,10 +186,8 @@ export default function CustomerOrderDetail() {
   const handleRating = async () => {
     if (rating === 0) return;
     setActionLoading(true);
-    // Optimistic update
     dispatch({ type: 'ORDER_RATE', payload: { orderId: order.id, vendorRating: rating, riderRating: rating, comment: ratingComment } });
-    // Persist
-    await OrderAPI.rate(order.id, { vendorRating: rating, riderRating: rating, comment: ratingComment });
+    await rateOrder({ orderId: order.id, vendorRating: rating, riderRating: rating, comment: ratingComment });
     setActionLoading(false);
     setRatingSubmitted(true);
   };
@@ -161,19 +195,28 @@ export default function CustomerOrderDetail() {
   const handleReorder = () => navigate(`/customer/reorder/${order.id}`);
 
   const handleCopy = () => {
-    navigator.clipboard?.writeText(order.orderNumber ?? '');
+    navigator.clipboard?.writeText(orderNumber);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
 
-  if (isLoading && !order) return <OrderSkeleton />;
+  // Vendor/customer coords — real addresses would come from order record
+  const vendorLoc   = {
+    lat: order.vendor_lat   ?? 26.350,
+    lng: order.vendor_lng   ?? 86.070,
+    name: vendorName,
+  };
+  const customerLoc = {
+    lat: order.customer_lat ?? 26.355,
+    lng: order.customer_lng ?? 86.075,
+  };
 
   return (
     <div className="pb-24">
       <AppHeader
-        title={order.orderNumber ?? '—'}
-        subtitle={order.createdAt
-          ? new Date(order.createdAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })
+        title={orderNumber}
+        subtitle={createdAt
+          ? new Date(createdAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })
           : ''}
         showBack
         backTo="/customer/orders"
@@ -182,19 +225,21 @@ export default function CustomerOrderDetail() {
       {/* Map for Live Orders */}
       {isLive && (
         <div className="w-full h-64 border-b border-border">
-          <OrderTrackingMap 
-            riderId={order.rider_id} 
-            vendorLoc={{ lat: 26.350, lng: 86.070 }} 
-            customerLoc={{ lat: 26.355, lng: 86.075 }} 
+          <OrderTrackingMap
+            riderId={riderId}
+            vendorLoc={vendorLoc}
+            customerLoc={customerLoc}
           />
         </div>
       )}
 
       {/* Status hero */}
       <div className={`px-4 py-5 ${
-        isLive              ? 'bg-primary/5 border-b border-primary/10'
-        : order.status === 'delivered' ? 'bg-green-50 border-b border-green-100'
-        :                    'bg-red-50 border-b border-red-100'
+        isLive
+          ? 'bg-primary/5 border-b border-primary/10'
+          : order.status === 'delivered'
+          ? 'bg-green-50 border-b border-green-100'
+          : 'bg-red-50 border-b border-red-100'
       }`}>
         {isLive && (
           <div className="flex items-center gap-2 mb-1.5">
@@ -215,13 +260,13 @@ export default function CustomerOrderDetail() {
           {order.status === 'delivered'  && '✅ Delivered!'}
           {order.status === 'cancelled'  && '❌ Cancelled'}
         </h2>
-        {order.riderName && isLive && (
+        {riderName && isLive && (
           <div className="flex items-center gap-3 mt-3 p-3 bg-card rounded-xl border border-border">
             <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary text-sm">
-              {(order.riderName ?? 'R').split(' ').map(n => n[0]).join('')}
+              {riderName.split(' ').map(n => n[0]).join('')}
             </div>
             <div className="flex-1">
-              <p className="text-sm font-semibold">{order.riderName}</p>
+              <p className="text-sm font-semibold">{riderName}</p>
               <p className="text-xs text-muted-foreground">Your delivery rider</p>
             </div>
             <Button size="icon" variant="outline" className="h-9 w-9">
@@ -229,8 +274,8 @@ export default function CustomerOrderDetail() {
             </Button>
           </div>
         )}
-        {order.cancelReason && (
-          <p className="text-sm text-red-600 mt-2 font-medium">Reason: {order.cancelReason}</p>
+        {cancelReason2 && (
+          <p className="text-sm text-red-600 mt-2 font-medium">Reason: {cancelReason2}</p>
         )}
       </div>
 
@@ -271,11 +316,13 @@ export default function CustomerOrderDetail() {
       <div className="px-4 mb-4">
         <Card className="p-4 border-border">
           <h3 className="font-semibold text-sm mb-3">Order Items</h3>
-          {(order.items ?? order.order_items ?? []).map((item, i) => (
+          {items.map((item, i) => (
             <div key={i} className="flex items-center justify-between py-2 border-b border-border last:border-0">
-              <span className="text-sm flex-1">{item.name}</span>
+              <span className="text-sm flex-1">{item.name ?? item.product_name}</span>
               <div className="flex items-center gap-3">
-                <Badge variant="outline" className="text-[9px]">×{item.qty}</Badge>
+                <Badge variant="outline" className="text-[9px]">
+                  ×{item.qty ?? item.quantity ?? 1}
+                </Badge>
                 <span className="text-sm font-bold">₹{item.price}</span>
               </div>
             </div>
@@ -285,10 +332,10 @@ export default function CustomerOrderDetail() {
               <span>Subtotal</span><span>₹{order.subtotal}</span>
             </div>
             <div className="flex justify-between text-muted-foreground">
-              <span>Delivery fee</span><span>₹{order.deliveryFee ?? order.delivery_fee ?? 0}</span>
+              <span>Delivery fee</span><span>₹{deliveryFee}</span>
             </div>
             <div className="flex justify-between text-muted-foreground">
-              <span>Platform fee</span><span>₹{order.platformFee ?? order.platform_fee ?? 0}</span>
+              <span>Platform fee</span><span>₹{platformFee}</span>
             </div>
             <div className="flex justify-between font-bold pt-1 border-t border-border">
               <span>Total</span><span>₹{order.total}</span>
@@ -301,29 +348,32 @@ export default function CustomerOrderDetail() {
       <div className="px-4 mb-4 grid grid-cols-2 gap-3">
         <Card className="p-3 border-border">
           <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Payment</p>
-          <p className="text-sm font-bold">{order.paymentMethod ?? order.payment_method}</p>
+          <p className="text-sm font-bold">{paymentMethod}</p>
           <Badge variant="outline" className={`text-[9px] mt-1 ${
-            (order.paymentStatus ?? order.payment_status) === 'paid' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+            paymentStatus === 'paid' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
           }`}>
-            {order.paymentStatus ?? order.payment_status}
+            {paymentStatus}
           </Badge>
         </Card>
         <Card className="p-3 border-border">
           <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Vendor</p>
-          <p className="text-sm font-bold truncate">{order.vendorName ?? order.vendor_name}</p>
+          <p className="text-sm font-bold truncate">{vendorName}</p>
           <p className="text-xs text-muted-foreground">{order.village}</p>
         </Card>
       </div>
 
       {/* Rating (post-delivery) */}
-      {order.status === 'delivered' && !ratingSubmitted && !order.isRated && !order.is_rated && (
+      {order.status === 'delivered' && !ratingSubmitted && !isRated && (
         <div className="px-4 mb-4">
           <Card className="p-4 border-accent/30 bg-accent/5">
             <h3 className="font-semibold text-sm mb-3">Rate your experience</h3>
             <div className="flex justify-center gap-2 mb-3">
-              {[1,2,3,4,5].map(star => (
-                <button key={star} onClick={() => setRating(star)}
-                  className={`text-3xl transition-transform hover:scale-110 ${star <= rating ? '' : 'opacity-40'}`}>
+              {[1, 2, 3, 4, 5].map(star => (
+                <button
+                  key={star}
+                  onClick={() => setRating(star)}
+                  className={`text-3xl transition-transform hover:scale-110 ${star <= rating ? '' : 'opacity-40'}`}
+                >
                   ⭐
                 </button>
               ))}
@@ -334,14 +384,17 @@ export default function CustomerOrderDetail() {
               value={ratingComment}
               onChange={e => setRatingComment(e.target.value)}
             />
-            <Button className="w-full text-xs h-9" onClick={handleRating}
-              disabled={rating === 0 || actionLoading}>
+            <Button
+              className="w-full text-xs h-9"
+              onClick={handleRating}
+              disabled={rating === 0 || actionLoading}
+            >
               {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit Rating'}
             </Button>
           </Card>
         </div>
       )}
-      {(ratingSubmitted || order.isRated || order.is_rated) && order.status === 'delivered' && (
+      {(ratingSubmitted || isRated) && order.status === 'delivered' && (
         <div className="px-4 mb-4">
           <Card className="p-3 border-green-200 bg-green-50 text-center">
             <p className="text-sm font-medium text-green-700">✓ Thanks for rating this order!</p>
@@ -357,9 +410,11 @@ export default function CustomerOrderDetail() {
           </Button>
         )}
         {canCancel && (
-          <Button variant="outline"
+          <Button
+            variant="outline"
             className="w-full text-destructive border-destructive/30 text-xs"
-            onClick={() => setShowCancelModal(true)}>
+            onClick={() => setShowCancelModal(true)}
+          >
             <AlertTriangle className="w-3 h-3 mr-2" /> Cancel Order
           </Button>
         )}
@@ -379,11 +434,16 @@ export default function CustomerOrderDetail() {
             <h3 className="font-bold text-base mb-1">Cancel Order</h3>
             <p className="text-xs text-muted-foreground mb-3">Please tell us why you're cancelling</p>
             <div className="space-y-2 mb-3">
-              {['Changed my mind','Ordered by mistake','Vendor taking too long','Found elsewhere'].map(r => (
-                <button key={r} onClick={() => setCancelReason(r)}
+              {['Changed my mind', 'Ordered by mistake', 'Vendor taking too long', 'Found elsewhere'].map(r => (
+                <button
+                  key={r}
+                  onClick={() => setCancelReason(r)}
                   className={`w-full text-left text-sm p-3 rounded-lg border transition-colors ${
                     cancelReason === r ? 'border-destructive bg-destructive/5' : 'border-border'
-                  }`}>{r}</button>
+                  }`}
+                >
+                  {r}
+                </button>
               ))}
             </div>
             <Textarea
@@ -393,11 +453,15 @@ export default function CustomerOrderDetail() {
               onChange={e => setCancelReason(e.target.value)}
             />
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1"
-                onClick={() => setShowCancelModal(false)}>Keep Order</Button>
-              <Button variant="destructive" className="flex-1"
+              <Button variant="outline" className="flex-1" onClick={() => setShowCancelModal(false)}>
+                Keep Order
+              </Button>
+              <Button
+                variant="destructive"
+                className="flex-1"
                 disabled={!cancelReason.trim() || cancelling}
-                onClick={handleCancel}>
+                onClick={handleCancel}
+              >
                 {cancelling ? 'Cancelling...' : 'Cancel Order'}
               </Button>
             </div>
