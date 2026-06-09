@@ -27,6 +27,7 @@ import { SetuStoreProvider, useStore } from '@/lib/store';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { VillageProvider } from '@/lib/village';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import ErrorBoundary from '@/components/shared/ErrorBoundary';
 
 // Auth
 import LoginOTP    from '@/pages/auth/LoginOTP';
@@ -187,6 +188,7 @@ function RoleError() {
 // ── APP ───────────────────────────────────────────────────
 function App() {
   return (
+    <ErrorBoundary portal="SETU" fallbackRoute="/login">
     <Router basename={import.meta.env.BASE_URL}>
       <AuthProvider>
         <SetuStoreProvider>
@@ -358,6 +360,7 @@ function App() {
         </SetuStoreProvider>
       </AuthProvider>
     </Router>
+    </ErrorBoundary>
   );
 }
 
