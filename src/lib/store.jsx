@@ -46,14 +46,16 @@ const FALLBACK_USER = null;
 
 // ── INITIAL STATE ─────────────────────────────────────────
 const initialState = {
-  orders:          ORDERS.map(o => ({ ...o, _source: 'seed' })),
+  // Start with empty orders — hydrated from DB after auth.
+  // Mock seed data only shown in demo mode (no Supabase configured).
+  orders:          [],
   riders:          RIDERS,
   notifications:   NOTIFICATIONS,
   wallet:          WALLET,
   currentUser:     null,
   riderOnline:     true,
   vendorOnline:    true,
-  unreadCount:     NOTIFICATIONS.filter(n => !n.isRead).length,
+  unreadCount:     0,
   isHydrated:      false,   // true once Supabase data has loaded
 };
 
