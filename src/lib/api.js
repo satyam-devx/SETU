@@ -1,53 +1,36 @@
 // ═══════════════════════════════════════════════════════════
-// SETU PLATFORM — API SERVICE LAYER (Merged v2 + Phase 2)
-//
+// SETU — API Layer  (v2)
 // Constitution: "Backend-first mindset. Every API call is the
 // canonical interface. UI should never embed business logic."
 //
 // Patterns:
 //  - All functions return { data, error } — never throw
-//  - safeQuery() centralises Supabase error handling
 //  - Snake_case ↔ camelCase normalisation lives here only
 //  - Supabase calls are isolated — swap to REST/RPC in future
 //    with zero component changes
 //  - Pagination: all list functions accept { page, limit }
 //  - Optimistic IDs: placeOrder accepts a localId for offline
-//  - Namespace exports (AuthAPI, OrderAPI, etc.) kept for
-//    backward compatibility with existing components
 // ═══════════════════════════════════════════════════════════
 
 import { supabase, isSupabaseConfigured } from './supabase';
-import {
-  VENDORS, PRODUCTS, ORDERS, CATEGORIES,
-  RIDERS, SEVA_PROVIDERS, NOTIFICATIONS, WALLET,
-  ANALYTICS_DATA, ADMIN_STATS, VILLAGES, SCHEMES,
-} from './mockData';
+import { PRODUCTS, VENDORS, ORDERS, NOTIFICATIONS, VILLAGES, CATEGORIES, SEVA_PROVIDERS, SCHEMES } from './mockData';
 
-// ─────────────────────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────
 
-function ok(data) { return { data, error: null }; }
-
+function ok(data)    { return { data, error: null }; }
 function err(e, ctx) {
   const msg = e?.message || e?.error_description || String(e) || 'Unknown error';
-  if (ctx) console.error(`[SETU API] ${ctx}:`, msg);
+  console.error(`[SETU API] ${ctx}:`, msg);
   return { data: null, error: { message: msg, code: e?.code, details: e?.details } };
 }
 
-/**
- * Wraps a Supabase query with try/catch and mock fallback.
- * PGRST116 (row not found) is treated as ok(null) for single-row queries.
- * @param {Function} fn       - () => supabase query promise
- * @param {*}        fallback - value returned when !isSupabaseConfigured
- * @param {string}   ctx      - context label for error logs
- */
 async function safeQuery(fn, fallback, ctx) {
   if (!isSupabaseConfigured) return ok(fallback);
   try {
     const result = await fn();
     if (result.error) {
-      if (result.error.code === 'PGRST116') return ok(null); // row not found
+      // PGRST116 = row not found — not a real error for single row queries
+      if (result.error.code === 'PGRST116') return ok(null);
       return err(result.error, ctx);
     }
     return ok(result.data);
@@ -56,12 +39,7 @@ async function safeQuery(fn, fallback, ctx) {
   }
 }
 
-/** Demo-mode delay helper */
-const delay = (ms = 300) => new Promise(r => setTimeout(r, ms));
-
-// ─────────────────────────────────────────────────────────
-// VILLAGES
-// ─────────────────────────────────────────────────────────
+// ── Villages ──────────────────────────────────────────────
 
 export async function getVillages({ activeOnly = true } = {}) {
   return safeQuery(
@@ -78,14 +56,12 @@ export async function getVillages({ activeOnly = true } = {}) {
 export async function getVillageById(id) {
   return safeQuery(
     () => supabase.from('villages').select('*').eq('id', id).single(),
-    (VILLAGES || []).find(v => v.id === id) || null,
+    VILLAGES.find(v => v.id === id) || null,
     'getVillageById'
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// CATEGORIES
-// ─────────────────────────────────────────────────────────
+// ── Categories ────────────────────────────────────────────
 
 export async function getCategories() {
   return safeQuery(
@@ -95,11 +71,9 @@ export async function getCategories() {
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// VENDORS
-// ─────────────────────────────────────────────────────────
+// ── Vendors ───────────────────────────────────────────────
 
-export async function getVendors({ villageId, village, category, page = 0, limit = 20 } = {}) {
+export async function getVendors({ villageId, category, page = 0, limit = 20 } = {}) {
   return safeQuery(() => {
     let q = supabase
       .from('vendors')
@@ -113,7 +87,6 @@ export async function getVendors({ villageId, village, category, page = 0, limit
       .order('rating', { ascending: false });
 
     if (villageId) q = q.eq('village_id', villageId);
-    if (village)   q = q.eq('village', village);
     if (category)  q = q.eq('category', category);
     return q;
   }, VENDORS, 'getVendors');
@@ -143,11 +116,9 @@ export async function upsertVendorProfile(vendorData) {
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// PRODUCTS
-// ─────────────────────────────────────────────────────────
+// ── Products ──────────────────────────────────────────────
 
-export async function getProducts({ vendorId, categoryId, category, search, page = 0, limit = 30 } = {}) {
+export async function getProducts({ vendorId, category, search, page = 0, limit = 30 } = {}) {
   return safeQuery(() => {
     let q = supabase
       .from('products')
@@ -159,10 +130,9 @@ export async function getProducts({ vendorId, categoryId, category, search, page
       .range(page * limit, (page + 1) * limit - 1)
       .order('name');
 
-    if (vendorId)    q = q.eq('vendor_id', vendorId);
-    if (categoryId)  q = q.eq('category_id', categoryId);
-    if (category)    q = q.eq('category', category);
-    if (search)      q = q.ilike('name', `%${search}%`);
+    if (vendorId)  q = q.eq('vendor_id', vendorId);
+    if (category)  q = q.eq('category', category);
+    if (search)    q = q.ilike('name', `%${search}%`);
     return q;
   }, PRODUCTS, 'getProducts');
 }
@@ -191,42 +161,7 @@ export async function deleteProduct(id) {
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// SEARCH
-// ─────────────────────────────────────────────────────────
-
-export async function search(query) {
-  if (!isSupabaseConfigured) {
-    await delay(200);
-    const q = query.toLowerCase();
-    const products = PRODUCTS.filter(p =>
-      p.name.toLowerCase().includes(q) ||
-      (p.nameHindi && p.nameHindi.includes(q))
-    );
-    const vendors = VENDORS.filter(v => v.name.toLowerCase().includes(q));
-    return ok({ products, vendors, query });
-  }
-
-  const [{ data: products }, { data: vendors }] = await Promise.all([
-    supabase
-      .from('products')
-      .select('*')
-      .eq('is_available', true)
-      .ilike('name', `%${query}%`)
-      .limit(20),
-    supabase
-      .from('vendors')
-      .select('*')
-      .eq('is_active', true)
-      .ilike('name', `%${query}%`)
-      .limit(10),
-  ]);
-  return ok({ products: products ?? [], vendors: vendors ?? [], query });
-}
-
-// ─────────────────────────────────────────────────────────
-// ORDERS
-// ─────────────────────────────────────────────────────────
+// ── Orders ────────────────────────────────────────────────
 
 export async function getOrdersByCustomer(customerId, { page = 0, limit = 20, status } = {}) {
   return safeQuery(() => {
@@ -294,19 +229,17 @@ export async function getOrderById(id) {
   );
 }
 
-/**
- * Places an order. Accepts a flat payload; calculates fees server-side.
- * Falls back to a fake offline order when Supabase is not configured.
- */
 export async function placeOrder(orderPayload) {
+  // orderPayload: { customer_id, vendor_id, village_id, items, payment_method, delivery_address }
   if (!isSupabaseConfigured) {
+    // Offline / mock: return a fake order
     const fakeOrder = {
-      id:           `local-${Date.now()}`,
+      id: `local-${Date.now()}`,
       order_number: `SETU-${Date.now().toString(36).toUpperCase()}`,
-      status:       'pending',
+      status: 'pending',
       ...orderPayload,
-      created_at:   new Date().toISOString(),
-      _offline:     true,
+      created_at: new Date().toISOString(),
+      _offline: true,
     };
     return ok(fakeOrder);
   }
@@ -314,7 +247,7 @@ export async function placeOrder(orderPayload) {
   const orderNumber = `SETU-${Date.now().toString(36).toUpperCase()}`;
   const { items, ...orderHead } = orderPayload;
 
-  const subtotal    = items.reduce((s, i) => s + i.price * i.qty, 0);
+  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
   const deliveryFee = subtotal >= 200 ? 0 : 20;
   const platformFee = Math.round(subtotal * 0.01);
   const total       = subtotal + deliveryFee + platformFee;
@@ -357,11 +290,11 @@ export async function placeOrder(orderPayload) {
 
 export async function updateOrderStatus(orderId, status, extra = {}) {
   const timestamps = {
-    confirmed: 'confirmed_at',
-    ready:     'ready_at',
-    picked_up: 'picked_up_at',
-    delivered: 'delivered_at',
-    cancelled: 'cancelled_at',
+    confirmed:   'confirmed_at',
+    ready:       'ready_at',
+    picked_up:   'picked_up_at',
+    delivered:   'delivered_at',
+    cancelled:   'cancelled_at',
   };
   const updates = {
     status,
@@ -375,37 +308,20 @@ export async function updateOrderStatus(orderId, status, extra = {}) {
   );
 }
 
-export async function cancelOrder(orderId, reason) {
-  return updateOrderStatus(orderId, 'cancelled', { cancel_reason: reason });
-}
-
 export async function rateOrder({ orderId, vendorRating, riderRating, comment }) {
   return safeQuery(
     () => supabase.from('orders').update({
-      vendor_rating:  vendorRating,
-      rider_rating:   riderRating,
-      rating_comment: comment,
-      is_rated:       true,
+      vendor_rating:   vendorRating,
+      rider_rating:    riderRating,
+      rating_comment:  comment,
+      is_rated:        true,
     }).eq('id', orderId).select().single(),
     null,
     'rateOrder'
   );
 }
 
-export async function reorderItems(orderId) {
-  return safeQuery(
-    () => supabase
-      .from('order_items')
-      .select('name, qty, price, product_id')
-      .eq('order_id', orderId),
-    [],
-    'reorderItems'
-  );
-}
-
-// ─────────────────────────────────────────────────────────
-// RIDERS
-// ─────────────────────────────────────────────────────────
+// ── Riders ────────────────────────────────────────────────
 
 export async function getRiderByUserId(userId) {
   return safeQuery(
@@ -417,18 +333,14 @@ export async function getRiderByUserId(userId) {
 
 export async function updateRiderStatus(riderId, isOnline) {
   return safeQuery(
-    () => supabase.from('riders')
-      .update({ is_online: isOnline, updated_at: new Date().toISOString() })
-      .eq('id', riderId)
-      .select()
-      .single(),
+    () => supabase.from('riders').update({ is_online: isOnline }).eq('id', riderId).select().single(),
     null,
     'updateRiderStatus'
   );
 }
 
-/** Returns 'ready' orders with no rider assigned, filtered by village. */
 export async function getAvailableOrders(villageId) {
+  // Orders that are 'ready' and have no rider assigned
   return safeQuery(
     () => supabase
       .from('orders')
@@ -445,9 +357,9 @@ export async function getAvailableOrders(villageId) {
 export async function assignRider(orderId, riderId, riderName) {
   return safeQuery(
     () => supabase.from('orders').update({
-      rider_id:     riderId,
-      rider_name:   riderName,
-      status:       'picked_up',
+      rider_id:   riderId,
+      rider_name: riderName,
+      status:     'picked_up',
       picked_up_at: new Date().toISOString(),
     }).eq('id', orderId).select().single(),
     null,
@@ -455,51 +367,12 @@ export async function assignRider(orderId, riderId, riderName) {
   );
 }
 
-export async function markDelivered(orderId, payload = {}) {
-  return updateOrderStatus(orderId, 'delivered', payload);
-}
-
-export async function updateRiderLocation(riderId, lat, lng) {
-  return safeQuery(
-    () => supabase
-      .from('rider_locations')
-      .upsert(
-        { rider_id: riderId, lat, lng, recorded_at: new Date().toISOString() },
-        { onConflict: 'rider_id' }
-      ),
-    { success: true },
-    'updateRiderLocation'
-  );
-}
-
-export async function getRiderEarnings(riderId) {
-  return safeQuery(
-    () => supabase.from('riders').select('*').eq('id', riderId).single(),
-    RIDERS.find(r => r.id === riderId) ?? RIDERS[0],
-    'getRiderEarnings'
-  );
-}
-
-export async function submitCODDeposit(riderId, amount, denominations = null) {
-  return safeQuery(
-    () => supabase
-      .from('cod_deposits')
-      .insert({ rider_id: riderId, amount, denominations, status: 'pending_confirmation' })
-      .select()
-      .single(),
-    { success: true, depositId: `dep_${Date.now()}` },
-    'submitCODDeposit'
-  );
-}
-
-// ─────────────────────────────────────────────────────────
-// WALLET
-// ─────────────────────────────────────────────────────────
+// ── Wallet ────────────────────────────────────────────────
 
 export async function getWallet(userId) {
   return safeQuery(
     () => supabase.from('wallets').select('*').eq('user_id', userId).maybeSingle(),
-    WALLET ?? { balance: 0 },
+    { balance: 0 },
     'getWallet'
   );
 }
@@ -517,85 +390,7 @@ export async function getWalletTransactions(userId, { page = 0, limit = 20 } = {
   );
 }
 
-export async function walletTopup(userId, amount, reference = null) {
-  return safeQuery(
-    () => supabase.rpc('topup_wallet', {
-      p_user_id:   userId,
-      p_amount:    amount,
-      p_reference: reference,
-    }),
-    { success: true, amount },
-    'walletTopup'
-  );
-}
-
-/**
- * Deducts amount from a user's wallet for an order payment.
- * Uses an atomic RPC to prevent race conditions on balance.
- */
-export async function walletPay(userId, amount, orderId) {
-  if (!isSupabaseConfigured) {
-    await delay(400);
-    return ok({ success: true, amount, orderId });
-  }
-
-  try {
-    const { data: wallet } = await supabase
-      .from('wallets')
-      .select('id, balance')
-      .eq('user_id', userId)
-      .single();
-
-    if (!wallet || wallet.balance < amount) {
-      return err({ message: 'Insufficient wallet balance' }, 'walletPay');
-    }
-
-    const { error } = await supabase
-      .from('wallets')
-      .update({ balance: wallet.balance - amount })
-      .eq('user_id', userId);
-
-    if (error) return err(error, 'walletPay/update');
-
-    await supabase.from('wallet_transactions').insert({
-      wallet_id:   wallet.id,
-      user_id:     userId,
-      type:        'debit',
-      amount,
-      description: 'Order payment',
-      reference:   orderId,
-      status:      'completed',
-    });
-
-    return ok({ balance: wallet.balance - amount });
-  } catch (e) {
-    return err(e, 'walletPay');
-  }
-}
-
-// ─────────────────────────────────────────────────────────
-// PAYMENT (UPI / Razorpay)
-// ─────────────────────────────────────────────────────────
-
-export async function initiateUPI(amount, orderId) {
-  await delay(600);
-  return ok({
-    paymentId: `pay_${Date.now()}`,
-    amount,
-    orderId,
-    upiLink:   `upi://pay?pa=setu@hdfc&pn=SETU&am=${amount}&tn=${orderId}`,
-    qrCode:    null,
-  });
-}
-
-export async function verifyPayment(paymentId, orderId, signature) {
-  await delay(800);
-  return ok({ verified: true, paymentId, orderId });
-}
-
-// ─────────────────────────────────────────────────────────
-// NOTIFICATIONS
-// ─────────────────────────────────────────────────────────
+// ── Notifications ─────────────────────────────────────────
 
 export async function getNotifications(userId, { limit = 30 } = {}) {
   return safeQuery(
@@ -620,19 +415,13 @@ export async function markNotificationRead(id) {
 
 export async function markAllNotificationsRead(userId) {
   return safeQuery(
-    () => supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('user_id', userId)
-      .eq('is_read', false),
+    () => supabase.from('notifications').update({ is_read: true }).eq('user_id', userId).eq('is_read', false),
     null,
     'markAllNotificationsRead'
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// PROFILE
-// ─────────────────────────────────────────────────────────
+// ── Profile ───────────────────────────────────────────────
 
 export async function updateProfile(userId, updates) {
   return safeQuery(
@@ -642,104 +431,35 @@ export async function updateProfile(userId, updates) {
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// CREDIT
-// ─────────────────────────────────────────────────────────
+// ── Support ───────────────────────────────────────────────
 
-export async function getCreditAccount(userId) {
-  if (!isSupabaseConfigured) {
-    await delay(400);
-    return ok({ limit: 5000, outstanding: 1200, available: 3800, score: 720, status: 'active', repaymentRate: 98 });
-  }
-  const { data, error } = await supabase
-    .from('credit_accounts')
-    .select('*')
-    .eq('user_id', userId)
-    .single();
-  if (error) return err(error, 'getCreditAccount');
-  return ok({
-    limit:         data.credit_limit,
-    outstanding:   data.outstanding,
-    available:     data.credit_limit - data.outstanding,
-    score:         data.score,
-    status:        data.status,
-    repaymentRate: data.repayment_rate,
-  });
+export async function getSupportTickets(userId) {
+  return safeQuery(
+    () => supabase.from('support_tickets').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+    [],
+    'getSupportTickets'
+  );
 }
 
-export async function applyCredit(userId, amount, purpose) {
-  if (!isSupabaseConfigured) {
-    await delay(800);
-    return ok({ applicationId: `capp_${Date.now()}`, status: 'under_review', estimatedDecision: '24 hours' });
-  }
-
-  const { data: account } = await supabase
-    .from('credit_accounts')
-    .select('id, credit_limit, outstanding')
-    .eq('user_id', userId)
-    .single();
-
-  if (!account) return err({ message: 'No credit account found' }, 'applyCredit');
-  if ((account.outstanding + amount) > account.credit_limit) {
-    return err({ message: 'Amount exceeds available credit limit' }, 'applyCredit');
-  }
-
-  const { data, error } = await supabase
-    .from('credit_transactions')
-    .insert({
-      account_id: account.id,
-      user_id:    userId,
-      type:       'disbursement',
-      amount,
-      purpose,
-      status:     'active',
-      due_date:   new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-    })
-    .select()
-    .single();
-
-  if (error) return err(error, 'applyCredit/insert');
-
-  await supabase
-    .from('credit_accounts')
-    .update({ outstanding: account.outstanding + amount })
-    .eq('id', account.id);
-
-  return ok({ applicationId: data.id, status: 'approved', amount });
+export async function createSupportTicket(payload) {
+  return safeQuery(
+    () => supabase.from('support_tickets').insert(payload).select().single(),
+    null,
+    'createSupportTicket'
+  );
 }
 
-export async function repayCredit(userId, amount) {
-  if (!isSupabaseConfigured) {
-    await delay(600);
-    return ok({ success: true, amount });
-  }
+// ── Schemes ───────────────────────────────────────────────
 
-  const { data: account } = await supabase
-    .from('credit_accounts')
-    .select('id, outstanding')
-    .eq('user_id', userId)
-    .single();
-
-  if (!account) return err({ message: 'No credit account found' }, 'repayCredit');
-
-  const newOutstanding = Math.max(0, account.outstanding - amount);
-  await supabase.from('credit_accounts').update({ outstanding: newOutstanding }).eq('id', account.id);
-
-  await supabase.from('credit_transactions').insert({
-    account_id: account.id,
-    user_id:    userId,
-    type:       'repayment',
-    amount,
-    status:     'repaid',
-    repaid_at:  new Date().toISOString(),
-  });
-
-  return ok({ success: true, newOutstanding });
+export async function getSchemes({ category } = {}) {
+  return safeQuery(() => {
+    let q = supabase.from('schemes').select('*').eq('is_active', true).order('name');
+    if (category) q = q.eq('category', category);
+    return q;
+  }, SCHEMES, 'getSchemes');
 }
 
-// ─────────────────────────────────────────────────────────
-// SEVA JOBS
-// ─────────────────────────────────────────────────────────
+// ── Seva Providers ────────────────────────────────────────
 
 export async function getSevaProviders({ villageId, category, page = 0, limit = 20 } = {}) {
   return safeQuery(() => {
@@ -757,218 +477,30 @@ export async function getSevaProviders({ villageId, category, page = 0, limit = 
   }, SEVA_PROVIDERS, 'getSevaProviders');
 }
 
-export async function getSevaJobs(providerId) {
-  return safeQuery(
-    () => supabase
-      .from('seva_jobs')
-      .select('*')
-      .eq('provider_id', providerId)
-      .order('created_at', { ascending: false }),
-    [
-      { id: 'sj1', title: 'Electrical repair', customer: 'Ram Kumar',  date: 'Today 3PM',    amount: 450, status: 'pending'   },
-      { id: 'sj2', title: 'Plumbing fix',       customer: 'Sunita Devi', date: 'Tomorrow 10AM', amount: 600, status: 'confirmed' },
-    ],
-    'getSevaJobs'
-  );
-}
+// ── Admin / Analytics ─────────────────────────────────────
 
-export async function getOpenSevaJobs(category, villageId) {
-  return safeQuery(() => {
-    let q = supabase.from('seva_jobs').select('*').eq('status', 'open');
-    if (category)  q = q.eq('category', category);
-    if (villageId) q = q.eq('village_id', villageId);
-    return q.order('created_at', { ascending: false });
-  }, [], 'getOpenSevaJobs');
-}
-
-export async function acceptSevaJob(jobId, providerId) {
-  return safeQuery(
-    () => supabase
-      .from('seva_jobs')
-      .update({ provider_id: providerId, status: 'accepted', updated_at: new Date().toISOString() })
-      .eq('id', jobId)
-      .select()
-      .single(),
-    { success: true, jobId, status: 'accepted' },
-    'acceptSevaJob'
-  );
-}
-
-export async function completeSevaJob(jobId, payload = {}) {
-  return safeQuery(
-    () => supabase
-      .from('seva_jobs')
-      .update({
-        status:       'completed',
-        notes:        payload.notes ?? null,
-        completed_at: new Date().toISOString(),
-        updated_at:   new Date().toISOString(),
-      })
-      .eq('id', jobId)
-      .select()
-      .single(),
-    { success: true, status: 'completed' },
-    'completeSevaJob'
-  );
-}
-
-// ─────────────────────────────────────────────────────────
-// VENDOR ANALYTICS
-// ─────────────────────────────────────────────────────────
-
-export async function getVendorAnalytics(vendorId) {
-  if (!isSupabaseConfigured) {
-    await delay(300);
-    return ok(ANALYTICS_DATA);
+export async function getAdminStats() {
+  // Aggregate stats for admin dashboard
+  if (!isSupabaseConfigured) return ok(null);
+  try {
+    const [
+      { count: totalUsers },
+      { count: totalOrders },
+      { count: activeVendors },
+      { count: activeRiders },
+    ] = await Promise.all([
+      supabase.from('profiles').select('*', { count: 'exact', head: true }),
+      supabase.from('orders').select('*', { count: 'exact', head: true }),
+      supabase.from('vendors').select('*', { count: 'exact', head: true }).eq('is_active', true),
+      supabase.from('riders').select('*', { count: 'exact', head: true }).eq('is_active', true),
+    ]);
+    return ok({ totalUsers, totalOrders, activeVendors, activeRiders });
+  } catch (e) {
+    return err(e, 'getAdminStats');
   }
-  const { data, error } = await supabase
-    .from('orders')
-    .select('total, created_at, status')
-    .eq('vendor_id', vendorId)
-    .neq('status', 'cancelled')
-    .order('created_at', { ascending: true });
-  return error ? err(error, 'getVendorAnalytics') : ok({ raw: data ?? [], ...ANALYTICS_DATA });
 }
 
-// ─────────────────────────────────────────────────────────
-// AI / RECOMMENDATIONS
-// ─────────────────────────────────────────────────────────
-
-export async function getAIRecommendations(userId, village) {
-  if (!isSupabaseConfigured) {
-    await delay(400);
-    return ok(PRODUCTS.slice(0, 6).map(p => ({
-      ...p, reason: p.isSeasonal ? 'Seasonal pick' : 'Popular in your area',
-    })));
-  }
-  return safeQuery(
-    () => supabase.from('products').select('*, vendors(name)').eq('is_available', true).limit(6),
-    [],
-    'getAIRecommendations'
-  );
-}
-
-export async function getDemandForecast(vendorId) {
-  if (!isSupabaseConfigured) {
-    await delay(600);
-    return ok({
-      forecasts: [
-        { product: 'Basmati Rice',    nextWeekDemand: 12, reorderSuggestion: 15, confidence: 0.89 },
-        { product: 'Mustard Oil',     nextWeekDemand: 8,  reorderSuggestion: 10, confidence: 0.85 },
-        { product: 'Premium Makhana', nextWeekDemand: 5,  reorderSuggestion: 7,  confidence: 0.76 },
-      ],
-      festivalAlert: 'Chhath Puja in 12 days — increase sweet and pooja items by 40%',
-    });
-  }
-
-  const { data } = await supabase
-    .from('order_items')
-    .select('name, qty, orders!inner(vendor_id, created_at, status)')
-    .eq('orders.vendor_id', vendorId)
-    .neq('orders.status', 'cancelled')
-    .gte('orders.created_at', new Date(Date.now() - 30 * 86400000).toISOString());
-
-  if (!data?.length) return ok({ forecasts: [], festivalAlert: null });
-
-  const sums = data.reduce((acc, row) => {
-    acc[row.name] = (acc[row.name] || 0) + row.qty;
-    return acc;
-  }, {});
-
-  const forecasts = Object.entries(sums)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([product, totalQty]) => ({
-      product,
-      nextWeekDemand:    Math.round(totalQty / 4),
-      reorderSuggestion: Math.round(totalQty / 4 * 1.3),
-      confidence:        0.80,
-    }));
-
-  return ok({ forecasts, festivalAlert: null });
-}
-
-export async function transcribeVoice(audioBlob) {
-  const { data, error } = await supabase.functions.invoke('ai-assistant', {
-    body: { type: 'transcription', audio: 'base64_encoded_blob_here' },
-  });
-  return error ? err(error, 'transcribeVoice') : ok(data);
-}
-
-export async function chatAssistant(message, context) {
-  const { data, error } = await supabase.functions.invoke('ai-assistant', {
-    body: { message, context },
-  });
-  return error ? err(error, 'chatAssistant') : ok(data);
-}
-
-// ─────────────────────────────────────────────────────────
-// SUPPORT TICKETS
-// ─────────────────────────────────────────────────────────
-
-export async function getSupportTickets(userId) {
-  return safeQuery(
-    () => supabase
-      .from('support_tickets')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false }),
-    [],
-    'getSupportTickets'
-  );
-}
-
-export async function createSupportTicket(payload) {
-  return safeQuery(
-    () => supabase.from('support_tickets').insert(payload).select().single(),
-    null,
-    'createSupportTicket'
-  );
-}
-
-// ─────────────────────────────────────────────────────────
-// FRAUD
-// ─────────────────────────────────────────────────────────
-
-export async function checkOrderFraud(orderPayload) {
-  await delay(300);
-  return ok({ riskScore: Math.random() * 0.3, flags: [], decision: 'approve' });
-}
-
-export async function reportFraud(payload) {
-  if (!isSupabaseConfigured) {
-    await delay(500);
-    return ok({ ticketId: `fraud_${Date.now()}`, status: 'logged' });
-  }
-  const { data: { user } } = await supabase.auth.getUser();
-  return createSupportTicket({
-    user_id:  user?.id,
-    subject:  `Fraud Report: ${payload.fraudType}`,
-    status:   'open',
-    priority: 'high',
-    messages: JSON.stringify([{
-      from: 'customer',
-      text: payload.description,
-      time: new Date().toLocaleTimeString(),
-    }]),
-  });
-}
-
-// ─────────────────────────────────────────────────────────
-// SCHEMES
-// ─────────────────────────────────────────────────────────
-
-export async function getSchemes({ category } = {}) {
-  return safeQuery(() => {
-    let q = supabase.from('schemes').select('*').eq('is_active', true).order('name');
-    if (category) q = q.eq('category', category);
-    return q;
-  }, SCHEMES, 'getSchemes');
-}
-
-// ─────────────────────────────────────────────────────────
-// KYC
-// ─────────────────────────────────────────────────────────
+// ── KYC ───────────────────────────────────────────────────
 
 export async function getKycRecords(userId) {
   return safeQuery(
@@ -986,247 +518,182 @@ export async function upsertKycRecord(record) {
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// ADMIN
-// ─────────────────────────────────────────────────────────
-
-export async function getAdminStats() {
-  if (!isSupabaseConfigured) {
-    await delay(300);
-    return ok(ADMIN_STATS);
-  }
-  try {
-    const [
-      { count: totalUsers },
-      { count: totalOrders },
-      { count: activeVendors },
-      { count: activeRiders },
-    ] = await Promise.all([
-      supabase.from('profiles').select('*', { count: 'exact', head: true }),
-      supabase.from('orders').select('*', { count: 'exact', head: true }),
-      supabase.from('vendors').select('*', { count: 'exact', head: true }).eq('is_active', true),
-      supabase.from('riders').select('*', { count: 'exact', head: true }).eq('is_active', true),
-    ]);
-    return ok({ ...ADMIN_STATS, totalUsers, totalOrders, activeVendors, activeRiders });
-  } catch (e) {
-    return err(e, 'getAdminStats');
-  }
-}
-
-export async function approveVendor(vendorId) {
-  return safeQuery(
-    () => supabase.from('vendors').update({ is_verified: true, kyc_status: 'approved' }).eq('id', vendorId),
-    { success: true },
-    'approveVendor'
-  );
-}
-
-export async function rejectVendor(vendorId, reason) {
-  return safeQuery(
-    () => supabase.from('vendors').update({ kyc_status: 'rejected' }).eq('id', vendorId),
-    { success: true },
-    'rejectVendor'
-  );
-}
-
-export async function confirmCODDeposit(depositId, adminId) {
-  if (!isSupabaseConfigured) {
-    await delay(500);
-    return ok({ success: true });
-  }
-  const { data: deposit, error: de } = await supabase
-    .from('cod_deposits')
-    .update({
-      status:               'confirmed',
-      admin_confirmed_by:   adminId,
-      admin_confirmed_at:   new Date().toISOString(),
-    })
-    .eq('id', depositId)
-    .select()
-    .single();
-  if (de) return err(de, 'confirmCODDeposit');
-  await supabase.from('riders').update({ cod_balance: 0 }).eq('id', deposit.rider_id);
-  return ok({ success: true });
-}
-
 // ═══════════════════════════════════════════════════════════
-// AUTH API — namespace export
-// ═══════════════════════════════════════════════════════════
-
-export const AuthAPI = {
-  sendOTP: async (phone) => {
-    if (!isSupabaseConfigured) {
-      await delay(600);
-      return ok({ sent: true, phone });
-    }
-    const { error } = await supabase.auth.signInWithOtp({
-      phone,
-      options: { channel: 'sms' },
-    });
-    return error ? err(error, 'AuthAPI.sendOTP') : ok({ sent: true, phone });
-  },
-
-  verifyOTP: async (phone, otp) => {
-    if (!isSupabaseConfigured) {
-      await delay(800);
-      if (otp.length === 4) return ok({ user: { id: 'u1', phone }, token: 'mock-jwt' });
-      return err({ message: 'Invalid OTP' });
-    }
-    const { data, error } = await supabase.auth.verifyOtp({
-      phone, token: otp, type: 'sms',
-    });
-    return error ? err(error, 'AuthAPI.verifyOTP') : ok(data);
-  },
-};
-
-// ═══════════════════════════════════════════════════════════
-// DISCOVERY API — namespace export (backward compat)
-// ═══════════════════════════════════════════════════════════
-
-export const DiscoveryAPI = {
-  getVendors:    (village, category) => getVendors({ village, category }),
-  getVendor:     (id) => getVendorById(id).then(({ data: vendor, error }) =>
-    error ? { data: null, error } : ok({ vendor, products: vendor?.products ?? [] })
-  ),
-  search:        (query) => search(query),
-  getCategories: () => getCategories(),
-  getProducts:   (vendorId, categoryId) => getProducts({ vendorId, categoryId }),
-};
-
-// ═══════════════════════════════════════════════════════════
-// ORDER API — namespace export (backward compat)
+// Legacy namespace wrappers for backward compatibility
+// Components using OrderAPI.create(), etc. continue to work
+// during the migration to flat function calls.
 // ═══════════════════════════════════════════════════════════
 
 export const OrderAPI = {
   create:        placeOrder,
-  getHistory:    (userId) => getOrdersByCustomer(userId),
   getDetail:     getOrderById,
-  cancel:        cancelOrder,
-  rate:          ({ orderId, vendorRating, riderRating, comment }) =>
-    rateOrder({ orderId, vendorRating, riderRating, comment }),
-  reorder:       (orderId) => reorderItems(orderId).then(({ data, error }) =>
-    error ? { data: null, error } : ok({ reordered: true, items: data ?? [] })
-  ),
   advanceStatus: updateOrderStatus,
+  rate:          rateOrder,
 };
-
-// ═══════════════════════════════════════════════════════════
-// PAYMENT API — namespace export (backward compat)
-// ═══════════════════════════════════════════════════════════
 
 export const PaymentAPI = {
-  initiateUPI:    initiateUPI,
-  verifyPayment:  verifyPayment,
-  walletTopup:    walletTopup,
-  walletPay:      walletPay,
-  getWallet:      (userId) => getWallet(userId).then(async ({ data: wallet, error }) => {
-    if (error) return { data: null, error };
-    const { data: txns } = await getWalletTransactions(userId);
-    return ok({ ...wallet, transactions: txns ?? [] });
-  }),
-};
+  walletPay: async (userId, amount, orderId) => {
+    // Stub — integrate Razorpay/UPI in Phase 2
+    // For now: deduct from wallet table directly
+    if (!isSupabaseConfigured) return ok({ balance: 0 });
+    try {
+      const { data: wallet } = await supabase
+        .from('wallets')
+        .select('balance')
+        .eq('user_id', userId)
+        .single();
 
-// ═══════════════════════════════════════════════════════════
-// VENDOR API — namespace export (backward compat)
-// ═══════════════════════════════════════════════════════════
+      if (!wallet || wallet.balance < amount) {
+        return err({ message: 'Insufficient balance' }, 'PaymentAPI.walletPay');
+      }
 
-export const VendorAPI = {
-  getOrders:     (vendorId) => getOrdersByVendor(vendorId),
-  confirmOrder:  (orderId) => updateOrderStatus(orderId, 'confirmed'),
-  rejectOrder:   (orderId, reason) => updateOrderStatus(orderId, 'cancelled', { cancel_reason: reason }),
-  markReady:     async (orderId) => {
-    const { data: order } = await getOrderById(orderId);
-    if (order?.status === 'confirmed') await updateOrderStatus(orderId, 'preparing');
-    return updateOrderStatus(orderId, 'ready');
+      const { error } = await supabase.from('wallets')
+        .update({ balance: wallet.balance - amount })
+        .eq('user_id', userId);
+
+      if (error) return err(error, 'PaymentAPI.walletPay');
+
+      await supabase.from('wallet_transactions').insert({
+        wallet_id:   wallet.id,
+        user_id:     userId,
+        type:        'debit',
+        amount,
+        description: `Order payment`,
+        reference:   orderId,
+        status:      'completed',
+      });
+
+      return ok({ balance: wallet.balance - amount });
+    } catch (e) {
+      return err(e, 'PaymentAPI.walletPay');
+    }
   },
-  updateProduct: (productId, updates) => safeQuery(
-    () => supabase.from('products').update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('id', productId).select().single(),
-    { success: true },
-    'VendorAPI.updateProduct'
-  ),
-  createProduct: (vendorId, productData) => safeQuery(
-    () => supabase.from('products').insert({ vendor_id: vendorId, ...productData }).select().single(),
-    { id: `p${Date.now()}`, vendor_id: vendorId, ...productData },
-    'VendorAPI.createProduct'
-  ),
-  getAnalytics:  (vendorId) => getVendorAnalytics(vendorId),
 };
-
-// ═══════════════════════════════════════════════════════════
-// RIDER API — namespace export (backward compat)
-// ═══════════════════════════════════════════════════════════
-
-export const RiderAPI = {
-  getAvailableOrders: (riderId) => getAvailableOrders(null), // legacy — pass villageId when known
-  acceptOrder:        (orderId, riderId, riderName) => assignRider(orderId, riderId, riderName),
-  markDelivered:      markDelivered,
-  updateLocation:     (riderId, lat, lng) => updateRiderLocation(riderId, lat, lng),
-  toggleOnline:       (riderId, isOnline) => updateRiderStatus(riderId, isOnline),
-  getEarnings:        (riderId) => getRiderEarnings(riderId),
-  submitCODDeposit:   submitCODDeposit,
-};
-
-// ═══════════════════════════════════════════════════════════
-// CREDIT API — namespace export (backward compat)
-// ═══════════════════════════════════════════════════════════
-
-export const CreditAPI = {
-  getAccount: getCreditAccount,
-  applyCredit,
-  repay:      repayCredit,
-};
-
-// ═══════════════════════════════════════════════════════════
-// SEVA API — namespace export (backward compat)
-// ═══════════════════════════════════════════════════════════
-
-export const SevaAPI = {
-  getJobs:     getSevaJobs,
-  getOpenJobs: getOpenSevaJobs,
-  acceptJob:   acceptSevaJob,
-  completeJob: completeSevaJob,
-};
-
-// ═══════════════════════════════════════════════════════════
-// AI API — namespace export (backward compat)
-// ═══════════════════════════════════════════════════════════
 
 export const AIAPI = {
-  transcribeVoice:     transcribeVoice,
-  chatAssistant:       chatAssistant,
-  getRecommendations:  (userId, village) => getAIRecommendations(userId, village),
-  getDemandForecast:   getDemandForecast,
-  voiceQuery:          async (text) => ok({ response: `Searching for: ${text}` }),
+  voiceQuery: async (text) => {
+    // Stub — integrate AI backend in Phase 2
+    return ok({ response: `Searching for: ${text}` });
+  },
 };
 
 // ═══════════════════════════════════════════════════════════
-// NOTIFICATION API — namespace export (backward compat)
+// Missing namespace API exports — fixes blank screen caused
+// by broken named imports across the codebase
 // ═══════════════════════════════════════════════════════════
 
 export const NotificationAPI = {
-  getAll:      (userId) => getNotifications(userId),
-  markRead:    (notifId) => markNotificationRead(notifId),
-  markAllRead: (userId) => markAllNotificationsRead(userId),
+  getAll:      (userId)      => getNotifications(userId),
+  markRead:    (id)          => markNotificationRead(id),
+  markAllRead: (userId)      => markAllNotificationsRead(userId),
 };
 
-// ═══════════════════════════════════════════════════════════
-// ADMIN API — namespace export (backward compat)
-// ═══════════════════════════════════════════════════════════
-
-export const AdminAPI = {
-  getMetrics:       getAdminStats,
-  assignRider:      (orderId, riderId) => assignRider(orderId, riderId, null),
-  approveVendor,
-  rejectVendor,
-  confirmCODDeposit,
+export const CreditAPI = {
+  getAccount:  (userId)      => safeQuery(
+    () => supabase.from('credit_accounts').select('*').eq('user_id', userId).maybeSingle(),
+    { credit_limit: 0, outstanding: 0, status: 'active', score: 500 },
+    'CreditAPI.getAccount'
+  ),
+  getTransactions: (userId)  => getWalletTransactions(userId),
+  applyCredit: async (userId, amount, purpose) => {
+    // Stub — credit approval logic is server-side in Phase 2
+    // For now: check limit, update outstanding
+    if (!isSupabaseConfigured) return ok({ approved: false, message: 'Demo mode' });
+    const { data: acct } = await CreditAPI.getAccount(userId);
+    if (!acct) return err({ message: 'No credit account found' }, 'CreditAPI.applyCredit');
+    const available = (acct.credit_limit || 0) - (acct.outstanding || 0);
+    if (amount > available) {
+      return err({ message: `Insufficient credit. Available: ₹${available}` }, 'CreditAPI.applyCredit');
+    }
+    return safeQuery(
+      () => supabase.from('credit_accounts')
+        .update({ outstanding: (acct.outstanding || 0) + amount })
+        .eq('user_id', userId)
+        .select().single(),
+      null,
+      'CreditAPI.applyCredit'
+    );
+  },
 };
-
-// ═══════════════════════════════════════════════════════════
-// FRAUD API — namespace export (backward compat)
-// ═══════════════════════════════════════════════════════════
 
 export const FraudAPI = {
-  checkOrder:  checkOrderFraud,
-  reportFraud: reportFraud,
+  report: async (payload) => safeQuery(
+    () => supabase.from('support_tickets').insert({
+      ...payload,
+      subject: `Fraud Report: ${payload.type || 'unknown'}`,
+      priority: 'high',
+    }).select().single(),
+    null,
+    'FraudAPI.report'
+  ),
+};
+
+export const VendorAPI = {
+  getOrders:       (vendorId, opts) => getOrdersByVendor(vendorId, opts),
+  updateOrder:     (orderId, status, extra) => updateOrderStatus(orderId, status, extra),
+  getProducts:     (vendorId)       => getProducts({ vendorId }),
+  upsertProduct:   (data)           => upsertProduct(data),
+  deleteProduct:   (id)             => deleteProduct(id),
+  getProfile:      (ownerId)        => getVendorByOwnerId(ownerId),
+  updateProfile:   (data)           => upsertVendorProfile(data),
+};
+
+export const RiderAPI = {
+  getProfile:      (userId)         => getRiderByUserId(userId),
+  updateStatus:    (riderId, online) => updateRiderStatus(riderId, online),
+  getAvailableOrders: (villageId)   => getAvailableOrders(villageId),
+  acceptOrder:     (orderId, riderId, riderName) => assignRider(orderId, riderId, riderName),
+  updateOrder:     (orderId, status, extra) => updateOrderStatus(orderId, status, extra),
+  getOrders:       (riderId, opts)  => getOrdersByRider(riderId, opts),
+};
+
+export const SevaAPI = {
+  getProviders:    (opts)           => getSevaProviders(opts),
+  getJobs:         async (userId)   => {
+    // Seva jobs = orders assigned to this seva provider
+    return safeQuery(
+      () => supabase.from('orders').select('*').eq('customer_id', userId).order('created_at', { ascending: false }),
+      [],
+      'SevaAPI.getJobs'
+    );
+  },
+};
+
+export const AdminAPI = {
+  getStats:        ()               => getAdminStats(),
+  getOrders:       (opts)           => safeQuery(
+    () => supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }).limit(100),
+    [],
+    'AdminAPI.getOrders'
+  ),
+  getVendors:      ()               => safeQuery(
+    () => supabase.from('vendors').select('*').order('created_at', { ascending: false }),
+    [],
+    'AdminAPI.getVendors'
+  ),
+  getRiders:       ()               => safeQuery(
+    () => supabase.from('riders').select('*').order('created_at', { ascending: false }),
+    [],
+    'AdminAPI.getRiders'
+  ),
+  getUsers:        ()               => safeQuery(
+    () => supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+    [],
+    'AdminAPI.getUsers'
+  ),
+  approveVendor:   (vendorId)       => safeQuery(
+    () => supabase.from('vendors').update({ is_verified: true, kyc_status: 'approved' }).eq('id', vendorId).select().single(),
+    null,
+    'AdminAPI.approveVendor'
+  ),
+  rejectVendor:    (vendorId, reason) => safeQuery(
+    () => supabase.from('vendors').update({ kyc_status: 'rejected' }).eq('id', vendorId).select().single(),
+    null,
+    'AdminAPI.rejectVendor'
+  ),
+  updateCashBalance: async (riderId, amount) => safeQuery(
+    () => supabase.from('riders').update({ cod_balance: amount }).eq('id', riderId).select().single(),
+    null,
+    'AdminAPI.updateCashBalance'
+  ),
 };
