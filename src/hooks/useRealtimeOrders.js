@@ -103,3 +103,33 @@ export function useRealtimeNotifications() {
     };
   }, [user, dispatch]);
 }
+
+// ── useRealtimeOrder (singular) ───────────────────────────
+// Used by CustomerOrderDetail to get live updates for one order.
+export function useRealtimeOrder(orderId) {
+  const { dispatch } = useStore();
+  const channelRef = useRef(null);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !orderId) return;
+
+    channelRef.current = supabase
+      .channel(`order-${orderId}`)
+      .on('postgres_changes', {
+        event:  'UPDATE',
+        schema: 'public',
+        table:  'orders',
+        filter: `id=eq.${orderId}`,
+      }, (payload) => {
+        if (payload.new) {
+          dispatch({ type: 'UPDATE_ORDER_STATUS', payload: { orderId, updates: payload.new } });
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    };
+  }, [orderId, dispatch]);
+}
