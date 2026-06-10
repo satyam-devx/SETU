@@ -28,6 +28,8 @@ import { useDataFetch } from '@/hooks/useDataFetch';
 import {
   getCategories, getVendors, getProducts, getSchemes,
 } from '@/lib/api';
+import { useRealtimeOrders, useRealtimeNotifications } from '@/hooks/useRealtimeOrders';
+import { useFcmToken } from '@/hooks/useFcmToken';
 import {
   BannerSkeleton, CategorySkeleton, VendorCardSkeleton, ProductCardSkeleton,
 } from '@/components/shared/SkeletonCard';
@@ -178,6 +180,27 @@ export default function CustomerHome() {
   const [query, setQuery]           = useState('');
   const [bannerIdx, setBannerIdx]   = useState(0);
 
+  // ── Realtime: order updates for this customer ──────────
+  useRealtimeOrders('customer');
+
+  // ── Realtime: incoming notifications → store + DOM event
+  useRealtimeNotifications();
+
+  // ── FCM: register / refresh push token silently ────────
+  useFcmToken();
+
+  // ── In-app notification toast ─────────────────────────
+  const [toast, setToast] = useState(null);
+  useEffect(() => {
+    const handler = (e) => {
+      setToast(e.detail);
+      const t = setTimeout(() => setToast(null), 4000);
+      return () => clearTimeout(t);
+    };
+    window.addEventListener('setu:notification', handler);
+    return () => window.removeEventListener('setu:notification', handler);
+  }, []);
+
   // Live orders: only show if user is authenticated (never show u1 mock orders)
   const liveOrders = state.orders.filter(o =>
     user?.id && (o.customerId === user.id || o.customer_id === user.id) &&
@@ -221,6 +244,28 @@ export default function CustomerHome() {
 
   return (
     <div className="pb-nav animate-fade-in" role="main" aria-label="SETU Home">
+
+      {/* ── In-app notification toast ───────────────── */}
+      {toast && (
+        <div
+          role="alert"
+          aria-live="polite"
+          className="fixed top-4 left-4 right-4 z-50 animate-slide-down"
+        >
+          <div className="bg-foreground text-background rounded-2xl px-4 py-3 shadow-xl flex items-start gap-3">
+            <Bell className="w-4 h-4 shrink-0 mt-0.5 text-primary" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold truncate">{toast.title}</p>
+              <p className="text-[11px] opacity-80 line-clamp-2">{toast.body}</p>
+            </div>
+            <button
+              onClick={() => setToast(null)}
+              className="text-background/60 hover:text-background text-lg leading-none shrink-0"
+              aria-label="Dismiss notification"
+            >×</button>
+          </div>
+        </div>
+      )}
 
       {/* ── Top bar ─────────────────────────────────── */}
       <div className="px-4 pt-4 pb-2 flex items-center justify-between">
