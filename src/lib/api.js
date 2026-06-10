@@ -638,13 +638,62 @@ export const VendorAPI = {
   updateProfile:   (data)           => upsertVendorProfile(data),
 };
 
+// ── Rider COD Deposit ─────────────────────────────────────
+/**
+ * Insert a pending COD deposit row.
+ * riderId here is riders.id (PK), not auth user.id.
+ */
+export async function submitCODDeposit(riderId, amount, denominationBreakdown = null) {
+  return safeQuery(
+    () =>
+      supabase
+        .from('cod_deposits')
+        .insert({
+          rider_id:               riderId,
+          amount,
+          status:                 'pending_confirmation',
+          denomination_breakdown: denominationBreakdown,
+          created_at:             new Date().toISOString(),
+        })
+        .select()
+        .single(),
+    null,
+    'submitCODDeposit'
+  );
+}
+
+// ── Rider Earnings ────────────────────────────────────────
+/**
+ * Fetch wallet_transactions for a rider's auth user_id, grouped into
+ * a simple earnings summary.  period: 'week' | 'month' | 'all'
+ */
+export async function getRiderEarnings(userId, { period = 'month' } = {}) {
+  const cutoff = new Date();
+  if (period === 'week')  cutoff.setDate(cutoff.getDate() - 7);
+  if (period === 'month') cutoff.setMonth(cutoff.getMonth() - 1);
+
+  return safeQuery(
+    () =>
+      supabase
+        .from('wallet_transactions')
+        .select('id, amount, type, description, created_at')
+        .eq('user_id', userId)
+        .gte('created_at', period === 'all' ? '1970-01-01' : cutoff.toISOString())
+        .order('created_at', { ascending: false }),
+    [],
+    'getRiderEarnings'
+  );
+}
+
 export const RiderAPI = {
-  getProfile:      (userId)         => getRiderByUserId(userId),
-  updateStatus:    (riderId, online) => updateRiderStatus(riderId, online),
-  getAvailableOrders: (villageId)   => getAvailableOrders(villageId),
-  acceptOrder:     (orderId, riderId, riderName) => assignRider(orderId, riderId, riderName),
-  updateOrder:     (orderId, status, extra) => updateOrderStatus(orderId, status, extra),
-  getOrders:       (riderId, opts)  => getOrdersByRider(riderId, opts),
+  getProfile:         (userId)                        => getRiderByUserId(userId),
+  updateStatus:       (riderId, online)               => updateRiderStatus(riderId, online),
+  getAvailableOrders: (villageId)                     => getAvailableOrders(villageId),
+  acceptOrder:        (orderId, riderId, riderName)   => assignRider(orderId, riderId, riderName),
+  updateOrder:        (orderId, status, extra)        => updateOrderStatus(orderId, status, extra),
+  getOrders:          (riderId, opts)                 => getOrdersByRider(riderId, opts),
+  submitCODDeposit:   (riderId, amount, denomMap)     => submitCODDeposit(riderId, amount, denomMap),
+  getEarnings:        (userId, opts)                  => getRiderEarnings(userId, opts),
 };
 
 export const SevaAPI = {
