@@ -18,7 +18,8 @@ MIGRATION NUMBER → TIMESTAMP MAPPING:
   003_locations.sql         → 20240101000003_locations.sql
   005_cod_deposits.sql      → 20240101000005_cod_deposits.sql
   006_anchor_portal.sql     → 20240101000006_anchor_portal.sql
-  006_phase2_hardening.sql  → 20240101000007_phase2_hardening.sql (renamed to avoid conflict)
+  007_phase2_hardening.sql  → 20240101000007_phase2_hardening.sql (renamed to avoid conflict)
+  008_phase0_payments.sql   → 20240101000008_phase0_payments.sql
 
 NOTE: 001_initial.sql (schema.sql + functions.sql + rls.sql combined) must be
 created separately — see comments below.
@@ -39,8 +40,8 @@ RENAME_MAP = {
     '003_locations.sql':        '20240101000003_locations.sql',
     '005_cod_deposits.sql':     '20240101000005_cod_deposits.sql',
     '006_anchor_portal.sql':    '20240101000006_anchor_portal.sql',
-    # 006 conflict: phase2_hardening becomes 007
-    '006_phase2_hardening.sql': '20240101000007_phase2_hardening.sql',
+    '007_phase2_hardening.sql': '20240101000007_phase2_hardening.sql',
+    '008_phase0_payments.sql':  '20240101000008_phase0_payments.sql',
 }
 
 
