@@ -659,6 +659,274 @@ export const SevaAPI = {
   },
 };
 
+// ─────────────────────────────────────────────────────────
+// ANCHOR API
+// All functions scoped to the anchor's village_id.
+// ─────────────────────────────────────────────────────────
+
+// ── KYC helpers ──────────────────────────────────────────
+
+/** Fetch all kyc_records for users in the anchor's village.
+ *  Joins profiles so we get name + role alongside each record. */
+export async function getVillageKycRecords(villageId) {
+  return safeQuery(
+    () =>
+      supabase
+        .from('kyc_records')
+        .select(`
+          id, type, status, doc_url, failure_reason, created_at, updated_at,
+          profiles!kyc_records_user_id_fkey(id, name, role, village_id)
+        `)
+        .eq('profiles.village_id', villageId)
+        .order('created_at', { ascending: false }),
+    [],
+    'getVillageKycRecords'
+  );
+}
+
+/** Anchor approves a KYC record (sets status → verified). */
+export async function approveKycRecord(kycId) {
+  return safeQuery(
+    () =>
+      supabase
+        .from('kyc_records')
+        .update({ status: 'verified', verified_at: new Date().toISOString() })
+        .eq('id', kycId)
+        .select()
+        .single(),
+    null,
+    'approveKycRecord'
+  );
+}
+
+/** Anchor rejects a KYC record (sets status → rejected + reason). */
+export async function rejectKycRecord(kycId, reason = 'Rejected by anchor') {
+  return safeQuery(
+    () =>
+      supabase
+        .from('kyc_records')
+        .update({ status: 'rejected', failure_reason: reason })
+        .eq('id', kycId)
+        .select()
+        .single(),
+    null,
+    'rejectKycRecord'
+  );
+}
+
+// ── Village stats ─────────────────────────────────────────
+
+/** Aggregate stats for the anchor's village dashboard. */
+export async function getVillageStats(villageId) {
+  const [ordersRes, vendorsRes, ridersRes, kycRes] = await Promise.all([
+    supabase
+      .from('orders')
+      .select('id, status, total', { count: 'exact' })
+      .eq('village_id', villageId),
+    supabase
+      .from('vendors')
+      .select('id, is_open', { count: 'exact' })
+      .eq('village_id', villageId),
+    supabase
+      .from('riders')
+      .select('id, is_online', { count: 'exact' })
+      .eq('village_id', villageId),
+    supabase
+      .from('kyc_records')
+      .select('id, status', { count: 'exact' })
+      .eq('profiles.village_id', villageId),
+  ]);
+
+  const orders  = ordersRes.data  ?? [];
+  const vendors = vendorsRes.data ?? [];
+  const riders  = ridersRes.data  ?? [];
+  const kyc     = kycRes.data     ?? [];
+
+  return {
+    data: {
+      totalOrders:    orders.length,
+      activeOrders:   orders.filter(o => !['delivered','cancelled'].includes(o.status)).length,
+      totalGMV:       orders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + (o.total || 0), 0),
+      totalVendors:   vendors.length,
+      activeVendors:  vendors.filter(v => v.is_open).length,
+      totalRiders:    riders.length,
+      onlineRiders:   riders.filter(r => r.is_online).length,
+      pendingKYC:     kyc.filter(k => k.status === 'pending' || k.status === 'submitted').length,
+    },
+    error: ordersRes.error || vendorsRes.error || ridersRes.error,
+  };
+}
+
+// ── Noticeboard ──────────────────────────────────────────
+
+export async function getNotices(villageId) {
+  return safeQuery(
+    () =>
+      supabase
+        .from('noticeboard')
+        .select('id, title, body, type, is_pinned, created_at, profiles!noticeboard_created_by_fkey(name)')
+        .eq('village_id', villageId)
+        .order('is_pinned', { ascending: false })
+        .order('created_at',  { ascending: false }),
+    [],
+    'getNotices'
+  );
+}
+
+export async function createNotice({ villageId, title, body, type = 'general', isPinned = false, createdBy }) {
+  return safeQuery(
+    () =>
+      supabase
+        .from('noticeboard')
+        .insert({ village_id: villageId, title, body, type, is_pinned: isPinned, created_by: createdBy })
+        .select()
+        .single(),
+    null,
+    'createNotice'
+  );
+}
+
+export async function deleteNotice(noticeId) {
+  return safeQuery(
+    () => supabase.from('noticeboard').delete().eq('id', noticeId),
+    null,
+    'deleteNotice'
+  );
+}
+
+// ── Disputes ─────────────────────────────────────────────
+
+export async function getDisputes(villageId) {
+  return safeQuery(
+    () =>
+      supabase
+        .from('disputes')
+        .select(`
+          id, title, description, status, amount, resolution, created_at,
+          order_id,
+          reporter:profiles!disputes_reporter_id_fkey(id, name, role),
+          resolver:profiles!disputes_resolved_by_fkey(id, name),
+          dispute_parties(user_id, role, statement, profiles!dispute_parties_user_id_fkey(name, role))
+        `)
+        .eq('village_id', villageId)
+        .order('created_at', { ascending: false }),
+    [],
+    'getDisputes'
+  );
+}
+
+export async function resolveDispute(disputeId, resolution, resolvedBy) {
+  return safeQuery(
+    () =>
+      supabase
+        .from('disputes')
+        .update({
+          status:      'resolved',
+          resolution,
+          resolved_by: resolvedBy,
+          resolved_at: new Date().toISOString(),
+        })
+        .eq('id', disputeId)
+        .select()
+        .single(),
+    null,
+    'resolveDispute'
+  );
+}
+
+export async function escalateDispute(disputeId) {
+  return safeQuery(
+    () =>
+      supabase
+        .from('disputes')
+        .update({ status: 'escalated' })
+        .eq('id', disputeId)
+        .select()
+        .single(),
+    null,
+    'escalateDispute'
+  );
+}
+
+// ── Escalations ──────────────────────────────────────────
+
+export async function getEscalations(villageId) {
+  return safeQuery(
+    () =>
+      supabase
+        .from('escalations')
+        .select(`
+          id, title, description, status, priority, notes, created_at, resolved_at,
+          dispute_id,
+          raiser:profiles!escalations_escalated_by_fkey(id, name, role),
+          assignee:profiles!escalations_escalated_to_fkey(id, name)
+        `)
+        .eq('village_id', villageId)
+        .order('created_at', { ascending: false }),
+    [],
+    'getEscalations'
+  );
+}
+
+export async function createEscalation({ disputeId, escalatedBy, villageId, title, description, priority = 'medium' }) {
+  return safeQuery(
+    () =>
+      supabase
+        .from('escalations')
+        .insert({
+          dispute_id:   disputeId,
+          escalated_by: escalatedBy,
+          village_id:   villageId,
+          title,
+          description,
+          priority,
+        })
+        .select()
+        .single(),
+    null,
+    'createEscalation'
+  );
+}
+
+export async function resolveEscalation(escalationId, notes) {
+  return safeQuery(
+    () =>
+      supabase
+        .from('escalations')
+        .update({ status: 'resolved', notes, resolved_at: new Date().toISOString() })
+        .eq('id', escalationId)
+        .select()
+        .single(),
+    null,
+    'resolveEscalation'
+  );
+}
+
+export const AnchorAPI = {
+  // KYC
+  getVillageKycRecords,
+  approveKycRecord,
+  rejectKycRecord,
+  // Village
+  getVillageStats,
+  getVillages,
+  getVillageById,
+  getVendors,
+  getSevaProviders,
+  // Noticeboard
+  getNotices,
+  createNotice,
+  deleteNotice,
+  // Disputes
+  getDisputes,
+  resolveDispute,
+  escalateDispute,
+  // Escalations
+  getEscalations,
+  createEscalation,
+  resolveEscalation,
+};
+
 export const AdminAPI = {
   getStats:        ()               => getAdminStats(),
   getOrders:       (opts)           => safeQuery(
