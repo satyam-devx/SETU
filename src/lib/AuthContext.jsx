@@ -8,6 +8,8 @@
 //  3. Retry jitter — prevents thundering herd on server restart.
 //  4. Profile cache invalidation on updateProfile.
 //  5. clearError helper for consuming UI.
+//  6. reloadProfile() is now async/awaitable — onboarding flows
+//     await it before navigating so ProtectedRoute sees updated role.
 // ═══════════════════════════════════════════════════════════
 
 import React, {
@@ -242,7 +244,11 @@ export function AuthProvider({ children }) {
     setuScore:  profile?.setu_score ?? 500,
     isVerified: profile?.is_verified ?? false,
     portalPath: profile ? getPortalPath(profile.role) : '/',
-    reloadProfile: () => { if (user) loadProfile(user); },
+    // async so callers (RegisterOnboarding, VendorOnboarding, RiderOnboarding)
+    // can await it before navigating — ensures ProtectedRoute sees the updated profile
+    reloadProfile: async () => {
+      if (user) await loadProfile(user);
+    },
   };
 
   return (
