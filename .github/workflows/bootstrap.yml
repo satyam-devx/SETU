@@ -74,7 +74,7 @@ jobs:
             ('20240101000003', 'locations'),
             ('20240101000005', 'cod_deposits'),
             ('20240101000006', 'anchor_portal'),
-            ('20240101000007', 'phase2_hardening')
+            ('20240101000007', 'phase2_hardening'),
             ('20240101000008', 'phase0_payments')
           ON CONFLICT (version) DO NOTHING;
 
