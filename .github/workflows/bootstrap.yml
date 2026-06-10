@@ -1,0 +1,98 @@
+name: SETU Bootstrap — Mark Existing Migrations as Applied
+
+# ─────────────────────────────────────────────────────────
+# PURPOSE:
+#   Replaces the `supabase migration repair` CLI step entirely.
+#   Run this ONCE after completing Step 7 (GitHub Secrets setup).
+#
+# WHAT IT DOES:
+#   1. Creates the supabase_migrations schema tracking table
+#      (the same table the Supabase CLI uses internally)
+#   2. Inserts a row for every migration that already exists
+#      in your live database, marking them "applied"
+#   3. From this point forward, `supabase db push` in the
+#      deploy pipeline only runs NEW migrations — never the old ones
+#
+# HOW TO TRIGGER:
+#   GitHub → Your repo → Actions → "SETU Bootstrap" → Run workflow
+#   (manual only — never runs automatically)
+#
+# SAFE TO RE-RUN: Yes. All inserts use ON CONFLICT DO NOTHING.
+# ─────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type CONFIRM to proceed (prevents accidental triggers)'
+        required: true
+        default: ''
+
+jobs:
+  bootstrap-migrations:
+    name: Mark All Existing Migrations as Applied
+    runs-on: ubuntu-latest
+    environment: production
+
+    # Safety gate — must type CONFIRM in the input field
+    if: github.event.inputs.confirm == 'CONFIRM'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install psql client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Create migration tracking table + mark all migrations applied
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          psql "$SUPABASE_DB_URL" << 'SQL'
+
+          -- ── Step 1: Create the schema migrations tracking table ──────────
+          -- This is the exact table the Supabase CLI uses.
+          -- Creating it here lets the CLI work from this point forward.
+          CREATE SCHEMA IF NOT EXISTS supabase_migrations;
+
+          CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (
+            version    text    PRIMARY KEY,
+            statements text[],
+            name       text
+          );
+
+          -- ── Step 2: Mark all existing migrations as applied ──────────────
+          -- Each INSERT uses ON CONFLICT DO NOTHING — safe to re-run.
+          -- Version = the timestamp prefix of each migration filename.
+          -- Name    = the description part after the timestamp.
+
+          INSERT INTO supabase_migrations.schema_migrations (version, name)
+          VALUES
+            ('20240101000001', 'initial_schema'),
+            ('20240101000002', 'payments'),
+            ('20240101000003', 'locations'),
+            ('20240101000005', 'cod_deposits'),
+            ('20240101000006', 'anchor_portal'),
+            ('20240101000007', 'phase2_hardening')
+            ('20240101000008', 'phase0_payments')
+          ON CONFLICT (version) DO NOTHING;
+
+          -- ── Step 3: Verify ────────────────────────────────────────────────
+          SELECT version, name FROM supabase_migrations.schema_migrations
+          ORDER BY version;
+
+          SQL
+
+      - name: Confirm bootstrap complete
+        run: |
+          echo "========================================"
+          echo "Bootstrap complete."
+          echo ""
+          echo "All 6 existing migrations are now marked"
+          echo "as applied in supabase_migrations.schema_migrations."
+          echo ""
+          echo "From now on, push new migration files to"
+          echo "supabase/migrations/ and they will deploy"
+          echo "automatically when you push to main."
+          echo "========================================"
