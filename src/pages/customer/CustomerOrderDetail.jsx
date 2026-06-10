@@ -13,7 +13,7 @@ import OrderTrackingMap from '@/components/maps/OrderTrackingMap';
 import { useRealtimeOrder } from '@/hooks/useRealtimeOrders';
 import { useStore, canTransition, ORDER_STATUS } from '@/lib/store';
 import { useDataFetch } from '@/hooks/useDataFetch';
-import { getOrderById, rateOrder, updateOrderStatus } from '@/lib/api';
+import { getOrderById, rateOrder, updateOrderStatus, cancelOrderWithRefund } from '@/lib/api';
 
 // ── Timeline config per status ──────────────────────────
 const TIMELINE = {
@@ -178,7 +178,8 @@ export default function CustomerOrderDetail() {
     if (!cancelReason.trim()) return;
     setCancelling(true);
     dispatch({ type: 'ORDER_CANCEL', payload: { orderId: order.id, reason: cancelReason } });
-    await updateOrderStatus(order.id, 'cancelled', { cancel_reason: cancelReason });
+    // Atomically cancels order AND issues wallet refund if payment was captured
+    await cancelOrderWithRefund(order.id, user?.id, 'customer', cancelReason);
     setCancelling(false);
     setShowCancelModal(false);
   };
