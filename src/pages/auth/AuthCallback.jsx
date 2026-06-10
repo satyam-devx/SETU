@@ -69,26 +69,44 @@ export default function AuthCallback() {
   }, []);
 
   // Step 2: Once AuthContext resolves the session + profile, redirect
+  //
+  // Routing decision tree:
+  //  Not authenticated after callback    → /login (token exchange failed)
+  //  Authenticated, no profile row       → /onboarding/register (new user, trigger failed)
+  //  Authenticated, profile placeholder  → /onboarding/register (Google user, name/village missing)
+  //  Authenticated, profile complete     → portal path
   useEffect(() => {
-    if (error) return;           // Don't redirect if there's an error
-    if (isLoading) return;       // Still resolving session
+    if (error) return;
+    if (isLoading) return;
 
-    if (isAuthenticated) {
-      if (isProfileLoaded && portalPath && portalPath !== '/') {
-        // Existing user — go to their portal
-        navigate(portalPath, { replace: true });
-      } else if (!isProfileLoaded) {
-        // New user — profile row doesn't exist yet — go to onboarding
-        // (For Google OAuth users, the DB trigger auto-creates a basic profile,
-        // so this branch mainly handles edge cases where the trigger failed)
-        navigate('/onboarding/register', { replace: true });
-      }
-    } else {
-      // Not authenticated after callback — something went wrong
-      // (e.g. token expired before exchange, or callback URL mismatch)
+    if (!isAuthenticated) {
       navigate('/login', { replace: true });
+      return;
     }
-  }, [isAuthenticated, isProfileLoaded, isLoading, portalPath, error, navigate]);
+
+    if (!isProfileLoaded) {
+      // No profile row — new user (DB trigger may have failed)
+      navigate('/onboarding/register', { replace: true });
+      return;
+    }
+
+    // Profile exists — check if it needs completing
+    const PLACEHOLDER_NAMES = ['SETU User', 'setu user', '', null, undefined];
+    const nameMissing    = PLACEHOLDER_NAMES.includes(profile?.name?.trim?.()) || !profile?.name?.trim?.();
+    const villageMissing = !profile?.village_id;
+
+    if (nameMissing || villageMissing) {
+      // Google OAuth users get a profile row via DB trigger,
+      // but with their Google display name and no village.
+      // Village is always missing for new users — send to onboarding.
+      navigate('/onboarding/register', { replace: true });
+      return;
+    }
+
+    if (portalPath && portalPath !== '/') {
+      navigate(portalPath, { replace: true });
+    }
+  }, [isAuthenticated, isProfileLoaded, isLoading, portalPath, profile, error, navigate]);
 
   // Error state
   if (error) {
