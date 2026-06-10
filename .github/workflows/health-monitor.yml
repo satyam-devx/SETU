@@ -1,0 +1,75 @@
+name: SETU Health — Database & Functions Monitor
+
+# ─────────────────────────────────────────────────────────
+# Scheduled health monitoring: runs every 6 hours.
+# Also manually triggerable for on-demand checks.
+#
+# Checks:
+#  1. Database connectivity and query response times
+#  2. Critical table row counts (detect silent data loss)
+#  3. RLS policy sanity (no open policies on sensitive tables)
+#  4. Edge Function availability via OPTIONS/CORS probes
+#  5. Migration drift detection (local vs remote schema)
+# ─────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # Every 6 hours
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    name: Platform Health Check
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link Supabase project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF:  ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Database connectivity check
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          python3 scripts/health_db.py
+
+      - name: Migration drift detection
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD:  ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          echo "=== Checking for schema drift ==="
+          DIFF=$(supabase db diff --schema public 2>&1 || true)
+          if [ -n "$DIFF" ] && ! echo "$DIFF" | grep -q "No changes"; then
+            echo "::warning::Schema drift detected between local migrations and remote DB:"
+            echo "$DIFF"
+          else
+            echo "✓ No schema drift — local migrations match remote DB"
+          fi
+
+      - name: Edge Function availability probe
+        env:
+          SUPABASE_URL:      ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          python3 scripts/health_functions.py
+
+      - name: Frontend availability check
+        env:
+          PROD_URL: ${{ vars.PROD_URL }}
+        run: |
+          python3 scripts/health_frontend.py

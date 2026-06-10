@@ -1,0 +1,257 @@
+name: SETU Deploy — Migrate, Functions & Frontend
+
+# ─────────────────────────────────────────────────────────
+# Triggers only on pushes to `main`.
+# This is the production deployment pipeline.
+# Order: Migrations → Edge Functions → Frontend (GitHub Pages)
+# Each stage gates the next; any failure halts the pipeline.
+# ─────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches:
+      - main
+
+# Prevent concurrent deploys — one at a time
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false   # Don't cancel a running deploy; queue it
+
+permissions:
+  contents: write   # needed to push gh-pages branch
+
+jobs:
+
+  # ── Stage 1: Apply database migrations ───────────────
+  migrate:
+    name: Apply DB Migrations
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      migrations_applied: ${{ steps.run_migrations.outputs.applied }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link Supabase project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF:  ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          supabase link --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Check migration status (what's pending)
+        id: check_pending
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD:  ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          echo "=== Current migration status ==="
+          supabase db diff --schema public || true
+          # List local migrations vs remote
+          supabase migration list 2>&1 | tee migration_status.txt
+          echo "Migration status logged above."
+
+      - name: Run pending migrations
+        id: run_migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD:  ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_PROJECT_REF:  ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          echo "=== Applying migrations ==="
+          # supabase db push applies all pending migrations in order
+          OUTPUT=$(supabase db push 2>&1)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -q "No migrations to apply"; then
+            echo "applied=none" >> "$GITHUB_OUTPUT"
+            echo "No new migrations to apply."
+          else
+            echo "applied=yes" >> "$GITHUB_OUTPUT"
+            echo "Migrations applied successfully."
+          fi
+
+      - name: Validate post-migration schema health
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD:  ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_DB_URL:       ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          echo "=== Post-migration health checks ==="
+          python3 scripts/post_migration_health.py
+        continue-on-error: false   # Hard failure if schema is broken
+
+  # ── Stage 2: Deploy Edge Functions ───────────────────
+  deploy-functions:
+    name: Deploy Edge Functions
+    runs-on: ubuntu-latest
+    needs: migrate
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link Supabase project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF:  ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          supabase link --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Detect changed Edge Functions
+        id: changed_functions
+        run: |
+          # On first deploy, deploy all functions.
+          # On subsequent deploys, only deploy functions that changed.
+          CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'supabase/functions/' 2>/dev/null \
+                    | sed 's|supabase/functions/||' \
+                    | cut -d'/' -f1 \
+                    | sort -u \
+                    | tr '\n' ' ')
+          if [ -z "$CHANGED" ]; then
+            # No changes — check if this is first deploy
+            FUNCTIONS=$(ls supabase/functions/)
+            echo "No function changes detected — checking if initial deploy needed."
+            echo "functions=$FUNCTIONS" >> "$GITHUB_OUTPUT"
+            echo "deploy_all=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Changed functions: $CHANGED"
+            echo "functions=$CHANGED" >> "$GITHUB_OUTPUT"
+            echo "deploy_all=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy all Edge Functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF:  ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          echo "=== Deploying Edge Functions ==="
+          FAILED=()
+          for dir in supabase/functions/*/; do
+            FNAME=$(basename "$dir")
+            echo "Deploying: $FNAME"
+            if supabase functions deploy "$FNAME" --no-verify-jwt 2>&1; then
+              echo "  ✓ $FNAME deployed"
+            else
+              echo "  ✗ $FNAME FAILED"
+              FAILED+=("$FNAME")
+            fi
+          done
+          if [ ${#FAILED[@]} -gt 0 ]; then
+            echo "::error::Failed to deploy functions: ${FAILED[*]}"
+            exit 1
+          fi
+          echo "All Edge Functions deployed successfully."
+
+      - name: Smoke-test deployed functions
+        env:
+          SUPABASE_URL:           ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY:      ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          echo "=== Edge Function smoke tests ==="
+          python3 scripts/smoke_test_functions.py
+
+  # ── Stage 3: Build and deploy frontend ───────────────
+  deploy-frontend:
+    name: Deploy Frontend → GitHub Pages
+    runs-on: ubuntu-latest
+    needs: [migrate, deploy-functions]
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Inject Firebase config into service worker
+        # The service worker lives outside the Vite build context and can't use
+        # import.meta.env. We template-replace the __PLACEHOLDER__ values at
+        # build time so the SW gets the real config without hardcoding.
+        env:
+          VITE_FIREBASE_API_KEY:             ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN:         ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID:          ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET:      ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID:              ${{ secrets.VITE_FIREBASE_APP_ID }}
+        run: python3 scripts/inject_sw_config.py
+
+      - name: Build production bundle
+        env:
+          VITE_SUPABASE_URL:                 ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY:            ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_FIREBASE_API_KEY:             ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN:         ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID:          ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET:      ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID:              ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_VAPID_KEY:           ${{ secrets.VITE_FIREBASE_VAPID_KEY }}
+        run: npm run build
+
+      - name: SPA routing — copy index → 404
+        run: cp dist/index.html dist/404.html
+
+      - name: Post-build validation
+        run: |
+          # Verify critical files exist
+          test -f dist/index.html      || (echo "::error::dist/index.html missing" && exit 1)
+          test -f dist/404.html        || (echo "::error::dist/404.html missing" && exit 1)
+          test -f dist/firebase-messaging-sw.js || \
+            echo "::warning::firebase-messaging-sw.js not in dist root (check vite config)"
+          # Ensure no placeholder values leaked into the build
+          python3 scripts/verify_build_config.py
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token:   ${{ secrets.GITHUB_TOKEN }}
+          publish_dir:    ./dist
+          publish_branch: gh-pages
+          commit_message: "deploy: ${{ github.sha }} — ${{ github.event.head_commit.message }}"
+
+  # ── Stage 4: Post-deploy validation ──────────────────
+  validate-deployment:
+    name: Post-Deploy Validation
+    runs-on: ubuntu-latest
+    needs: deploy-frontend
+    # Give GitHub Pages up to 60s to propagate before testing
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wait for GitHub Pages propagation
+        run: sleep 30
+
+      - name: Smoke-test production URL
+        env:
+          PROD_URL: ${{ vars.PROD_URL }}   # e.g. https://yourorg.github.io/SETU
+        run: |
+          python3 scripts/smoke_test_frontend.py
+
+      - name: Notify deployment success
+        if: success()
+        run: |
+          echo "=== Deployment complete ==="
+          echo "Commit: ${{ github.sha }}"
+          echo "Message: ${{ github.event.head_commit.message }}"
+          echo "By: ${{ github.actor }}"
+          echo "Time: $(date -u)"
