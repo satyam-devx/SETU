@@ -31,7 +31,7 @@ import OTPVerify          from '@/pages/auth/OTPVerify';
 import AuthCallback       from '@/pages/auth/AuthCallback';
 import RoleSelect         from '@/pages/RoleSelect';
 import RegisterOnboarding from '@/pages/onboarding/RegisterOnboarding';
-import VendorOnboarding   from '@/pages/onboarding/VendorOnboarding';
+import VendorOnboarding   from '@/pages/vendor/VendorOnboarding';
 import RiderOnboarding    from '@/pages/onboarding/RiderOnboarding';
 import SevaVerification   from '@/pages/onboarding/SevaVerification';
 
