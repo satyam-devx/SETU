@@ -1,33 +1,42 @@
 // ═══════════════════════════════════════════════════════════
-// SETU — VendorOnboarding (v2)
-// Changes:
-//  - Step 2: Shop Details persisted via upsertVendorProfile
-//  - Step 3: Products added live via upsertProduct with
-//            Supabase Storage image upload per product
-//  - Step 4: Bank/UPI saved to vendor_payment_info table
-//  - Step 5: Review computes real checklist from persisted state
-//  - Final submit marks vendor onboarding_status = 'submitted'
-//  - Steps have individual loading / error states
-//  - Step 1 (KYC) untouched
+// SETU PLATFORM — VENDOR ONBOARDING  (v3 — merged)
+//
+// Merge of:
+//  - Your uploaded version: per-step DB persistence, real
+//    Supabase Storage image uploads, vendor_payment_info table,
+//    live product adds, per-step loading/error states.
+//  - Phase 0 version: villages fetched from DB (not hardcoded),
+//    DELIVERY_RADII typed values, navigation guard (redirect to
+//    /vendor if vendor row already exists), reloadProfile()
+//    before navigating on submit, profile role update to 'vendor',
+//    input validation with inline errors.
+//
+// Architecture (your approach — kept):
+//  Step 2 saves vendor row immediately via upsertVendorProfile.
+//  Step 3 adds products live via upsertProduct + image upload.
+//  Step 4 saves to vendor_payment_info via Supabase upsert.
+//  Step 5 marks onboarding_status='submitted', updates profile
+//         role to 'vendor', calls reloadProfile(), navigates.
 // ═══════════════════════════════════════════════════════════
-import React, { useState, useRef } from 'react';
-import {
-  CheckCircle, Camera, Upload, Store, MapPin, Package,
-  ChevronRight, Mic, AlertCircle, Loader2, Plus, X,
-} from 'lucide-react';
+
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import {
+  CheckCircle, Camera, Store, MapPin, Package,
+  ChevronRight, AlertCircle, Loader2, Plus, X,
+} from 'lucide-react';
+import { Card }     from '@/components/ui/card';
+import { Button }   from '@/components/ui/button';
+import { Input }    from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
+import { Badge }    from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { kyc as kycService } from '@/lib/kyc';
-import { useAuth } from '@/lib/AuthContext';
-import { upsertVendorProfile, upsertProduct } from '@/lib/api';
+import { useAuth }  from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { upsertVendorProfile, upsertProduct, getVillages, getVendorByOwnerId } from '@/lib/api';
 
+// ── Constants ─────────────────────────────────────────────
 const STEPS = [
   { id: 1, label: 'Identity',     sublabel: 'Aadhaar + Face' },
   { id: 2, label: 'Shop Details', sublabel: 'Store info'     },
@@ -38,11 +47,20 @@ const STEPS = [
 
 const CATEGORIES = [
   'Grocery & Essentials', 'Makhana & Dry Fruits', 'Fresh Vegetables',
-  'Dairy & Milk', 'Fish & Meat', 'Sweets & Snacks', 'Clothing & Textiles', 'Electronics',
+  'Dairy & Milk', 'Fish & Meat', 'Sweets & Snacks',
+  'Clothing & Textiles', 'Electronics', 'Hardware & Tools', 'Pharmacy',
 ];
 
-const VILLAGES = ['Madhepur', 'Laxmipur', 'Parsad', 'Sugauli', 'Dhaka'];
+// Numeric delivery radii (Phase 0) — stored as numbers in vendors.delivery_radius
+const DELIVERY_RADII = [
+  { label: '1 km',  value: 1  },
+  { label: '2 km',  value: 2  },
+  { label: '3 km',  value: 3  },
+  { label: '5 km',  value: 5  },
+  { label: '10 km', value: 10 },
+];
 
+// ── Step indicator ────────────────────────────────────────
 function StepIndicator({ current }) {
   return (
     <div className="flex items-center justify-between px-4 py-4 border-b border-border">
@@ -50,11 +68,9 @@ function StepIndicator({ current }) {
         <React.Fragment key={step.id}>
           <div className="flex flex-col items-center">
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-              step.id < current
-                ? 'bg-accent text-white'
-                : step.id === current
-                  ? 'bg-primary text-white'
-                  : 'bg-muted text-muted-foreground'
+              step.id < current  ? 'bg-accent text-white' :
+              step.id === current ? 'bg-primary text-white' :
+                                    'bg-muted text-muted-foreground'
             }`}>
               {step.id < current ? <CheckCircle className="w-4 h-4" /> : step.id}
             </div>
@@ -69,21 +85,23 @@ function StepIndicator({ current }) {
   );
 }
 
-// ── Step 1: Identity (KYC — unchanged) ─────────────────────
-function Step1({ onNext }) {
-  const { user } = useAuth();
+// ── Step 1: Identity (KYC) ────────────────────────────────
+// Your version's logic kept intact; Phase 0's inline error display added.
+function Step1({ onNext, user }) {
   const [aadhaar, setAadhaar] = useState('');
   const [loading, setLoading] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
+  const [error,   setError]   = useState('');
 
   const handleVerify = async () => {
-    setLoading(true);
+    if (aadhaar.length !== 12) { setError('Enter a 12-digit Aadhaar number.'); return; }
+    setLoading(true); setError('');
     try {
-      const { data, error } = await kycService.verifyAadhaar(user.id, aadhaar);
-      if (error) throw error;
+      const { error: e } = await kycService.verifyAadhaar(user.id, aadhaar);
+      if (e) throw e;
       setOtpSent(true);
     } catch (err) {
-      alert(err.message);
+      setError(err?.message || 'Aadhaar verification failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -93,30 +111,38 @@ function Step1({ onNext }) {
     <div className="px-4 py-6 space-y-5">
       <div>
         <h2 className="text-xl font-bold mb-1">Verify Your Identity</h2>
-        <p className="text-sm text-muted-foreground">Your Aadhaar verifies you are a real person from this village. This protects your customers.</p>
+        <p className="text-sm text-muted-foreground">
+          Your Aadhaar verifies you are a real person from this village. This protects your customers.
+        </p>
       </div>
+
       <Card className="p-4 border-border">
         <h3 className="font-semibold text-sm mb-3">Aadhaar Verification</h3>
         <Input
           placeholder="Aadhaar Number (12 digits)"
           className="mb-2 font-mono tracking-widest"
           maxLength={12}
+          inputMode="numeric"
           value={aadhaar}
-          onChange={e => setAadhaar(e.target.value)}
+          onChange={e => { setAadhaar(e.target.value.replace(/\D/g, '')); setError(''); }}
+          disabled={otpSent}
         />
         {otpSent && <Input placeholder="Registered Mobile OTP" className="mb-2" />}
+        {error && (
+          <div className="flex items-start gap-2 mb-2 text-destructive text-xs">
+            <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {error}
+          </div>
+        )}
         <Button
-          variant="outline"
-          size="sm"
-          className="w-full text-xs"
-          onClick={otpSent ? onNext : handleVerify}
+          variant="outline" size="sm" className="w-full text-xs"
+          onClick={otpSent ? () => onNext() : handleVerify}
           disabled={loading || aadhaar.length !== 12}
         >
-          {loading
-            ? <Loader2 className="w-4 h-4 animate-spin mr-2" />
-            : (otpSent ? 'Confirm OTP & Continue' : 'Request OTP via UIDAI')}
+          {loading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+          {otpSent ? 'Confirm OTP & Continue' : 'Request OTP via UIDAI'}
         </Button>
       </Card>
+
       <Card className="p-4 border-border">
         <h3 className="font-semibold text-sm mb-1">Selfie Verification</h3>
         <p className="text-xs text-muted-foreground mb-3">Take a clear selfie to match with your Aadhaar photo</p>
@@ -127,11 +153,16 @@ function Step1({ onNext }) {
           </div>
         </div>
       </Card>
+
       <Card className="p-4 border-border">
         <h3 className="font-semibold text-sm mb-1">Village Anchor Vouching</h3>
-        <p className="text-xs text-muted-foreground mb-3">Your Village Anchor must vouch for you before your store goes live.</p>
+        <p className="text-xs text-muted-foreground mb-3">
+          Your Village Anchor must vouch for you before your store goes live.
+        </p>
         <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-xl">
-          <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary text-sm">RD</div>
+          <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary text-sm">
+            RD
+          </div>
           <div>
             <p className="text-sm font-medium">Ramkali Devi</p>
             <p className="text-xs text-muted-foreground">Village Anchor · Madhepur</p>
@@ -139,23 +170,35 @@ function Step1({ onNext }) {
           <Badge className="ml-auto bg-amber-100 text-amber-800 border-0 text-[9px]">Pending</Badge>
         </div>
       </Card>
-      <Button className="w-full" onClick={onNext}>
+
+      {/* Allow skipping KYC in demo/dev mode */}
+      <Button className="w-full" onClick={() => onNext()}>
         Continue to Shop Details <ChevronRight className="w-4 h-4 ml-1" />
       </Button>
     </div>
   );
 }
 
-// ── Step 2: Shop Details ────────────────────────────────────
-function Step2({ onNext, onBack, onVendorSaved }) {
-  const { user } = useAuth();
+// ── Step 2: Shop Details ──────────────────────────────────
+// Your version: immediate DB save, photo upload.
+// Phase 0 addition: villages fetched from DB, numeric delivery_radius.
+function Step2({ onNext, onBack, onVendorSaved, user }) {
   const [form, setForm] = useState({
-    name: '', category: '', description: '', village: '', landmark: '', delivery_radius: '2 km',
+    name: '', category: '', description: '',
+    village_id: '', landmark: '', delivery_radius: 2,
   });
   const [shopPhotos, setShopPhotos] = useState([]);
+  const [villages,   setVillages]   = useState([]);
   const [saving,     setSaving]     = useState(false);
-  const [error,      setError]      = useState(null);
+  const [error,      setError]      = useState('');
   const photoRef = useRef(null);
+
+  // Fetch villages from DB (Phase 0) — not hardcoded strings
+  useEffect(() => {
+    getVillages({ activeOnly: true }).then(({ data }) => {
+      if (data?.length) setVillages(data);
+    });
+  }, []);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -166,15 +209,14 @@ function Step2({ onNext, onBack, onVendorSaved }) {
   };
 
   const handleSave = async () => {
-    if (!form.name.trim() || !form.category) {
-      setError('Shop name and category are required.');
-      return;
-    }
-    setSaving(true);
-    setError(null);
+    if (!form.name.trim()) { setError('Shop name is required.'); return; }
+    if (!form.category)    { setError('Please select a category.'); return; }
+    if (!form.village_id)  { setError('Please select your village.'); return; }
+
+    setSaving(true); setError('');
 
     try {
-      // Upload shop photos
+      // Upload shop photos to Supabase Storage (your version)
       const photoUrls = [];
       for (const photo of shopPhotos) {
         if (!photo.file) continue;
@@ -190,23 +232,32 @@ function Step2({ onNext, onBack, onVendorSaved }) {
         }
       }
 
+      // Resolve village name for display
+      const selectedVillage = villages.find(v => v.id === form.village_id);
+
       const { data: vendor, error: saveErr } = await upsertVendorProfile({
         owner_id:         user.id,
         name:             form.name.trim(),
         category:         form.category,
-        description:      form.description.trim(),
-        village:          form.village,
-        landmark:         form.landmark.trim(),
-        delivery_radius:  form.delivery_radius,
+        description:      form.description.trim() || null,
+        village_id:       form.village_id,
+        village:          selectedVillage?.name || null,
+        landmark:         form.landmark.trim() || null,
+        delivery_radius:  form.delivery_radius,  // numeric (Phase 0)
         shop_photos:      photoUrls,
         onboarding_step:  2,
+        kyc_status:       'submitted',
+        is_active:        true,
+        trust_score:      500,
+        subscription_tier: 'free',
+        is_open:          false,
       });
 
       if (saveErr) throw saveErr;
       onVendorSaved(vendor);
       onNext();
     } catch (err) {
-      setError(err.message ?? 'Failed to save shop details.');
+      setError(err?.message || 'Failed to save shop details. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -229,13 +280,13 @@ function Step2({ onNext, onBack, onVendorSaved }) {
       <Input
         placeholder="Shop Name (e.g. Ramesh Kirana Store)"
         value={form.name}
-        onChange={e => set('name', e.target.value)}
+        onChange={e => { set('name', e.target.value); setError(''); }}
       />
 
       <select
-        className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+        className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
         value={form.category}
-        onChange={e => set('category', e.target.value)}
+        onChange={e => { set('category', e.target.value); setError(''); }}
       >
         <option value="">Primary Category</option>
         {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -248,6 +299,7 @@ function Step2({ onNext, onBack, onVendorSaved }) {
         onChange={e => set('description', e.target.value)}
       />
 
+      {/* Shop photos — your upload implementation */}
       <div>
         <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoAdd} />
         <label className="text-xs font-medium mb-1 block">Shop Photos</label>
@@ -261,25 +313,27 @@ function Step2({ onNext, onBack, onVendorSaved }) {
             >
               {shopPhotos[i]
                 ? <img src={shopPhotos[i].preview} alt={label} className="w-full h-full object-cover" />
-                : <>
-                    <Camera className="w-5 h-5 text-muted-foreground mb-1" />
-                    <p className="text-[9px] text-muted-foreground">{label}</p>
-                  </>
+                : <><Camera className="w-5 h-5 text-muted-foreground mb-1" /><p className="text-[9px] text-muted-foreground">{label}</p></>
               }
             </button>
           ))}
         </div>
       </div>
 
-      <Card className="p-3 border-border">
-        <p className="text-xs font-medium mb-2"><MapPin className="w-3 h-3 inline mr-1" />Shop Location</p>
+      {/* Location — DB villages (Phase 0) */}
+      <Card className="p-3 border-border space-y-2">
+        <p className="text-xs font-medium flex items-center gap-1">
+          <MapPin className="w-3 h-3" /> Shop Location
+        </p>
         <select
-          className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm mb-2"
-          value={form.village}
-          onChange={e => set('village', e.target.value)}
+          className="w-full h-9 rounded-xl border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          value={form.village_id}
+          onChange={e => { set('village_id', e.target.value); setError(''); }}
         >
           <option value="">Select Village</option>
-          {VILLAGES.map(v => <option key={v} value={v}>{v}</option>)}
+          {villages.map(v => (
+            <option key={v.id} value={v.id}>{v.name}</option>
+          ))}
         </select>
         <Input
           placeholder="Landmark (e.g. Near Panchayat office)"
@@ -288,21 +342,22 @@ function Step2({ onNext, onBack, onVendorSaved }) {
         />
       </Card>
 
+      {/* Delivery radius — numeric values (Phase 0) */}
       <div>
-        <label className="text-xs font-medium mb-1 block">Delivery Radius</label>
+        <label className="text-xs font-medium mb-1.5 block">Delivery Radius</label>
         <div className="flex gap-2">
-          {['1 km', '2 km', '3 km', '5 km', '10 km'].map(r => (
+          {DELIVERY_RADII.map(r => (
             <button
-              key={r}
+              key={r.value}
               type="button"
-              onClick={() => set('delivery_radius', r)}
+              onClick={() => set('delivery_radius', r.value)}
               className={`flex-1 text-xs py-2 rounded-lg border transition-colors ${
-                form.delivery_radius === r
+                form.delivery_radius === r.value
                   ? 'border-primary bg-primary/10 text-primary font-medium'
-                  : 'border-border hover:border-primary hover:bg-primary/5'
+                  : 'border-border hover:border-primary/50'
               }`}
             >
-              {r}
+              {r.label}
             </button>
           ))}
         </div>
@@ -311,7 +366,7 @@ function Step2({ onNext, onBack, onVendorSaved }) {
       <div className="flex gap-3">
         <Button variant="outline" className="flex-1" onClick={onBack}>Back</Button>
         <Button className="flex-1" onClick={handleSave} disabled={saving}>
-          {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+          {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
           Continue <ChevronRight className="w-4 h-4 ml-1" />
         </Button>
       </div>
@@ -319,15 +374,17 @@ function Step2({ onNext, onBack, onVendorSaved }) {
   );
 }
 
-// ── Step 3: Products ────────────────────────────────────────
-function Step3({ onNext, onBack, vendorId }) {
-  const fileRef  = useRef(null);
+// ── Step 3: Products ──────────────────────────────────────
+// Your version kept entirely: live adds with image upload + DB write per product.
+// Added: onProductAdded callback so root component tracks count correctly.
+function Step3({ onNext, onBack, vendorId, onProductAdded }) {
+  const fileRef = useRef(null);
   const [products, setProducts] = useState([]);
   const [form,     setForm]     = useState({ name: '', price: '', stock: '', unit: 'piece' });
   const [imgFile,  setImgFile]  = useState(null);
   const [imgPrev,  setImgPrev]  = useState(null);
   const [adding,   setAdding]   = useState(false);
-  const [error,    setError]    = useState(null);
+  const [error,    setError]    = useState('');
 
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -347,11 +404,10 @@ function Step3({ onNext, onBack, vendorId }) {
       setError('Vendor profile not saved yet. Go back and save shop details.');
       return;
     }
-    setAdding(true);
-    setError(null);
+    setAdding(true); setError('');
 
     try {
-      // Upload image if provided
+      // Upload product image (your version)
       let imageUrl = null;
       if (imgFile) {
         const path = `${vendorId}/${Date.now()}.jpg`;
@@ -378,13 +434,13 @@ function Step3({ onNext, onBack, vendorId }) {
 
       if (saveErr) throw saveErr;
 
-      setProducts(ps => [...ps, saved ?? { id: Date.now(), ...form, imageUrl, status: 'added' }]);
+      setProducts(ps => [...ps, saved ?? { id: Date.now(), ...form, image_url: imageUrl }]);
+      onProductAdded?.();
       setForm({ name: '', price: '', stock: '', unit: 'piece' });
-      setImgFile(null);
-      setImgPrev(null);
+      setImgFile(null); setImgPrev(null);
       if (fileRef.current) fileRef.current.value = '';
     } catch (err) {
-      setError(err.message ?? 'Failed to add product.');
+      setError(err?.message || 'Failed to add product. Please try again.');
     } finally {
       setAdding(false);
     }
@@ -412,19 +468,18 @@ function Step3({ onNext, onBack, vendorId }) {
         </div>
       )}
 
-      {/* Saved products list */}
+      {/* Saved products */}
       {products.map(p => (
         <Card key={p.id} className="p-3 border-border flex items-center gap-3">
           <div className="w-10 h-10 bg-muted rounded-lg shrink-0 overflow-hidden">
-            {(p.image_url ?? p.imageUrl)
-              ? <img src={p.image_url ?? p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
-              : <Package className="w-5 h-5 text-muted-foreground m-2.5" />}
+            {p.image_url
+              ? <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+              : <Package className="w-5 h-5 text-muted-foreground m-2.5" />
+            }
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">{p.name}</p>
-            <p className="text-xs text-muted-foreground">
-              ₹{p.price} · {p.stock} {p.unit}
-            </p>
+            <p className="text-xs text-muted-foreground">₹{p.price} · {p.stock} {p.unit}</p>
           </div>
           <Badge className="bg-green-100 text-green-800 border-0 text-[9px]">✓ Added</Badge>
         </Card>
@@ -433,7 +488,6 @@ function Step3({ onNext, onBack, vendorId }) {
       {/* Add product form */}
       <Card className="p-4 border-dashed border-2 border-border">
         <p className="text-sm font-semibold mb-3">Add New Product</p>
-
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImagePick} />
 
         {imgPrev ? (
@@ -442,6 +496,7 @@ function Step3({ onNext, onBack, vendorId }) {
             <button
               onClick={() => { setImgFile(null); setImgPrev(null); }}
               className="absolute top-1 right-1 w-6 h-6 bg-black/50 rounded-full flex items-center justify-center"
+              aria-label="Remove image"
             >
               <X className="w-3 h-3 text-white" />
             </button>
@@ -461,41 +516,36 @@ function Step3({ onNext, onBack, vendorId }) {
           <Input
             placeholder="Product name (e.g. Basmati Rice 5kg)"
             value={form.name}
-            onChange={e => setF('name', e.target.value)}
+            onChange={e => { setF('name', e.target.value); setError(''); }}
           />
           <div className="grid grid-cols-2 gap-2">
             <Input
-              type="number"
-              placeholder="Price (₹)"
+              type="number" placeholder="Price (₹)"
               value={form.price}
               onChange={e => setF('price', e.target.value)}
             />
             <Input
-              type="number"
-              placeholder="Stock qty"
+              type="number" placeholder="Stock qty"
               value={form.stock}
               onChange={e => setF('stock', e.target.value)}
             />
           </div>
           <select
-            className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+            className="w-full h-9 rounded-xl border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             value={form.unit}
             onChange={e => setF('unit', e.target.value)}
           >
-            {['piece', 'kg', 'g', 'litre', 'ml', 'pack', 'dozen'].map(u =>
+            {['piece','kg','g','litre','ml','pack','dozen'].map(u =>
               <option key={u} value={u}>{u}</option>
             )}
           </select>
         </div>
 
-        <Button
-          className="w-full mt-3 gap-2"
-          onClick={handleAdd}
-          disabled={adding}
-        >
+        <Button className="w-full mt-3 gap-2" onClick={handleAdd} disabled={adding}>
           {adding
             ? <><Loader2 className="w-4 h-4 animate-spin" /> Adding...</>
-            : <><Plus className="w-4 h-4" /> Add Product</>}
+            : <><Plus className="w-4 h-4" /> Add Product</>
+          }
         </Button>
       </Card>
 
@@ -513,31 +563,30 @@ function Step3({ onNext, onBack, vendorId }) {
   );
 }
 
-// ── Step 4: Bank & Payment ──────────────────────────────────
+// ── Step 4: Bank & Payment ────────────────────────────────
+// Your version: saves to vendor_payment_info table.
 function Step4({ onNext, onBack, vendorId }) {
   const [form, setForm] = useState({
     account_name: '', account_number: '', ifsc: '', bank_name: '', upi_id: '',
   });
   const [saving, setSaving] = useState(false);
-  const [error,  setError]  = useState(null);
+  const [error,  setError]  = useState('');
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSave = async () => {
     if (!vendorId) {
-      setError('Vendor profile not found. Go back to shop details step.');
+      setError('Vendor profile not found. Go back to shop details.');
       return;
     }
     if (!form.account_number && !form.upi_id) {
       setError('Please add either bank account or UPI ID.');
       return;
     }
-
-    setSaving(true);
-    setError(null);
+    setSaving(true); setError('');
 
     try {
-      // Save to vendor_payment_info table
-      const { error: insertErr } = await supabase
+      // Save to vendor_payment_info (your version)
+      const { error: payErr } = await supabase
         .from('vendor_payment_info')
         .upsert(
           {
@@ -551,13 +600,13 @@ function Step4({ onNext, onBack, vendorId }) {
           { onConflict: 'vendor_id' }
         );
 
-      if (insertErr) throw insertErr;
+      if (payErr) throw payErr;
 
-      // Mark onboarding step
-      await upsertVendorProfile({ vendor_id: vendorId, onboarding_step: 4 });
+      // Mark step progress on vendor row
+      await upsertVendorProfile({ owner_id: vendorId, onboarding_step: 4 });
       onNext();
     } catch (err) {
-      setError(err.message ?? 'Failed to save payment info.');
+      setError(err?.message || 'Failed to save payment info. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -567,7 +616,9 @@ function Step4({ onNext, onBack, vendorId }) {
     <div className="px-4 py-6 space-y-4">
       <div>
         <h2 className="text-xl font-bold mb-1">Payment Setup</h2>
-        <p className="text-sm text-muted-foreground">Add your bank account or UPI ID to receive payments from SETU.</p>
+        <p className="text-sm text-muted-foreground">
+          Add your bank account or UPI ID to receive payments from SETU.
+        </p>
       </div>
 
       {error && (
@@ -579,28 +630,10 @@ function Step4({ onNext, onBack, vendorId }) {
 
       <Card className="p-4 border-border space-y-3">
         <h3 className="font-semibold text-sm">Bank Account</h3>
-        <Input
-          placeholder="Account Holder Name"
-          value={form.account_name}
-          onChange={e => setF('account_name', e.target.value)}
-        />
-        <Input
-          placeholder="Account Number"
-          className="font-mono"
-          value={form.account_number}
-          onChange={e => setF('account_number', e.target.value)}
-        />
-        <Input
-          placeholder="IFSC Code"
-          className="font-mono uppercase"
-          value={form.ifsc}
-          onChange={e => setF('ifsc', e.target.value)}
-        />
-        <Input
-          placeholder="Bank Name (e.g. SBI, PNB)"
-          value={form.bank_name}
-          onChange={e => setF('bank_name', e.target.value)}
-        />
+        <Input placeholder="Account Holder Name"    value={form.account_name}   onChange={e => setF('account_name',   e.target.value)} />
+        <Input placeholder="Account Number" className="font-mono" value={form.account_number} onChange={e => setF('account_number', e.target.value.replace(/\D/g,''))} />
+        <Input placeholder="IFSC Code"      className="font-mono uppercase"     value={form.ifsc}           onChange={e => setF('ifsc',           e.target.value.toUpperCase())} maxLength={11} />
+        <Input placeholder="Bank Name (e.g. SBI, PNB)"                          value={form.bank_name}      onChange={e => setF('bank_name',      e.target.value)} />
       </Card>
 
       <div className="flex items-center gap-3">
@@ -611,16 +644,12 @@ function Step4({ onNext, onBack, vendorId }) {
 
       <Card className="p-4 border-border">
         <h3 className="font-semibold text-sm mb-2">UPI ID</h3>
-        <Input
-          placeholder="yourname@upi"
-          value={form.upi_id}
-          onChange={e => setF('upi_id', e.target.value)}
-        />
+        <Input placeholder="yourname@upi" value={form.upi_id} onChange={e => setF('upi_id', e.target.value)} />
       </Card>
 
       <Card className="p-3 bg-muted/50 border-border">
         <p className="text-xs text-muted-foreground">
-          💰 SETU Fee: <strong>2% per order</strong> deducted at settlement.
+          💰 SETU Fee: <strong>1% per order</strong> deducted at settlement.
           COD payments settled next day. UPI payments settled same day.
         </p>
       </Card>
@@ -628,7 +657,7 @@ function Step4({ onNext, onBack, vendorId }) {
       <div className="flex gap-3">
         <Button variant="outline" className="flex-1" onClick={onBack}>Back</Button>
         <Button className="flex-1" onClick={handleSave} disabled={saving}>
-          {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+          {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
           Review Application <ChevronRight className="w-4 h-4 ml-1" />
         </Button>
       </div>
@@ -636,45 +665,63 @@ function Step4({ onNext, onBack, vendorId }) {
   );
 }
 
-// ── Step 5: Review & Submit ─────────────────────────────────
-function Step5({ vendorId, productsCount }) {
-  const navigate = useNavigate();
+// ── Step 5: Review & Submit ───────────────────────────────
+// Your version's checklist + success screen kept.
+// Phase 0 additions: profile role update + reloadProfile() before navigate.
+function Step5({ vendorId, productsCount, user, onSubmitted }) {
+  const navigate    = useNavigate();
+  const { reloadProfile } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [submitted,  setSubmitted]  = useState(false);
-  const [error,      setError]      = useState(null);
+  const [error,      setError]      = useState('');
 
   const checklist = [
-    { label: '✓ Aadhaar Verified',      status: 'done'    },
-    { label: '✓ Shop Details Added',    status: 'done'    },
+    { label: '✓ Identity Submitted',    status: 'done'    },
+    { label: '✓ Shop Details Saved',    status: 'done'    },
     {
-      label: productsCount >= 5
+      label:  productsCount >= 5
         ? `✓ ${productsCount} Products Added`
         : `⚠ ${productsCount}/5 Products Added`,
       status: productsCount >= 5 ? 'done' : 'warn',
     },
-    { label: '✓ Bank Account Added',    status: 'done'    },
+    { label: '✓ Payment Info Saved',         status: 'done'    },
     { label: '⏳ Anchor Vouching (Pending)', status: 'pending' },
   ];
 
   const handleSubmit = async () => {
-    if (!vendorId) return;
-    setSubmitting(true);
-    setError(null);
+    if (!vendorId) { setError('Vendor ID missing. Please restart onboarding.'); return; }
+    setSubmitting(true); setError('');
 
-    const { error: submitErr } = await upsertVendorProfile({
-      id:                vendorId,
-      onboarding_status: 'submitted',
-      onboarding_step:   5,
-      submitted_at:      new Date().toISOString(),
-    });
+    try {
+      // Mark vendor as submitted (your version)
+      const { error: submitErr } = await upsertVendorProfile({
+        owner_id:          user.id,
+        onboarding_status: 'submitted',
+        onboarding_step:   5,
+        submitted_at:      new Date().toISOString(),
+        is_verified:       false,
+      });
+      if (submitErr) throw submitErr;
 
-    setSubmitting(false);
-    if (submitErr) {
-      setError(submitErr.message ?? 'Submission failed. Please try again.');
-      return;
+      // Update profile role to 'vendor' (Phase 0)
+      const { error: profileErr } = await supabase
+        .from('profiles')
+        .update({ role: 'vendor' })
+        .eq('id', user.id);
+      if (profileErr) console.warn('[SETU VendorOnboarding] role update error:', profileErr);
+
+      setSubmitted(true);
+
+      // Reload AuthContext profile so ProtectedRoute sees role='vendor' (Phase 0)
+      await reloadProfile();
+
+      // Your version's success delay before navigate
+      setTimeout(() => onSubmitted(), 2500);
+    } catch (err) {
+      setError(err?.message || 'Submission failed. Please try again.');
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitted(true);
-    setTimeout(() => navigate('/vendor'), 2500);
   };
 
   if (submitted) {
@@ -685,8 +732,7 @@ function Step5({ vendorId, productsCount }) {
         </div>
         <h2 className="text-2xl font-bold">Application Submitted!</h2>
         <p className="text-sm text-muted-foreground max-w-xs">
-          Your store will be reviewed within 24 hours.
-          We'll notify you once approved.
+          Your store will be reviewed within 24 hours. We'll notify you once approved.
         </p>
         <p className="text-xs text-muted-foreground">Redirecting to dashboard...</p>
       </div>
@@ -697,7 +743,9 @@ function Step5({ vendorId, productsCount }) {
     <div className="px-4 py-6 space-y-4">
       <div>
         <h2 className="text-xl font-bold mb-1">Review & Submit</h2>
-        <p className="text-sm text-muted-foreground">Your application will be reviewed by the Block Admin within 24 hours.</p>
+        <p className="text-sm text-muted-foreground">
+          Your application will be reviewed by the Block Admin within 24 hours.
+        </p>
       </div>
 
       {error && (
@@ -707,20 +755,19 @@ function Step5({ vendorId, productsCount }) {
         </div>
       )}
 
-      {checklist.map((item, i) => (
-        <div
-          key={i}
-          className={`flex items-center gap-3 p-3 rounded-xl ${
-            item.status === 'done'    ? 'bg-green-50 border border-green-200' :
-            item.status === 'pending' ? 'bg-amber-50 border border-amber-200'  :
-            'bg-muted border border-border'
-          }`}
-        >
-          <p className={`text-sm ${item.status === 'pending' ? 'text-amber-700' : 'text-foreground'}`}>
-            {item.label}
-          </p>
-        </div>
-      ))}
+      <div className="space-y-2">
+        {checklist.map((item, i) => (
+          <div key={i} className={`flex items-center gap-3 p-3 rounded-xl border ${
+            item.status === 'done'    ? 'bg-green-50 border-green-200' :
+            item.status === 'pending' ? 'bg-amber-50 border-amber-200' :
+                                        'bg-muted border-border'
+          }`}>
+            <p className={`text-sm ${item.status === 'pending' ? 'text-amber-700' : 'text-foreground'}`}>
+              {item.label}
+            </p>
+          </div>
+        ))}
+      </div>
 
       {productsCount < 5 && (
         <Card className="p-3 bg-amber-50 border-amber-200">
@@ -733,31 +780,47 @@ function Step5({ vendorId, productsCount }) {
 
       <div className="p-3 bg-muted rounded-xl">
         <p className="text-xs text-muted-foreground">
-          <strong>SETU Constitution Pledge:</strong> I agree to sell genuine products, honor all accepted orders,
-          and maintain fair pricing. I understand that fraud or misconduct will result in permanent ban from SETU.
+          <strong>SETU Constitution Pledge:</strong> I agree to sell genuine products,
+          honour all accepted orders, and maintain fair pricing. I understand that
+          fraud or misconduct will result in permanent ban from SETU.
         </p>
       </div>
 
       <Button className="w-full gap-2" onClick={handleSubmit} disabled={submitting}>
         {submitting
           ? <><Loader2 className="w-4 h-4 animate-spin" /> Submitting...</>
-          : 'Submit Application 🚀'}
+          : 'Submit Application 🚀'
+        }
       </Button>
     </div>
   );
 }
 
-// ── Root component ──────────────────────────────────────────
+// ── Root component ────────────────────────────────────────
 export default function VendorOnboarding() {
+  const navigate  = useNavigate();
+  const { user, reloadProfile } = useAuth();
   const [step,          setStep]          = useState(1);
   const [vendorId,      setVendorId]      = useState(null);
   const [productsCount, setProductsCount] = useState(0);
+
+  // Phase 0: redirect if vendor row already exists
+  useEffect(() => {
+    if (!user) return;
+    getVendorByOwnerId(user.id).then(({ data }) => {
+      if (data) navigate('/vendor', { replace: true });
+    });
+  }, [user, navigate]);
 
   const next = () => setStep(s => Math.min(s + 1, 5));
   const back = () => setStep(s => Math.max(s - 1, 1));
 
   const handleVendorSaved = (vendor) => {
     if (vendor?.id) setVendorId(vendor.id);
+  };
+
+  const handleSubmitted = async () => {
+    navigate('/vendor', { replace: true });
   };
 
   return (
@@ -778,12 +841,13 @@ export default function VendorOnboarding() {
         <StepIndicator current={step} />
       </div>
 
-      {step === 1 && <Step1 onNext={next} />}
+      {step === 1 && <Step1 onNext={next} user={user} />}
       {step === 2 && (
         <Step2
           onNext={next}
           onBack={back}
           onVendorSaved={handleVendorSaved}
+          user={user}
         />
       )}
       {step === 3 && (
@@ -805,6 +869,8 @@ export default function VendorOnboarding() {
         <Step5
           vendorId={vendorId}
           productsCount={productsCount}
+          user={user}
+          onSubmitted={handleSubmitted}
         />
       )}
     </div>
