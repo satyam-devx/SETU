@@ -12,7 +12,7 @@ import { useCart } from '@/lib/cartContext';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/AuthContext';
 import { useVillage } from '@/lib/village';
-import { OrderAPI, PaymentAPI } from '@/lib/api';
+import { OrderAPI, PaymentAPI, cancelOrderWithRefund } from '@/lib/api';
 import { loadRazorpayScript, initiatePayment } from '@/lib/payments';
 
 const PAY_METHODS = [
@@ -138,27 +138,24 @@ export default function CustomerCheckout() {
 
         if (rzpResult.error) throw new Error(rzpResult.error);
         if (rzpResult.cancelled) {
-          await OrderAPI.advanceStatus(order.id, 'cancelled', {
-            cancel_reason: 'Payment cancelled by user',
-          });
+          // Use atomic cancel (no refund needed — payment never captured)
+          await cancelOrderWithRefund(order.id, user.id, 'customer', 'Payment cancelled by user');
           setPlacing(false);
           return;
         }
-        // Webhook confirms payment → order status updated server-side
+        // Webhook confirms payment → order status + payment_status updated server-side.
+        // DO NOT set payment_status from here — the guard trigger will reject it.
 
       } else if (payMethod === 'wallet') {
         const { error: walletError } = await PaymentAPI.walletPay(user.id, grandTotal, order.id);
         if (walletError) {
-          await OrderAPI.advanceStatus(order.id, 'cancelled', {
-            cancel_reason: 'Wallet payment failed',
-          });
+          // Wallet debit failed — cancel the order atomically (no refund needed, nothing was captured)
+          await cancelOrderWithRefund(order.id, user.id, 'customer', 'Wallet payment failed');
           throw new Error(walletError.message ?? 'Wallet payment failed. Please try again.');
         }
 
-        await OrderAPI.advanceStatus(order.id, 'confirmed', {
-          payment_status: 'paid',
-          payment_method: 'WALLET',
-        });
+        // Wallet deducted; advance order to confirmed via RPC (which sets payment_status internally)
+        await OrderAPI.advanceStatus(order.id, 'confirmed', {});
 
         dispatch({
           type:    'UPDATE_WALLET_BALANCE',
