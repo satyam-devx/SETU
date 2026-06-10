@@ -34,8 +34,8 @@ site_url = "http://localhost:5173"
 additional_redirect_urls = [
   "https://localhost:5173",
   # GitHub Pages production URL — update with your actual org/repo
-  "https://yourgithubusername.github.io/SETU",
-  "https://yourgithubusername.github.io/SETU/auth/callback",
+  "https://satyam-devx.github.io/SETU",
+  "https://satyam-devx.github.io/SETU/auth/callback",
 ]
 jwt_expiry = 3600
 enable_signup = true
