@@ -976,41 +976,334 @@ export const AnchorAPI = {
   resolveEscalation,
 };
 
+// ─────────────────────────────────────────────────────────
+// ADMIN API — extended functions
+// ─────────────────────────────────────────────────────────
+
+/** Richer dashboard aggregate: orders, vendors, riders, KYC counts, COD totals. */
+export async function getAdminDashboardStats() {
+  if (!isSupabaseConfigured) return ok(null);
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const [
+      ordersRes,
+      todayOrdersRes,
+      vendorsRes,
+      ridersRes,
+      supportRes,
+      depositsRes,
+    ] = await Promise.all([
+      supabase.from('orders').select('id, status, total, rider_id, payment_method'),
+      supabase.from('orders').select('id, status, total').gte('created_at', today.toISOString()),
+      supabase.from('vendors').select('id, is_open, is_verified, kyc_status'),
+      supabase.from('riders').select('id, is_online, is_active, cod_balance'),
+      supabase.from('support_tickets').select('id, status'),
+      supabase.from('cod_deposits').select('id, amount, status'),
+    ]);
+
+    const orders      = ordersRes.data      ?? [];
+    const todayOrders = todayOrdersRes.data ?? [];
+    const vendors     = vendorsRes.data     ?? [];
+    const ridersList  = ridersRes.data      ?? [];
+    const tickets     = supportRes.data     ?? [];
+    const deposits    = depositsRes.data    ?? [];
+
+    return ok({
+      totalOrders:     orders.length,
+      activeOrders:    orders.filter(o => !['delivered','cancelled'].includes(o.status)).length,
+      pendingAssign:   orders.filter(o => !o.rider_id && !['delivered','cancelled'].includes(o.status)).length,
+      todayOrders:     todayOrders.length,
+      todayRevenue:    todayOrders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + (Number(o.total) || 0), 0),
+      totalRevenue:    orders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + (Number(o.total) || 0), 0),
+      activeVendors:   vendors.filter(v => v.is_open).length,
+      totalVendors:    vendors.length,
+      pendingVendors:  vendors.filter(v => !v.is_verified && v.kyc_status !== 'rejected').length,
+      onlineRiders:    ridersList.filter(r => r.is_online).length,
+      totalRiders:     ridersList.length,
+      openTickets:     tickets.filter(t => t.status === 'open').length,
+      totalCOD:        orders.filter(o => o.payment_method === 'COD' && o.status === 'delivered').reduce((s, o) => s + (Number(o.total) || 0), 0),
+      pendingDeposits: deposits.filter(d => d.status === 'pending_confirmation').reduce((s, d) => s + (Number(d.amount) || 0), 0),
+      riderCODBalance: ridersList.reduce((s, r) => s + (Number(r.cod_balance) || 0), 0),
+    });
+  } catch (e) {
+    return err(e, 'getAdminDashboardStats');
+  }
+}
+
+/** Hourly order distribution for today (for the bar chart). */
+export async function getTodayHourlyOrders() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const { data } = await supabase
+    .from('orders')
+    .select('created_at')
+    .gte('created_at', today.toISOString());
+
+  const buckets = Array.from({ length: 24 }, (_, i) => ({
+    hr: `${i === 0 ? 12 : i > 12 ? i - 12 : i}${i < 12 ? 'AM' : 'PM'}`,
+    orders: 0,
+  }));
+  (data ?? []).forEach(o => {
+    const h = new Date(o.created_at).getHours();
+    buckets[h].orders++;
+  });
+  // Return only 6AM–10PM for display
+  return { data: buckets.filter((_, i) => i >= 6 && i <= 22), error: null };
+}
+
+/** Admin: get ALL support tickets with reporter profile joined. */
+export async function getAdminSupportTickets({ status } = {}) {
+  let q = supabase
+    .from('support_tickets')
+    .select('*, profiles!support_tickets_user_id_fkey(id, name, role, phone)')
+    .order('created_at', { ascending: false });
+  if (status) q = q.eq('status', status);
+  return safeQuery(() => q, [], 'getAdminSupportTickets');
+}
+
+/** Admin: append a reply message to a ticket's messages jsonb array. */
+export async function replyToTicket(ticketId, adminName, text) {
+  const { data: ticket } = await supabase
+    .from('support_tickets')
+    .select('messages')
+    .eq('id', ticketId)
+    .single();
+
+  const current = Array.isArray(ticket?.messages) ? ticket.messages : [];
+  const newMsg  = {
+    from: 'admin',
+    name: adminName,
+    text,
+    time: new Date().toLocaleTimeString('en-IN', { timeStyle: 'short' }),
+  };
+  return safeQuery(
+    () => supabase
+      .from('support_tickets')
+      .update({ messages: [...current, newMsg] })
+      .eq('id', ticketId)
+      .select()
+      .single(),
+    null,
+    'replyToTicket'
+  );
+}
+
+/** Admin: resolve a support ticket. */
+export async function resolveTicket(ticketId) {
+  return safeQuery(
+    () => supabase
+      .from('support_tickets')
+      .update({ status: 'resolved', resolved_at: new Date().toISOString() })
+      .eq('id', ticketId)
+      .select()
+      .single(),
+    null,
+    'resolveTicket'
+  );
+}
+
+/** Admin: get all riders with live order counts joined. */
+export async function getAdminRiders() {
+  return safeQuery(
+    () => supabase
+      .from('riders')
+      .select('id, name, phone, zone, vehicle_type, vehicle_number, is_online, is_active, is_verified, rating, total_deliveries, today_deliveries, today_earnings, cod_balance, kyc_status, village_id, created_at')
+      .order('is_online', { ascending: false })
+      .order('name'),
+    [],
+    'getAdminRiders'
+  );
+}
+
+/** Admin: toggle rider active status. */
+export async function setRiderActive(riderId, isActive) {
+  return safeQuery(
+    () => supabase.from('riders').update({ is_active: isActive }).eq('id', riderId).select().single(),
+    null,
+    'setRiderActive'
+  );
+}
+
+/** Admin: get all vendors. */
+export async function getAdminVendors() {
+  return safeQuery(
+    () => supabase
+      .from('vendors')
+      .select('id, name, category, village, village_id, phone, image_url, rating, review_count, is_open, is_verified, is_active, kyc_status, subscription_tier, created_at')
+      .order('created_at', { ascending: false }),
+    [],
+    'getAdminVendors'
+  );
+}
+
+/** Admin: toggle vendor is_open. */
+export async function setVendorOpen(vendorId, isOpen) {
+  return safeQuery(
+    () => supabase.from('vendors').update({ is_open: isOpen }).eq('id', vendorId).select().single(),
+    null,
+    'setVendorOpen'
+  );
+}
+
+/** Admin: get all seva providers. */
+export async function getAdminSevaProviders() {
+  return safeQuery(
+    () => supabase
+      .from('seva_providers')
+      .select('id, name, category, village, village_id, phone, image_url, rating, review_count, is_available, is_verified, hourly_rate, experience, jobs_completed, kyc_status, created_at')
+      .order('created_at', { ascending: false }),
+    [],
+    'getAdminSevaProviders'
+  );
+}
+
+/** Admin: toggle seva provider availability. */
+export async function setSevaAvailable(providerId, isAvailable) {
+  return safeQuery(
+    () => supabase.from('seva_providers').update({ is_available: isAvailable }).eq('id', providerId).select().single(),
+    null,
+    'setSevaAvailable'
+  );
+}
+
+/** Admin: get all villages with per-village order/vendor aggregates. */
+export async function getAdminVillages() {
+  const [villagesRes, ordersRes, vendorsRes] = await Promise.all([
+    supabase.from('villages').select('*').order('name'),
+    supabase.from('orders').select('id, village_id, status'),
+    supabase.from('vendors').select('id, village_id, is_open, is_verified'),
+  ]);
+
+  const orders  = ordersRes.data  ?? [];
+  const vendors = vendorsRes.data ?? [];
+
+  const villages = (villagesRes.data ?? []).map(v => {
+    const vOrders  = orders.filter(o => o.village_id === v.id);
+    const vVendors = vendors.filter(vn => vn.village_id === v.id);
+    const health   = v.is_active
+      ? Math.min(100, 30 + vVendors.filter(vn => vn.is_open).length * 10 + Math.min(vOrders.length, 20) * 2)
+      : 0;
+    return {
+      ...v,
+      totalOrders:   vOrders.length,
+      activeVendors: vVendors.filter(vn => vn.is_open).length,
+      totalVendors:  vVendors.length,
+      health,
+    };
+  });
+
+  return { data: villages, error: villagesRes.error };
+}
+
+/** Admin: get all orders with rider info. */
+export async function getAdminOrders({ limit = 100 } = {}) {
+  return safeQuery(
+    () => supabase
+      .from('orders')
+      .select('id, order_number, status, total, payment_method, payment_status, village, village_id, created_at, rider_id, rider_name, customer_name, vendor_name')
+      .order('created_at', { ascending: false })
+      .limit(limit),
+    [],
+    'getAdminOrders'
+  );
+}
+
+/** Admin: assign a rider to an order. */
+export async function adminAssignRider(orderId, riderId, riderName) {
+  return safeQuery(
+    () => supabase
+      .from('orders')
+      .update({ rider_id: riderId, rider_name: riderName, status: 'confirmed' })
+      .eq('id', orderId)
+      .select()
+      .single(),
+    null,
+    'adminAssignRider'
+  );
+}
+
+/** Admin: confirm a COD deposit from a rider. */
+export async function confirmCODDeposit(depositId, adminUserId) {
+  return safeQuery(
+    () => supabase
+      .from('cod_deposits')
+      .update({
+        status:             'confirmed',
+        admin_confirmed_by:  adminUserId,
+        admin_confirmed_at:  new Date().toISOString(),
+      })
+      .eq('id', depositId)
+      .select()
+      .single(),
+    null,
+    'confirmCODDeposit'
+  );
+}
+
+/** Admin: dispute a COD deposit. */
+export async function disputeCODDeposit(depositId) {
+  return safeQuery(
+    () => supabase.from('cod_deposits').update({ status: 'disputed' }).eq('id', depositId).select().single(),
+    null,
+    'disputeCODDeposit'
+  );
+}
+
+/** Admin: fetch all COD deposits with rider names. */
+export async function getCODDeposits() {
+  return safeQuery(
+    () => supabase
+      .from('cod_deposits')
+      .select('*, riders(id, name, zone, cod_balance, phone)')
+      .order('created_at', { ascending: false }),
+    [],
+    'getCODDeposits'
+  );
+}
+
 export const AdminAPI = {
-  getStats:        ()               => getAdminStats(),
-  getOrders:       (opts)           => safeQuery(
-    () => supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }).limit(100),
-    [],
-    'AdminAPI.getOrders'
-  ),
-  getVendors:      ()               => safeQuery(
-    () => supabase.from('vendors').select('*').order('created_at', { ascending: false }),
-    [],
-    'AdminAPI.getVendors'
-  ),
-  getRiders:       ()               => safeQuery(
-    () => supabase.from('riders').select('*').order('created_at', { ascending: false }),
-    [],
-    'AdminAPI.getRiders'
-  ),
-  getUsers:        ()               => safeQuery(
-    () => supabase.from('profiles').select('*').order('created_at', { ascending: false }),
-    [],
-    'AdminAPI.getUsers'
-  ),
-  approveVendor:   (vendorId)       => safeQuery(
+  // Stats
+  getStats:          ()                       => getAdminDashboardStats(),
+  getHourlyOrders:   ()                       => getTodayHourlyOrders(),
+  // Orders
+  getOrders:         (opts)                   => getAdminOrders(opts),
+  assignRider:       (orderId, riderId, name) => adminAssignRider(orderId, riderId, name),
+  // Vendors
+  getVendors:        ()                       => getAdminVendors(),
+  setVendorOpen:     (id, open)               => setVendorOpen(id, open),
+  approveVendor:     (vendorId)               => safeQuery(
     () => supabase.from('vendors').update({ is_verified: true, kyc_status: 'approved' }).eq('id', vendorId).select().single(),
-    null,
-    'AdminAPI.approveVendor'
+    null, 'AdminAPI.approveVendor'
   ),
-  rejectVendor:    (vendorId, reason) => safeQuery(
+  rejectVendor:      (vendorId)               => safeQuery(
     () => supabase.from('vendors').update({ kyc_status: 'rejected' }).eq('id', vendorId).select().single(),
-    null,
-    'AdminAPI.rejectVendor'
+    null, 'AdminAPI.rejectVendor'
   ),
-  updateCashBalance: async (riderId, amount) => safeQuery(
+  // Riders
+  getRiders:         ()                       => getAdminRiders(),
+  setRiderActive:    (id, active)             => setRiderActive(id, active),
+  updateCashBalance: (riderId, amount)        => safeQuery(
     () => supabase.from('riders').update({ cod_balance: amount }).eq('id', riderId).select().single(),
-    null,
-    'AdminAPI.updateCashBalance'
+    null, 'AdminAPI.updateCashBalance'
+  ),
+  // Seva Providers
+  getSevaProviders:  ()                       => getAdminSevaProviders(),
+  setSevaAvailable:  (id, avail)              => setSevaAvailable(id, avail),
+  // Villages
+  getVillages:       ()                       => getAdminVillages(),
+  // Support
+  getSupportTickets: (opts)                   => getAdminSupportTickets(opts),
+  replyToTicket:     (id, name, text)         => replyToTicket(id, name, text),
+  resolveTicket:     (id)                     => resolveTicket(id),
+  // COD / Cash
+  getCODDeposits:    ()                       => getCODDeposits(),
+  confirmCODDeposit: (depositId, adminUserId) => confirmCODDeposit(depositId, adminUserId),
+  disputeCODDeposit: (depositId)              => disputeCODDeposit(depositId),
+  // Legacy
+  getUsers:          ()                       => safeQuery(
+    () => supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+    [], 'AdminAPI.getUsers'
   ),
 };
