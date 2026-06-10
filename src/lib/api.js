@@ -289,23 +289,42 @@ export async function placeOrder(orderPayload) {
 }
 
 export async function updateOrderStatus(orderId, status, extra = {}) {
-  const timestamps = {
-    confirmed:   'confirmed_at',
-    ready:       'ready_at',
-    picked_up:   'picked_up_at',
-    delivered:   'delivered_at',
-    cancelled:   'cancelled_at',
-  };
-  const updates = {
-    status,
-    ...extra,
-    ...(timestamps[status] ? { [timestamps[status]]: new Date().toISOString() } : {}),
-  };
+  // Route through the security-definer RPC.
+  // • Enforces valid state-machine transitions (pending→confirmed→... etc.)
+  // • Internally sets setu.internal_payment_update so the
+  //   guard_payment_status_change trigger allows the write.
+  // • Logs every transition to audit_log.
   return safeQuery(
-    () => supabase.from('orders').update(updates).eq('id', orderId).select().single(),
+    () =>
+      supabase.rpc('update_order_status', {
+        p_order_id:   orderId,
+        p_new_status: status,
+        p_actor_id:   null,   // auth.uid() resolved inside the function
+        p_meta:       extra,
+      }),
     null,
     'updateOrderStatus'
   );
+}
+
+// ── cancelOrderWithRefund ─────────────────────────────────
+// Atomic cancel + auto-refund in one DB transaction.
+// Replaces the pattern: updateOrderStatus(id,'cancelled') + manual wallet credit.
+export async function cancelOrderWithRefund(orderId, actorId, actorRole = 'customer', reason = null) {
+  if (!isSupabaseConfigured) return ok({ refund_amount: 0 });
+  try {
+    const { data, error } = await supabase.rpc('cancel_order_with_refund', {
+      p_order_id:   orderId,
+      p_actor_id:   actorId,
+      p_actor_role: actorRole,
+      p_reason:     reason ?? null,
+    });
+    if (error) return err(error, 'cancelOrderWithRefund');
+    if (!data?.success) return err({ message: data?.error ?? 'Cancel failed' }, 'cancelOrderWithRefund');
+    return ok(data);
+  } catch (e) {
+    return err(e, 'cancelOrderWithRefund');
+  }
 }
 
 export async function rateOrder({ orderId, vendorRating, riderRating, comment }) {
@@ -529,41 +548,42 @@ export const OrderAPI = {
   getDetail:     getOrderById,
   advanceStatus: updateOrderStatus,
   rate:          rateOrder,
+  cancel:        cancelOrderWithRefund,  // atomic cancel + auto-refund
 };
 
 export const PaymentAPI = {
+  /**
+   * Deduct from wallet via pay_from_wallet() security-definer RPC.
+   * This is the ONLY permitted way to debit a wallet from the frontend.
+   * Atomic single UPDATE WHERE balance >= amount; writes wallet_transactions
+   * audit row inside the same transaction.
+   */
   walletPay: async (userId, amount, orderId) => {
-    // Stub — integrate Razorpay/UPI in Phase 2
-    // For now: deduct from wallet table directly
     if (!isSupabaseConfigured) return ok({ balance: 0 });
     try {
-      const { data: wallet } = await supabase
-        .from('wallets')
-        .select('balance')
-        .eq('user_id', userId)
-        .single();
-
-      if (!wallet || wallet.balance < amount) {
-        return err({ message: 'Insufficient balance' }, 'PaymentAPI.walletPay');
-      }
-
-      const { error } = await supabase.from('wallets')
-        .update({ balance: wallet.balance - amount })
-        .eq('user_id', userId);
+      const { data, error } = await supabase.rpc('pay_from_wallet', {
+        p_user_id:  userId,
+        p_amount:   amount,
+        p_order_id: orderId ?? null,
+      });
 
       if (error) return err(error, 'PaymentAPI.walletPay');
 
-      await supabase.from('wallet_transactions').insert({
-        wallet_id:   wallet.id,
-        user_id:     userId,
-        type:        'debit',
-        amount,
-        description: `Order payment`,
-        reference:   orderId,
-        status:      'completed',
-      });
+      if (!data?.success) {
+        if (data?.insufficient_funds) {
+          return err(
+            {
+              message:            `Insufficient wallet balance. Available: ₹${(data.balance ?? 0).toFixed(2)}`,
+              insufficient_funds: true,
+              balance:            data.balance,
+            },
+            'PaymentAPI.walletPay'
+          );
+        }
+        return err({ message: data?.error ?? 'Wallet payment failed' }, 'PaymentAPI.walletPay');
+      }
 
-      return ok({ balance: wallet.balance - amount });
+      return ok({ balance: data.new_balance });
     } catch (e) {
       return err(e, 'PaymentAPI.walletPay');
     }
