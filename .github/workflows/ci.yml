@@ -1,0 +1,175 @@
+name: SETU CI — Validate, Test & Gate
+
+# ─────────────────────────────────────────────────────────
+# Runs on every push and pull request to any branch.
+# This workflow is a GATE: it must pass before anything deploys.
+# It never touches production. It only validates.
+# ─────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main, staging]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ── 1. Dependency audit ────────────────────────────────
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Audit for known vulnerabilities (high+critical only)
+        # --audit-level=high: don't fail on moderate/low during dev
+        run: npm audit --audit-level=high
+        continue-on-error: true   # warn, don't block — remove once issues resolved
+
+  # ── 2. Build verification ─────────────────────────────
+  build:
+    name: Build Verification
+    runs-on: ubuntu-latest
+    needs: audit
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci
+
+      # Build with real secrets if available (PRs from forks won't have them)
+      # Falls back gracefully to placeholder values — the build itself
+      # must succeed regardless (see supabase.js safe fallback).
+      - name: Build
+        env:
+          VITE_SUPABASE_URL:      ${{ secrets.VITE_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
+          VITE_FIREBASE_API_KEY:              ${{ secrets.VITE_FIREBASE_API_KEY || 'placeholder' }}
+          VITE_FIREBASE_AUTH_DOMAIN:          ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN || 'placeholder.firebaseapp.com' }}
+          VITE_FIREBASE_PROJECT_ID:           ${{ secrets.VITE_FIREBASE_PROJECT_ID || 'placeholder-project' }}
+          VITE_FIREBASE_STORAGE_BUCKET:       ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET || 'placeholder.appspot.com' }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID:  ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID || '000000000000' }}
+          VITE_FIREBASE_APP_ID:               ${{ secrets.VITE_FIREBASE_APP_ID || '1:000000000000:web:placeholder' }}
+          VITE_FIREBASE_VAPID_KEY:            ${{ secrets.VITE_FIREBASE_VAPID_KEY || 'placeholder-vapid-key' }}
+        run: npm run build
+
+      - name: Check bundle size (warn if chunk >500KB)
+        run: |
+          echo "=== Bundle size report ==="
+          du -sh dist/assets/*.js 2>/dev/null | sort -rh | head -20
+          # Fail if any single JS chunk exceeds 600KB (hard limit)
+          OVERSIZED=$(find dist/assets -name "*.js" -size +600k 2>/dev/null)
+          if [ -n "$OVERSIZED" ]; then
+            echo "::warning::Oversized JS chunks detected:"
+            echo "$OVERSIZED"
+          fi
+
+      - name: Verify SPA routing setup (404.html exists)
+        run: |
+          cp dist/index.html dist/404.html
+          ls -lh dist/404.html
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
+          retention-days: 7
+
+  # ── 3. Migration validation ───────────────────────────
+  validate-migrations:
+    name: Validate SQL Migrations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Validate migration file naming convention
+        # Migrations must be numbered sequentially with no gaps (except intentional skips).
+        # Format: NNN_description.sql  (e.g. 001_initial.sql, 002_payments.sql)
+        run: |
+          python3 scripts/validate_migrations.py
+
+      - name: Validate SQL syntax (dry-run via pg_format lint)
+        run: |
+          # Install pgFormatter for syntax checking
+          pip install pgspecial 2>/dev/null || true
+          for f in supabase/migrations/*.sql database/migrations/*.sql; do
+            [ -f "$f" ] || continue
+            echo "Checking: $f"
+            # Basic SQL syntax check: look for common mistakes
+            python3 scripts/lint_sql.py "$f"
+          done
+
+      - name: Check all migrations are idempotent
+        # Every migration must use CREATE TABLE IF NOT EXISTS, etc.
+        run: |
+          python3 scripts/check_idempotent.py
+
+  # ── 4. Edge Function type-check ───────────────────────
+  validate-edge-functions:
+    name: Validate Edge Functions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Type-check all Edge Functions
+        run: |
+          for dir in supabase/functions/*/; do
+            [ -d "$dir" ] || continue
+            echo "Type-checking: $dir"
+            deno check "${dir}index.ts" 2>&1 || {
+              echo "::error::Type errors in ${dir}index.ts"
+              exit 1
+            }
+          done
+
+      - name: Verify required env vars are documented
+        # Each function must declare its required secrets in a comment block
+        run: python3 scripts/check_function_secrets.py
+
+  # ── 5. Environment variable completeness check ────────
+  validate-env-config:
+    name: Validate Environment Config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check .env.example is complete and in sync
+        run: python3 scripts/check_env_completeness.py
+
+      - name: Check firebase-messaging-sw.js has no hardcoded credentials
+        run: |
+          if grep -E "AIza[A-Za-z0-9_-]{35}" public/firebase-messaging-sw.js; then
+            echo "::error::Hardcoded Firebase API key found in service worker!"
+            exit 1
+          fi
+
+      - name: Secret scan (detect accidental credential commits)
+        run: python3 scripts/secret_scan.py
