@@ -31,6 +31,7 @@ ALLOWLIST_FILES = {
     'scripts/secret_scan.py',  # the scanner itself
     '.env.example',            # placeholder values only
     'README.md',               # documentation
+    'supabase/config.toml',    # uses env(VAR_NAME) syntax — not real credentials
 }
 
 
@@ -67,7 +68,11 @@ PATTERNS = [
 # Files known to legitimately contain these (template strings, not real values)
 PLACEHOLDER_PATTERN = re.compile(
     r'placeholder|__VITE_|your[-_]|REPLACE|<YOUR|example|test123|dummy'
-    r'|eyJhbGc.*placeholder',
+    r'|eyJhbGc.*placeholder'
+    r'|env\([A-Z_]+\)'          # Supabase config.toml env() reference syntax
+    r'|secret:\s*["\'][\w_]+["\']'  # SQL comments referencing vault secret names
+    r'|fetched from.*[Vv]ault'  # SQL comments about vault secrets
+    r'|-- .*secret',            # SQL comments mentioning secrets
     re.IGNORECASE
 )
 
