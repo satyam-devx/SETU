@@ -10,6 +10,13 @@
 //                  show in-app toast without prop-drilling;
 //                  channel name suffix on useRealtimeOrder to
 //                  avoid collision with useRealtimeOrders
+//
+// FIX: handlePayload is stored in a ref (handlePayloadRef) so the
+//      subscription useEffect never needs it as a dependency.
+//      This prevents the "cannot add postgres_changes callbacks
+//      after subscribe()" error caused by React StrictMode running
+//      effects twice — the channel is created exactly once per
+//      uid/role change, never re-subscribed mid-lifecycle.
 // ═══════════════════════════════════════════════════════════
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -55,7 +62,13 @@ export function useRealtimeOrders(role, entityId = null) {
   }, [state.orders, role, uid]);
 
   // ── Realtime payload handler ──────────────────────────────
-  const handlePayload = useCallback((payload) => {
+  // Stored in a ref so the subscription effect never needs it as a dep.
+  // This is the key fix: if handlePayload were in the effect's dep array,
+  // React StrictMode's double-invoke would recreate the channel while the
+  // old one is still subscribed, triggering the "cannot add postgres_changes
+  // callbacks after subscribe()" error.
+  const handlePayloadRef = useRef(null);
+  handlePayloadRef.current = useCallback((payload) => {
     if (payload.eventType === 'INSERT' && payload.new) {
       dispatch({ type: 'ORDER_CREATED',       payload: { order: payload.new } });
     } else if (payload.eventType === 'UPDATE' && payload.new) {
@@ -98,9 +111,11 @@ export function useRealtimeOrders(role, entityId = null) {
   }, [user, role, uid]);
 
   // ── 2. Realtime subscription ──────────────────────────────
+  // Deps: only [user, role, uid] — NOT handlePayload.
+  // The ref pattern above ensures the latest handler is always called
+  // without the effect needing to re-run when dispatch changes.
   useEffect(() => {
     if (!isSupabaseConfigured || !user || !uid) {
-      // Not configured or not logged in — unblock UI immediately
       setFetchDone(true);
       setSubReady(true);
       return;
@@ -113,32 +128,35 @@ export function useRealtimeOrders(role, entityId = null) {
     else if (role === 'vendor')   filter = `vendor_id=eq.${uid}`;
     else if (role === 'rider')    filter = `rider_id=eq.${uid}`;
 
-    channelRef.current = supabase
+    const channel = supabase
       .channel(channelName)
       .on('postgres_changes', {
         event:  '*',
         schema: 'public',
         table:  'orders',
         ...(filter ? { filter } : {}),
-      }, handlePayload)
+      }, (payload) => {
+        // Always call the latest version of the handler via ref
+        handlePayloadRef.current?.(payload);
+      })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           setSubReady(true);
           console.debug(`[SETU Realtime] Subscribed: ${channelName}`);
         }
         if (status === 'CHANNEL_ERROR') {
-          setSubReady(true); // unblock UI even on error
+          setSubReady(true);
           console.warn(`[SETU Realtime] Channel error: ${channelName}`);
         }
       });
 
+    channelRef.current = channel;
+
     return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
+      supabase.removeChannel(channel);
+      channelRef.current = null;
     };
-  }, [user, role, uid, handlePayload]);
+  }, [user, role, uid]); // ← no handlePayload here — that's the fix
 
   return { orders, isLoading };
 }
@@ -156,14 +174,15 @@ export function useRealtimeOrders(role, entityId = null) {
  *     window.addEventListener('setu:notification', (e) => showToast(e.detail))
  */
 export function useRealtimeNotifications() {
-  const { user }    = useAuth();
+  const { user }     = useAuth();
   const { dispatch } = useStore();
-  const channelRef  = useRef(null);
+  const dispatchRef  = useRef(dispatch);
+  dispatchRef.current = dispatch;
 
   useEffect(() => {
     if (!isSupabaseConfigured || !user) return;
 
-    channelRef.current = supabase
+    const channel = supabase
       .channel(`notifications-${user.id}`)
       .on('postgres_changes', {
         event:  'INSERT',
@@ -174,10 +193,8 @@ export function useRealtimeNotifications() {
         if (!payload.new) return;
         const notification = payload.new;
 
-        // 1. Global store — bell badge + notification list
-        dispatch({ type: 'NOTIFICATION_RECEIVED', payload: { notification } });
+        dispatchRef.current({ type: 'NOTIFICATION_RECEIVED', payload: { notification } });
 
-        // 2. DOM CustomEvent — CustomerHome listens and shows toast
         if (typeof window !== 'undefined') {
           window.dispatchEvent(
             new CustomEvent('setu:notification', {
@@ -198,12 +215,9 @@ export function useRealtimeNotifications() {
       });
 
     return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
+      supabase.removeChannel(channel);
     };
-  }, [user, dispatch]);
+  }, [user]); // ← dispatch removed from deps, accessed via ref
 }
 
 // ── useRealtimeOrder (single order) ──────────────────────
@@ -219,12 +233,13 @@ export function useRealtimeNotifications() {
  */
 export function useRealtimeOrder(orderId) {
   const { dispatch } = useStore();
-  const channelRef   = useRef(null);
+  const dispatchRef  = useRef(dispatch);
+  dispatchRef.current = dispatch;
 
   useEffect(() => {
     if (!isSupabaseConfigured || !orderId) return;
 
-    channelRef.current = supabase
+    const channel = supabase
       .channel(`order-detail-${orderId}`)
       .on('postgres_changes', {
         event:  'UPDATE',
@@ -233,7 +248,7 @@ export function useRealtimeOrder(orderId) {
         filter: `id=eq.${orderId}`,
       }, (payload) => {
         if (payload.new) {
-          dispatch({
+          dispatchRef.current({
             type:    'UPDATE_ORDER_STATUS',
             payload: { orderId, updates: payload.new },
           });
@@ -246,10 +261,7 @@ export function useRealtimeOrder(orderId) {
       });
 
     return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
+      supabase.removeChannel(channel);
     };
-  }, [orderId, dispatch]);
+  }, [orderId]); // ← dispatch removed from deps, accessed via ref
 }
