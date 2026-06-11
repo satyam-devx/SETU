@@ -83,74 +83,63 @@ export default function CustomerProfile() {
         }
       />
 
-      {/* ── Profile card ── */}
+      {/* Profile card */}
       <div className="px-4 py-4">
         <Card className="p-4 border-border">
           <div className="flex items-center gap-4">
-            {/* Avatar with camera button */}
-            <div className="relative shrink-0">
-              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary">
-                {displayInitials}
+            <div className="relative group">
+              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+                <User className="w-8 h-8 text-primary" />
               </div>
               <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-card rounded-full border-2 border-border flex items-center justify-center cursor-pointer hover:bg-muted">
                 <Camera className="w-3 h-3 text-muted-foreground" />
               </div>
             </div>
-
-            {/* Info */}
-            <div className="flex-1 min-w-0">
-              {editing ? (
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleSaveName()}
-                    className="input-field h-9 text-sm flex-1"
-                    autoFocus
-                    aria-label="Edit name"
-                    maxLength={60}
-                  />
-                  <button
-                    onClick={handleSaveName}
-                    disabled={saving}
-                    className="btn-primary h-9 px-3 text-sm min-w-[56px]"
-                  >
-                    {saving ? '…' : 'Save'}
-                  </button>
-                </div>
-              ) : (
-                <h2 className="font-bold text-lg leading-tight">{profile?.name || 'SETU User'}</h2>
-              )}
-
-              {phone && (
-                <p className="text-sm text-muted-foreground mt-0.5">{formatPhone(phone)}</p>
-              )}
-
-              <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
-                  SETU Score: {setuScore}
-                </span>
-                {profile?.village && (
-                  <span className="text-xs text-muted-foreground">{profile.village}</span>
-                )}
+            <div className="min-w-0">
+              <h2 className="font-bold text-lg">{profile.fullName}</h2>
+              <p className="text-sm text-muted-foreground">{profile.phone}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">SETU Score: 720</span>
+                <span className="text-xs text-muted-foreground">{profile.village}</span>
               </div>
             </div>
           </div>
-
-          {saved && (
-            <div className="flex items-center gap-2 text-green-600 text-xs mt-3" role="status">
-              <CheckCircle className="w-3.5 h-3.5" /> Profile updated successfully
-            </div>
-          )}
-
-          {profile?.is_verified && (
-            <div className="flex items-center gap-1.5 mt-3 text-xs text-green-600 font-medium">
-              <Shield className="w-3.5 h-3.5" /> Verified SETU Member
-            </div>
-          )}
         </Card>
       </div>
+
+      {/* Edit Profile Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Edit Profile</DialogTitle></DialogHeader>
+          <div className="space-y-3 mt-2">
+            <div>
+              <Label className="text-xs mb-1 block">Full Name</Label>
+              <Input value={profile.fullName} onChange={e => setProfile(p => ({ ...p, fullName: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-xs mb-1 block">Phone Number</Label>
+              <Input value={profile.phone} onChange={e => setProfile(p => ({ ...p, phone: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-xs mb-1 block">Village</Label>
+              <Input value={profile.village} onChange={e => setProfile(p => ({ ...p, village: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs mb-1 block">District</Label>
+                <Input value={profile.district} onChange={e => setProfile(p => ({ ...p, district: e.target.value }))} />
+              </div>
+              <div>
+                <Label className="text-xs mb-1 block">State</Label>
+                <Input value={profile.state} onChange={e => setProfile(p => ({ ...p, state: e.target.value }))} />
+              </div>
+            </div>
+            <Button className="w-full gap-2" onClick={() => setEditOpen(false)}>
+              <Check className="w-4 h-4" /> Save Changes
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Quick stats ── */}
       <div className="px-4 mb-4 grid grid-cols-3 gap-2">
