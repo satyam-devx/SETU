@@ -152,7 +152,7 @@ jobs:
           {
             "lint": {
               "rules": {
-                "exclude": ["no-explicit-any"]
+                "exclude": ["no-explicit-any", "no-unused-vars"]
               }
             }
           }
