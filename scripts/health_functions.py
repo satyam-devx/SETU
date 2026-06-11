@@ -10,7 +10,8 @@ if not SUPABASE_URL:
     sys.exit(0)
 
 FUNCTIONS = ['ai-assistant', 'create-razorpay-order', 'kyc-verify',
-             'razorpay-webhook', 'send-fcm-notification', 'verify-aadhaar']
+             'razorpay-webhook', 'send-fcm-notification', 'verify-aadhaar',
+             'vendor-payout']
 
 def probe(fn):
     url = f"{SUPABASE_URL.rstrip('/')}/functions/v1/{fn}"
