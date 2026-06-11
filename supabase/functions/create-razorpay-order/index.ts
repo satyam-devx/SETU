@@ -1,3 +1,10 @@
+/**
+ * create-razorpay-order
+ *
+ * Required Supabase Vault Secrets:
+ *   RAZORPAY_KEY_ID     — Razorpay API key ID (rzp_live_... or rzp_test_...)
+ *   RAZORPAY_KEY_SECRET — Razorpay API secret key
+ */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
