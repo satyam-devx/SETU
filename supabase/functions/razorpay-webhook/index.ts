@@ -22,6 +22,13 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import * as crypto from "https://deno.land/std@0.168.0/node/crypto.ts";
 
+/**
+ * razorpay-webhook
+ *
+ * Required Supabase Vault Secrets:
+ *   RAZORPAY_WEBHOOK_SECRET — HMAC-SHA256 webhook verification secret
+ */
+
 const WEBHOOK_SECRET = Deno.env.get("RAZORPAY_WEBHOOK_SECRET");
 
 const CORS_HEADERS = {
