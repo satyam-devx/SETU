@@ -146,11 +146,12 @@ jobs:
                     | sed 's|supabase/functions/||' \
                     | cut -d'/' -f1 \
                     | sort -u \
-                    | tr '\n' ' ')
+                    | tr '\n' ' ' \
+                    | xargs)
           if [ -z "$CHANGED" ]; then
-            # No changes — check if this is first deploy
-            FUNCTIONS=$(ls supabase/functions/)
-            echo "No function changes detected — checking if initial deploy needed."
+            echo "No function changes detected — deploying all."
+            # Use space-separated single line — newlines break GITHUB_OUTPUT
+            FUNCTIONS=$(ls supabase/functions/ | tr '\n' ' ' | xargs)
             echo "functions=$FUNCTIONS" >> "$GITHUB_OUTPUT"
             echo "deploy_all=true" >> "$GITHUB_OUTPUT"
           else
