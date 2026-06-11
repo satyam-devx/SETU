@@ -1,0 +1,1 @@
+import{j as a,a9 as n,Y as r,aa as s}from"./index-BiiJSYDV.js";import"./react-vendor-CfeuytUm.js";function o({status:e,className:t}){return e?a.jsx("span",{className:r("inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",s(e),t),children:n(e)}):null}export{o as S};
