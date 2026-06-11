@@ -60,7 +60,11 @@ const CustomerCheckout      = lazy(() => import('@/pages/customer/CustomerChecko
 const CustomerVendors       = lazy(() => import('@/pages/customer/CustomerVendors'));
 const CustomerAddresses     = lazy(() => import('@/pages/customer/CustomerAddresses'));
 const CustomerReferral      = lazy(() => import('@/pages/customer/CustomerReferral'));
-const CustomerReorder       = lazy(() => import('@/pages/customer/CustomerReorder'));
+const CustomerReorder           = lazy(() => import('@/pages/customer/CustomerReorder'));
+const CustomerDataPrivacy       = lazy(() => import('@/pages/customer/CustomerDataPrivacy'));
+const CustomerPrivacyPolicy     = lazy(() => import('@/pages/customer/CustomerPrivacyPolicy'));
+const CustomerTerms             = lazy(() => import('@/pages/customer/CustomerTerms'));
+const CustomerAccountManagement = lazy(() => import('@/pages/customer/CustomerAccountManagement'));
 
 // ── Lazy: Vendor portal ───────────────────────────────────
 const VendorLayout    = lazy(() => import('@/pages/vendor/VendorLayout'));
@@ -246,6 +250,10 @@ function App() {
                 <Route path="addresses"              element={<Suspense fallback={<PortalFallback />}><CustomerAddresses /></Suspense>} />
                 <Route path="referral"               element={<Suspense fallback={<PortalFallback />}><CustomerReferral /></Suspense>} />
                 <Route path="reorder/:orderId"       element={<Suspense fallback={<PortalFallback />}><CustomerReorder /></Suspense>} />
+                <Route path="data-privacy"           element={<Suspense fallback={<PortalFallback />}><CustomerDataPrivacy /></Suspense>} />
+                <Route path="privacy-policy"         element={<Suspense fallback={<PortalFallback />}><CustomerPrivacyPolicy /></Suspense>} />
+                <Route path="terms"                  element={<Suspense fallback={<PortalFallback />}><CustomerTerms /></Suspense>} />
+                <Route path="account"                element={<Suspense fallback={<PortalFallback />}><CustomerAccountManagement /></Suspense>} />
               </Route>
 
               {/* ── Vendor portal ── */}
