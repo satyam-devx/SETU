@@ -9,12 +9,12 @@ importScripts('https://www.gstatic.com/firebasejs/9.22.2/firebase-messaging-comp
 
 // Public config — replace with your Firebase Console values
 const firebaseConfig = self.__FIREBASE_CONFIG__ || {
-  apiKey:            '__VITE_FIREBASE_API_KEY__',
-  authDomain:        '__VITE_FIREBASE_AUTH_DOMAIN__',
-  projectId:         '__VITE_FIREBASE_PROJECT_ID__',
-  storageBucket:     '__VITE_FIREBASE_STORAGE_BUCKET__',
-  messagingSenderId: '__VITE_FIREBASE_MESSAGING_SENDER_ID__',
-  appId:             '__VITE_FIREBASE_APP_ID__',
+  apiKey:            'AIzaSyAA1wco51UV8cYNnAxA-b8qqu710Y8OL_s',
+  authDomain:        'setu-rural-commerce-os.firebaseapp.com',
+  projectId:         'setu-rural-commerce-os',
+  storageBucket:     'setu-rural-commerce-os.firebasestorage.app',
+  messagingSenderId: '998807137849',
+  appId:             '1:998807137849:web:2be69239f9e5448d3b27e8',
 };
 
 firebase.initializeApp(firebaseConfig);
