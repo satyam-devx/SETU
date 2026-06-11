@@ -28,7 +28,6 @@ import { useDataFetch } from '@/hooks/useDataFetch';
 import {
   getCategories, getVendors, getProducts, getSchemes,
 } from '@/lib/api';
-import { useRealtimeOrders, useRealtimeNotifications } from '@/hooks/useRealtimeOrders';
 import { useFcmToken } from '@/hooks/useFcmToken';
 import {
   BannerSkeleton, CategorySkeleton, VendorCardSkeleton, ProductCardSkeleton,
@@ -180,11 +179,9 @@ export default function CustomerHome() {
   const [query, setQuery]           = useState('');
   const [bannerIdx, setBannerIdx]   = useState(0);
 
-  // ── Realtime: order updates for this customer ──────────
-  useRealtimeOrders('customer');
-
-  // ── Realtime: incoming notifications → store + DOM event
-  useRealtimeNotifications();
+  // Realtime subscriptions are handled by CustomerLayout (parent).
+  // Do not add useRealtimeOrders or useRealtimeNotifications here —
+  // duplicate channels on the same name cause a Supabase error.
 
   // ── FCM: register / refresh push token silently ────────
   useFcmToken();
