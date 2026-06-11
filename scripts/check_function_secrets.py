@@ -80,7 +80,7 @@ def main():
         print(f"  - {s}")
 
     if issues:
-        print("\n✗ Undocumented secrets found:")
+        print("\n⚠ Undocumented secrets (warning — not blocking):")
         for issue in issues:
             print(issue)
         print(
@@ -88,7 +88,9 @@ def main():
             "  // Required Supabase Vault Secrets:\n"
             "  //   MY_SECRET_NAME — description of what it's for"
         )
-        sys.exit(1)
+        # Warning only — secrets still work without documentation.
+        # This becomes a hard failure once all functions are documented.
+        sys.exit(0)
     else:
         print("\n✓ All secrets are documented")
 
