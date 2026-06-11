@@ -64,13 +64,32 @@ jobs:
           SUPABASE_DB_PASSWORD:  ${{ secrets.SUPABASE_DB_PASSWORD }}
           SUPABASE_PROJECT_REF:  ${{ secrets.SUPABASE_PROJECT_REF }}
         run: |
-          echo "=== Applying migrations ==="
-          # Capture both stdout and stderr — supabase CLI writes status to stderr
+          echo "=== Checking migration status ==="
+          STATUS=$(supabase migration list 2>&1)
+          echo "$STATUS"
+
+          # Auto-repair remote-only migrations.
+          # These are versions that exist on the remote DB but have no local file —
+          # applied directly via SQL Editor or the bootstrap step.
+          # We mark them as "applied" so the CLI considers history in sync,
+          # then proceed to push any genuinely new local-only migrations.
+          REMOTE_ONLY=$(echo "$STATUS" | grep -E "[0-9]{14}" | grep -v "\bLOCAL\b" || true)
+
+          if [ -n "$REMOTE_ONLY" ]; then
+            echo ""
+            echo "=== Marking remote-only migrations as applied ==="
+            echo "$REMOTE_ONLY" | grep -oE "[0-9]{14}" | while read -r VERSION; do
+              echo "  Repairing: $VERSION"
+              supabase migration repair --status applied "$VERSION" 2>&1 || true
+            done
+          fi
+
+          echo ""
+          echo "=== Pushing new local migrations ==="
           OUTPUT=$(supabase db push 2>&1) || PUSH_EXIT=$?
           echo "$OUTPUT"
 
-          # Treat these as "nothing to do" — not a failure
-          NO_PENDING=$(echo "$OUTPUT" | grep -iE             "no migrations|already up to date|nothing to migrate|0 migrations"             || true)
+          NO_PENDING=$(echo "$OUTPUT" | grep -iE "no migrations|already up to date|nothing to migrate|0 migrations" || true)
 
           if [ -n "$NO_PENDING" ] || [ -z "$OUTPUT" ]; then
             echo "applied=none" >> "$GITHUB_OUTPUT"
@@ -82,6 +101,7 @@ jobs:
             echo "applied=yes" >> "$GITHUB_OUTPUT"
             echo "Migrations applied successfully."
           fi
+
 
       - name: Validate post-migration schema health
         env:
