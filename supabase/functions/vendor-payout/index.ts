@@ -26,6 +26,15 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+/**
+ * vendor-payout
+ *
+ * Required Supabase Vault Secrets:
+ *   RAZORPAY_KEY_ID          — Razorpay API key ID
+ *   RAZORPAY_KEY_SECRET      — Razorpay API secret key
+ *   RAZORPAY_ACCOUNT_NUMBER  — Razorpay linked account number for payouts
+ */
+
 const RAZORPAY_KEY_ID     = Deno.env.get("RAZORPAY_KEY_ID");
 const RAZORPAY_KEY_SECRET = Deno.env.get("RAZORPAY_KEY_SECRET");
 
