@@ -65,12 +65,19 @@ jobs:
           SUPABASE_PROJECT_REF:  ${{ secrets.SUPABASE_PROJECT_REF }}
         run: |
           echo "=== Applying migrations ==="
-          # supabase db push applies all pending migrations in order
-          OUTPUT=$(supabase db push 2>&1)
+          # Capture both stdout and stderr — supabase CLI writes status to stderr
+          OUTPUT=$(supabase db push 2>&1) || PUSH_EXIT=$?
           echo "$OUTPUT"
-          if echo "$OUTPUT" | grep -q "No migrations to apply"; then
+
+          # Treat these as "nothing to do" — not a failure
+          NO_PENDING=$(echo "$OUTPUT" | grep -iE             "no migrations|already up to date|nothing to migrate|0 migrations"             || true)
+
+          if [ -n "$NO_PENDING" ] || [ -z "$OUTPUT" ]; then
             echo "applied=none" >> "$GITHUB_OUTPUT"
-            echo "No new migrations to apply."
+            echo "No new migrations — database is up to date."
+          elif [ "${PUSH_EXIT:-0}" -ne 0 ]; then
+            echo "::error::supabase db push failed. Output above."
+            exit 1
           else
             echo "applied=yes" >> "$GITHUB_OUTPUT"
             echo "Migrations applied successfully."
