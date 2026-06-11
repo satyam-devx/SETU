@@ -99,6 +99,14 @@ TESTS = [
         'expect_status': [200, 204],
     },
     {
+        'function': 'vendor-payout',
+        'description': 'OPTIONS preflight',
+        'method': 'OPTIONS',
+        'headers': {'Origin': 'https://example.com'},
+        'body': None,
+        'expect_status': [200, 204],
+    },
+    {
         'function': 'razorpay-webhook',
         'description': 'POST without signature returns 400',
         'method': 'POST',
