@@ -68,19 +68,21 @@ jobs:
           STATUS=$(supabase migration list 2>&1)
           echo "$STATUS"
 
-          # Auto-repair remote-only migrations.
-          # These are versions that exist on the remote DB but have no local file —
-          # applied directly via SQL Editor or the bootstrap step.
-          # We mark them as "applied" so the CLI considers history in sync,
-          # then proceed to push any genuinely new local-only migrations.
-          REMOTE_ONLY=$(echo "$STATUS" | grep -E "[0-9]{14}" | grep -v "\bLOCAL\b" || true)
+          # Detect versions that exist on remote but have NO local file.
+          # `migration repair --status applied` requires the local file to exist.
+          # `migration repair --status reverted` marks them as "skip this" — correct
+          # for versions applied directly via SQL Editor that we don't track locally.
+          #
+          # Parse the migration list table: lines with remote version but blank local column
+          # look like: "                  | 20260608093952 | ..."
+          REMOTE_ONLY=$(echo "$STATUS" | grep -E "^[[:space:]]+\|[[:space:]]+[0-9]{14}" | grep -oE "[0-9]{14}" || true)
 
           if [ -n "$REMOTE_ONLY" ]; then
             echo ""
-            echo "=== Marking remote-only migrations as applied ==="
-            echo "$REMOTE_ONLY" | grep -oE "[0-9]{14}" | while read -r VERSION; do
-              echo "  Repairing: $VERSION"
-              supabase migration repair --status applied "$VERSION" 2>&1 || true
+            echo "=== Marking remote-only migrations as reverted (no local file) ==="
+            for VERSION in $REMOTE_ONLY; do
+              echo "  Reverting: $VERSION"
+              supabase migration repair --status reverted "$VERSION" 2>&1 || true
             done
           fi
 
