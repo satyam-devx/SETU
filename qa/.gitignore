@@ -1,0 +1,19 @@
+# QA Pipeline — git-ignore
+
+# Generated reports (rebuilt every run)
+reports/
+
+# Playwright artifacts
+test-results/
+playwright-report/
+
+# Node
+node_modules/
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db

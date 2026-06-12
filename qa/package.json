@@ -1,0 +1,41 @@
+{
+  "name": "setu-qa-pipeline",
+  "version": "1.0.0",
+  "description": "SETU Platform — Automated QA & Security Pipeline",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test":              "vitest run",
+    "test:watch":        "vitest",
+    "test:ui":           "vitest --ui",
+    "test:coverage":     "vitest run --coverage",
+    "test:unit":         "vitest run tests/unit",
+    "test:integration":  "vitest run tests/integration",
+    "test:e2e":          "playwright test",
+    "test:e2e:ui":       "playwright test --ui",
+    "test:e2e:headed":   "playwright test --headed",
+    "test:security":     "node scripts/run-security-suite.js",
+    "test:a11y":         "node scripts/run-a11y-suite.js",
+    "test:perf":         "node scripts/run-perf-suite.js",
+    "test:all":          "npm run test:coverage && npm run test:e2e && npm run test:security && npm run test:a11y && npm run test:perf",
+    "report":            "node scripts/generate-report.js",
+    "audit:deps":        "npm audit --json > reports/npm-audit.json || true",
+    "audit:licenses":    "npx license-checker --json > reports/licenses.json",
+    "lint:security":     "node scripts/run-semgrep.js"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@playwright/test":             "^1.44.0",
+    "@testing-library/react":       "^16.0.0",
+    "@testing-library/user-event":  "^14.5.2",
+    "@testing-library/jest-dom":    "^6.4.6",
+    "@vitest/coverage-v8":          "^1.6.0",
+    "@vitest/ui":                   "^1.6.0",
+    "axe-core":                     "^4.9.1",
+    "axe-playwright":               "^2.0.1",
+    "jsdom":                        "^24.1.0",
+    "msw":                          "^2.3.1",
+    "vitest":                       "^1.6.0",
+    "happy-dom":                    "^14.12.0"
+  }
+}
