@@ -1,0 +1,616 @@
+name: SETU QA — Automated Quality & Security Pipeline
+
+# ═══════════════════════════════════════════════════════════
+# Runs on every push and PR.
+# Gates: unit tests, integration, security, a11y.
+# After deploy (main branch): E2E + performance against live URL.
+# Uploads: HTML dashboard, Playwright traces, coverage report.
+# ═══════════════════════════════════════════════════════════
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main, staging]
+  # Allow manual trigger with optional URL override
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'URL to run E2E tests against (default: dev server)'
+        required: false
+        default: ''
+
+concurrency:
+  group: qa-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+  # QA pipeline lives in /qa subdirectory of the repo
+  QA_DIR: qa
+
+permissions:
+  contents: read
+  checks:   write        # publish test results to PR
+  pull-requests: write   # post summary comment
+
+jobs:
+
+  # ════════════════════════════════════════════════════════════
+  # JOB 1: Setup — validate, install, build
+  # ════════════════════════════════════════════════════════════
+  setup:
+    name: Setup & Build
+    runs-on: ubuntu-latest
+    outputs:
+      build_ok: ${{ steps.build.outputs.ok }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      # Install app deps
+      - name: Install app dependencies
+        run: npm ci
+
+      # Build (with placeholder env vars — CI-safe)
+      - name: Build production bundle
+        id: build
+        env:
+          VITE_SUPABASE_URL:                 ${{ secrets.VITE_SUPABASE_URL      || 'https://placeholder.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY:            ${{ secrets.VITE_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
+          VITE_FIREBASE_API_KEY:             ${{ secrets.VITE_FIREBASE_API_KEY  || 'placeholder' }}
+          VITE_FIREBASE_AUTH_DOMAIN:         ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN         || 'placeholder.firebaseapp.com' }}
+          VITE_FIREBASE_PROJECT_ID:          ${{ secrets.VITE_FIREBASE_PROJECT_ID          || 'placeholder-project' }}
+          VITE_FIREBASE_STORAGE_BUCKET:      ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET      || 'placeholder.appspot.com' }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID || '000000000000' }}
+          VITE_FIREBASE_APP_ID:              ${{ secrets.VITE_FIREBASE_APP_ID              || '1:000000000000:web:placeholder' }}
+          VITE_FIREBASE_VAPID_KEY:           ${{ secrets.VITE_FIREBASE_VAPID_KEY           || 'placeholder-vapid' }}
+          VITE_MAPBOX_TOKEN:                 ${{ secrets.VITE_MAPBOX_TOKEN                 || 'pk.placeholder' }}
+          VITE_RAZORPAY_KEY_ID:              ${{ secrets.VITE_RAZORPAY_KEY_ID              || 'rzp_test_placeholder' }}
+        run: |
+          npm run build
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+      # Upload dist for downstream jobs
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
+          retention-days: 3
+
+      # Install QA suite deps
+      - name: Install QA pipeline dependencies
+        working-directory: ${{ env.QA_DIR }}
+        run: npm ci
+
+      # Cache Playwright browsers
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('qa/package-lock.json') }}
+
+      - name: Install Playwright browsers
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ env.QA_DIR }}
+        run: npx playwright install --with-deps chromium firefox
+
+
+  # ════════════════════════════════════════════════════════════
+  # JOB 2: Unit + Integration tests (Vitest)
+  # ════════════════════════════════════════════════════════════
+  unit-tests:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    needs: setup
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install app deps
+        run: npm ci
+
+      - name: Install QA deps
+        working-directory: ${{ env.QA_DIR }}
+        run: npm ci
+
+      - name: Run unit & integration tests with coverage
+        working-directory: ${{ env.QA_DIR }}
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ github.sha }}
+          path: ${{ env.QA_DIR }}/reports/coverage/
+          retention-days: 14
+
+      - name: Upload Vitest results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vitest-results-${{ github.sha }}
+          path: ${{ env.QA_DIR }}/reports/vitest-results.json
+          retention-days: 7
+
+      # Publish test results as PR check
+      - name: Publish unit test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always() && github.event_name == 'pull_request'
+        with:
+          files: ${{ env.QA_DIR }}/reports/vitest-results.json
+          comment_title: '🧪 Unit & Integration Test Results'
+          check_name: 'Unit Tests'
+
+
+  # ════════════════════════════════════════════════════════════
+  # JOB 3: Security audit
+  # ════════════════════════════════════════════════════════════
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    needs: setup
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install app deps
+        run: npm ci
+
+      - name: Install QA deps
+        working-directory: ${{ env.QA_DIR }}
+        run: npm ci
+
+      # npm audit
+      - name: Run npm dependency audit
+        run: |
+          npm audit --json > ${{ env.QA_DIR }}/reports/npm-audit.json || true
+          # Show human-readable output
+          npm audit --audit-level=high || true
+
+      # Existing secret scan (from SETU's own scripts)
+      - name: Run secret scan
+        run: python3 scripts/secret_scan.py
+
+      # Full security suite
+      - name: Run security suite
+        working-directory: ${{ env.QA_DIR }}
+        run: node scripts/run-security-suite.js
+
+      - name: Upload security report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-report-${{ github.sha }}
+          path: |
+            ${{ env.QA_DIR }}/reports/security-report.json
+            ${{ env.QA_DIR }}/reports/npm-audit.json
+          retention-days: 30
+
+      # Annotate PR with security findings
+      - name: Comment security summary on PR
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('${{ env.QA_DIR }}/reports/security-report.json', 'utf8'));
+            const failures = report.checks.filter(c => c.status === 'FAIL' && c.critical);
+            if (failures.length === 0) return;
+            const body = `## 🔒 Security Audit Failures\n\n` +
+              failures.map(f => `- **${f.name}**: ${f.details || 'check failed'}`).join('\n');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
+
+  # ════════════════════════════════════════════════════════════
+  # JOB 4: E2E tests (Playwright) — dev server
+  # ════════════════════════════════════════════════════════════
+  e2e-tests:
+    name: E2E Tests (Playwright)
+    runs-on: ubuntu-latest
+    needs: [unit-tests, security]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install app deps
+        run: npm ci
+
+      - name: Install QA deps
+        working-directory: ${{ env.QA_DIR }}
+        run: npm ci
+
+      - name: Restore Playwright browsers from cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('qa/package-lock.json') }}
+
+      - name: Install Playwright browsers (if cache miss)
+        working-directory: ${{ env.QA_DIR }}
+        run: npx playwright install --with-deps chromium
+
+      # Run E2E against Vite dev server (webServer config in playwright.config.js handles start)
+      - name: Run E2E tests
+        working-directory: ${{ env.QA_DIR }}
+        env:
+          VITE_SUPABASE_URL:                 ''
+          VITE_SUPABASE_ANON_KEY:            ''
+          VITE_FIREBASE_API_KEY:             'placeholder'
+          VITE_FIREBASE_AUTH_DOMAIN:         'placeholder.firebaseapp.com'
+          VITE_FIREBASE_PROJECT_ID:          'placeholder-project'
+          VITE_FIREBASE_STORAGE_BUCKET:      'placeholder.appspot.com'
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+          VITE_FIREBASE_APP_ID:              '1:000000000000:web:placeholder'
+          VITE_FIREBASE_VAPID_KEY:           'placeholder-vapid'
+          VITE_MAPBOX_TOKEN:                 'pk.placeholder'
+          VITE_RAZORPAY_KEY_ID:              'rzp_test_placeholder'
+          CI: 'true'
+        run: npm run test:e2e -- --project=mobile-chrome --reporter=list,json,junit
+
+      - name: Upload Playwright results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-results-${{ github.sha }}
+          path: |
+            ${{ env.QA_DIR }}/reports/playwright-html/
+            ${{ env.QA_DIR }}/reports/playwright-results.json
+            ${{ env.QA_DIR }}/reports/playwright-junit.xml
+            ${{ env.QA_DIR }}/reports/e2e-results/
+          retention-days: 14
+
+      - name: Publish E2E test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always() && github.event_name == 'pull_request'
+        with:
+          files: ${{ env.QA_DIR }}/reports/playwright-junit.xml
+          comment_title: '🎭 E2E Test Results'
+          check_name: 'E2E Tests'
+
+
+  # ════════════════════════════════════════════════════════════
+  # JOB 5: Accessibility audit
+  # ════════════════════════════════════════════════════════════
+  accessibility:
+    name: Accessibility Audit (axe-core)
+    runs-on: ubuntu-latest
+    needs: setup
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install app deps
+        run: npm ci
+
+      - name: Install QA deps
+        working-directory: ${{ env.QA_DIR }}
+        run: npm ci
+
+      - name: Restore Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('qa/package-lock.json') }}
+
+      - name: Install Playwright browsers (if cache miss)
+        working-directory: ${{ env.QA_DIR }}
+        run: npx playwright install --with-deps chromium
+
+      - name: Run a11y tests (Playwright + axe-core spec)
+        working-directory: ${{ env.QA_DIR }}
+        env:
+          VITE_SUPABASE_URL: ''
+          VITE_SUPABASE_ANON_KEY: ''
+          VITE_FIREBASE_API_KEY: 'placeholder'
+          VITE_FIREBASE_AUTH_DOMAIN: 'placeholder.firebaseapp.com'
+          VITE_FIREBASE_PROJECT_ID: 'placeholder-project'
+          VITE_FIREBASE_STORAGE_BUCKET: 'placeholder.appspot.com'
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+          VITE_FIREBASE_APP_ID: '1:000000000000:web:placeholder'
+          VITE_FIREBASE_VAPID_KEY: 'placeholder-vapid'
+          VITE_MAPBOX_TOKEN: 'pk.placeholder'
+          VITE_RAZORPAY_KEY_ID: 'rzp_test_placeholder'
+          CI: 'true'
+        run: npm run test:e2e -- --project=a11y --reporter=list,json
+
+      - name: Run a11y audit script
+        working-directory: ${{ env.QA_DIR }}
+        run: node scripts/run-a11y-suite.js || true  # don't double-fail, spec already reported
+
+      - name: Upload a11y report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: a11y-report-${{ github.sha }}
+          path: ${{ env.QA_DIR }}/reports/a11y-report.json
+          retention-days: 14
+
+
+  # ════════════════════════════════════════════════════════════
+  # JOB 6: Performance audit (bundle size + budgets)
+  # Runs after build — checks dist/ artifacts, no live server needed
+  # ════════════════════════════════════════════════════════════
+  performance:
+    name: Performance Audit
+    runs-on: ubuntu-latest
+    needs: setup
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install app deps
+        run: npm ci
+
+      - name: Install QA deps
+        working-directory: ${{ env.QA_DIR }}
+        run: npm ci
+
+      # Download the built dist
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
+
+      - name: Run performance suite (bundle analysis only in CI)
+        working-directory: ${{ env.QA_DIR }}
+        run: node scripts/run-perf-suite.js
+
+      - name: Upload performance report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-report-${{ github.sha }}
+          path: ${{ env.QA_DIR }}/reports/performance-report.json
+          retention-days: 14
+
+
+  # ════════════════════════════════════════════════════════════
+  # JOB 7: Generate unified report
+  # ════════════════════════════════════════════════════════════
+  report:
+    name: Generate QA Report
+    runs-on: ubuntu-latest
+    needs: [unit-tests, e2e-tests, security, accessibility, performance]
+    if: always()
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install QA deps
+        working-directory: ${{ env.QA_DIR }}
+        run: npm ci
+
+      # Download all partial reports
+      - name: Download vitest results
+        uses: actions/download-artifact@v4
+        with:
+          name: vitest-results-${{ github.sha }}
+          path: ${{ env.QA_DIR }}/reports/
+        continue-on-error: true
+
+      - name: Download playwright results
+        uses: actions/download-artifact@v4
+        with:
+          name: playwright-results-${{ github.sha }}
+          path: ${{ env.QA_DIR }}/reports/
+        continue-on-error: true
+
+      - name: Download security report
+        uses: actions/download-artifact@v4
+        with:
+          name: security-report-${{ github.sha }}
+          path: ${{ env.QA_DIR }}/reports/
+        continue-on-error: true
+
+      - name: Download a11y report
+        uses: actions/download-artifact@v4
+        with:
+          name: a11y-report-${{ github.sha }}
+          path: ${{ env.QA_DIR }}/reports/
+        continue-on-error: true
+
+      - name: Download performance report
+        uses: actions/download-artifact@v4
+        with:
+          name: perf-report-${{ github.sha }}
+          path: ${{ env.QA_DIR }}/reports/
+        continue-on-error: true
+
+      - name: Generate unified HTML report
+        working-directory: ${{ env.QA_DIR }}
+        env:
+          GITHUB_SHA:       ${{ github.sha }}
+          GITHUB_REF_NAME:  ${{ github.ref_name }}
+          GITHUB_ACTOR:     ${{ github.actor }}
+        run: node scripts/generate-report.js
+
+      - name: Upload unified QA report
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-report-${{ github.sha }}
+          path: |
+            ${{ env.QA_DIR }}/reports/qa-dashboard.html
+            ${{ env.QA_DIR }}/reports/summary.json
+          retention-days: 30
+
+      # Post summary to PR
+      - name: Post QA summary to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let summary;
+            try {
+              summary = JSON.parse(fs.readFileSync('${{ env.QA_DIR }}/reports/summary.json', 'utf8'));
+            } catch { return; }
+
+            const icon   = summary.overall.passed ? '✅' : '❌';
+            const status = summary.overall.passed ? 'All checks passed' : 'Critical failures detected';
+            const score  = summary.overall.score;
+            const s      = summary.suites;
+
+            const row = (label, stats) => {
+              if (!stats) return `| ${label} | — | — | ⏭ Skipped |`;
+              const pass = stats.passed ?? 0;
+              const fail = stats.failed ?? 0;
+              const icon = fail > 0 ? '❌' : '✅';
+              return `| ${label} | ${pass} | ${fail} | ${icon} |`;
+            };
+
+            const body = `## ${icon} SETU QA Pipeline — ${status}
+            
+            **Score:** ${score}% &nbsp;·&nbsp; **Commit:** \`${summary.commit.slice(0,8)}\`
+
+            | Suite | Passed | Failed | Status |
+            |-------|--------|--------|--------|
+            ${row('🧪 Unit & Integration', s.unit)}
+            ${row('🎭 E2E (Playwright)', s.e2e)}
+            ${row('🔒 Security', s.security)}
+            ${row('♿ Accessibility', s.a11y)}
+            ${row('⚡ Performance', s.performance)}
+
+            > Full HTML report available as workflow artifact \`qa-report-${{ github.sha }}\`
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body.replace(/^ {12}/gm, ''),
+            });
+
+      # Fail the workflow if critical suites failed
+      - name: "Gate: fail if critical failures"
+        working-directory: ${{ env.QA_DIR }}
+        run: |
+          node -e "
+            const s = JSON.parse(require('fs').readFileSync('reports/summary.json'));
+            const critical = ['unit', 'security', 'e2e'];
+            const failed = critical.filter(k => (s.suites[k]?.failed ?? 0) > 0);
+            if (failed.length > 0) {
+              console.error('✗ Critical suite failures:', failed.join(', '));
+              process.exit(1);
+            }
+            console.log('✓ All critical suites passed');
+          "
+
+
+  # ════════════════════════════════════════════════════════════
+  # JOB 8: Post-deploy E2E against production URL
+  # Triggered only after deploy.yml completes on main
+  # ════════════════════════════════════════════════════════════
+  post-deploy-e2e:
+    name: Post-Deploy E2E (Production)
+    runs-on: ubuntu-latest
+    # Only run on main after a deploy — or on manual trigger with URL
+    if: >
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target_url != '')
+    needs: [unit-tests, security]
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install QA deps
+        working-directory: ${{ env.QA_DIR }}
+        run: npm ci
+
+      - name: Restore Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('qa/package-lock.json') }}
+
+      - name: Install Playwright browsers
+        working-directory: ${{ env.QA_DIR }}
+        run: npx playwright install --with-deps chromium
+
+      - name: Wait for GitHub Pages propagation
+        run: sleep 45
+
+      - name: Run E2E against production URL
+        working-directory: ${{ env.QA_DIR }}
+        env:
+          SETU_E2E_URL: ${{ github.event.inputs.target_url || vars.PROD_URL }}
+          CI: 'true'
+        run: |
+          # Override webServer — we're hitting real prod, not starting a local server
+          npx playwright test \
+            --config playwright.config.js \
+            --project mobile-chrome \
+            tests/e2e/auth.spec.js \
+            tests/e2e/role-isolation.spec.js \
+            --reporter=list,json
+
+      - name: Upload post-deploy E2E results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: post-deploy-e2e-${{ github.sha }}
+          path: ${{ env.QA_DIR }}/reports/
+          retention-days: 30
+
+      - name: Alert on regression
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              title: `🚨 Post-deploy E2E regression on main — ${context.sha.slice(0,8)}`,
+              body:  `E2E tests failed after deployment of commit ${context.sha}.\n\nBranch: ${context.ref}\nActor: ${context.actor}\n\nCheck the workflow run for traces and screenshots.`,
+              labels: ['bug', 'regression', 'automated'],
+            });
