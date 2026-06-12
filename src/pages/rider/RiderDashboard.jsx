@@ -150,7 +150,6 @@ export default function RiderDashboard() {
         <RiderNavigationMap
           currentLocation={currentLocation}
           destination={{ lat: 26.355, lng: 86.075, address: 'Customer Address' }}
-          onArrived={() => console.log('Arrived')}
         />
       </div>
 
