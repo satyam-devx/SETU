@@ -82,8 +82,8 @@ export default defineConfig({
     },
   ],
 
-  // Dev server: start Vite before running tests
-  webServer: {
+  // Dev server: start Vite before running tests only if testing locally
+  webServer: (BASE_URL.includes('localhost') || BASE_URL.includes('127.0.0.1')) ? {
     command:            'npm run dev',
     cwd:                '../', // SETU project root
     url:                BASE_URL,
@@ -103,5 +103,5 @@ export default defineConfig({
       VITE_MAPBOX_TOKEN:                  'pk.placeholder',
       VITE_RAZORPAY_KEY_ID:               'rzp_test_placeholder',
     },
-  },
+  } : undefined,
 });
