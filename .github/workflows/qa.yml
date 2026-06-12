@@ -33,6 +33,7 @@ permissions:
   contents: read
   checks:   write        # publish test results to PR
   pull-requests: write   # post summary comment
+  issues:   write        # create regression issues on failure
 
 jobs:
 
