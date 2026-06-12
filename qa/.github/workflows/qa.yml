@@ -526,7 +526,7 @@ jobs:
             });
 
       # Fail the workflow if critical suites failed
-      - name: Gate: fail if critical failures
+      - name: "Gate: fail if critical failures"
         working-directory: ${{ env.QA_DIR }}
         run: |
           node -e "
