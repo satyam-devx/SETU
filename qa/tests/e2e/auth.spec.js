@@ -16,6 +16,11 @@ async function fillPhoneAndContinue(page, phone = '+919876543210') {
 // ── Test suite ─────────────────────────────────────────────────
 
 test.describe('Authentication pages', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem('setu_test_unauth', 'true');
+    });
+  });
 
   test('home page (/) redirects appropriately', async ({ page }) => {
     await page.goto('/');
@@ -72,6 +77,13 @@ test.describe('Authentication pages', () => {
 });
 
 test.describe('Protected route redirects', () => {
+  // Force unauthenticated state in demo mode for these tests
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem('setu_test_unauth', 'true');
+    });
+  });
+
   const PROTECTED_ROUTES = [
     '/customer',
     '/customer/orders',
@@ -88,7 +100,7 @@ test.describe('Protected route redirects', () => {
     test(`${route} redirects to login when unauthenticated`, async ({ page }) => {
       await page.goto(route);
       // Must redirect away from the protected route
-      await page.waitForURL(/login|\//, { timeout: 10000 });
+      await page.waitForURL(url => url.pathname.includes('/login') || url.pathname === '/', { timeout: 10000 });
       const finalUrl = page.url();
       expect(finalUrl).not.toMatch(new RegExp(`^.*${route}($|/)`));
     });
