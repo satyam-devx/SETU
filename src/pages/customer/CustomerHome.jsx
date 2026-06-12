@@ -84,8 +84,8 @@ function VendorCard({ vendor }) {
             </span>
           )}
           {!vendor.is_open && (
-            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-              <span className="text-white text-[10px] font-semibold">Closed</span>
+            <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+              <span className="text-white text-[10px] font-bold">Closed</span>
             </div>
           )}
         </div>
@@ -96,7 +96,7 @@ function VendorCard({ vendor }) {
             <Star className="w-3 h-3 text-primary fill-primary" />
             <span className="text-[10px] font-medium">{vendor.rating?.toFixed(1) || '—'}</span>
             {vendor.review_count > 0 && (
-              <span className="text-[10px] text-muted-foreground">({vendor.review_count})</span>
+              <span className="text-[10px] text-muted-foreground font-medium">({vendor.review_count})</span>
             )}
           </div>
         </div>
