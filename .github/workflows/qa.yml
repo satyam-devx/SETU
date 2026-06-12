@@ -589,11 +589,11 @@ jobs:
         run: |
           # Override webServer — we're hitting real prod, not starting a local server
           npx playwright test \
-            --config playwright.config.js \
-            --project mobile-chrome \
-            tests/e2e/auth.spec.js \
-            tests/e2e/role-isolation.spec.js \
-            --reporter=list,json
+                --config playwright.config.js \
+                tests/e2e/auth.spec.js \
+                tests/e2e/role-isolation.spec.js \
+                --project=mobile-chrome \
+                --reporter=list,json
 
       - name: Upload post-deploy E2E results
         uses: actions/upload-artifact@v4
