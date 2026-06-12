@@ -149,7 +149,7 @@ export default function CustomerProfile() {
               )}
 
               <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
+                <span className="text-xs bg-primary/15 text-primary px-2 py-0.5 rounded-full font-bold">
                   SETU Score: {setuScore}
                 </span>
                 {selectedVillage && (
@@ -168,7 +168,7 @@ export default function CustomerProfile() {
           )}
 
           {profile?.is_verified && (
-            <div className="flex items-center gap-1.5 mt-3 text-xs text-green-600 font-medium">
+            <div className="flex items-center gap-1.5 mt-3 text-xs text-green-700 font-semibold">
               <Shield className="w-3.5 h-3.5" /> Verified SETU Member
             </div>
           )}
