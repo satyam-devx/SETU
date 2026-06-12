@@ -125,6 +125,12 @@ const AdminSettings       = lazy(() => import('@/pages/admin/AdminSettings'));
 const AdminCustomers      = lazy(() => import('@/pages/admin/AdminCustomers'));
 const AdminIncidents      = lazy(() => import('@/pages/admin/AdminIncidents'));
 const AdminMonitoring     = lazy(() => import('@/pages/admin/AdminMonitoring'));
+const AdminCategories     = lazy(() => import('@/pages/admin/AdminCategories'));
+const AdminProducts       = lazy(() => import('@/pages/admin/AdminProducts'));
+const AdminBanners        = lazy(() => import('@/pages/admin/AdminBanners'));
+const AdminNotifications  = lazy(() => import('@/pages/admin/AdminNotifications'));
+const AdminImageModeration= lazy(() => import('@/pages/admin/AdminImageModeration'));
+const AdminKYC            = lazy(() => import('@/pages/admin/AdminKYC'));
 
 // ── Lazy: Super Admin portal ──────────────────────────────
 const SuperAdminLayout     = lazy(() => import('@/pages/superadmin/SuperAdminLayout'));
@@ -139,6 +145,7 @@ const SuperAdminExpansion  = lazy(() => import('@/pages/superadmin/SuperAdminExp
 const SuperAdminCompliance = lazy(() => import('@/pages/superadmin/SuperAdminCompliance'));
 const SuperAdminHealth     = lazy(() => import('@/pages/superadmin/SuperAdminHealth'));
 const SuperAdminAI         = lazy(() => import('@/pages/superadmin/SuperAdminAI'));
+const SuperAdminUsers     = lazy(() => import('@/pages/superadmin/SuperAdminUsers'));
 
 // ── Portal loading fallback ───────────────────────────────
 function PortalFallback() {
@@ -349,6 +356,12 @@ function App() {
                 <Route path="customers"          element={<Suspense fallback={<PortalFallback />}><AdminCustomers /></Suspense>} />
                 <Route path="incidents"          element={<Suspense fallback={<PortalFallback />}><AdminIncidents /></Suspense>} />
                 <Route path="monitoring"         element={<Suspense fallback={<PortalFallback />}><AdminMonitoring /></Suspense>} />
+                <Route path="categories"         element={<Suspense fallback={<PortalFallback />}><AdminCategories /></Suspense>} />
+                <Route path="products"           element={<Suspense fallback={<PortalFallback />}><AdminProducts /></Suspense>} />
+                <Route path="banners"            element={<Suspense fallback={<PortalFallback />}><AdminBanners /></Suspense>} />
+                <Route path="notifications"      element={<Suspense fallback={<PortalFallback />}><AdminNotifications /></Suspense>} />
+                <Route path="image-moderation"   element={<Suspense fallback={<PortalFallback />}><AdminImageModeration /></Suspense>} />
+                <Route path="kyc"                element={<Suspense fallback={<PortalFallback />}><AdminKYC /></Suspense>} />
               </Route>
 
               {/* ── Super Admin portal ── */}
@@ -370,6 +383,7 @@ function App() {
                 <Route path="compliance"     element={<Suspense fallback={<PortalFallback />}><SuperAdminCompliance /></Suspense>} />
                 <Route path="health"         element={<Suspense fallback={<PortalFallback />}><SuperAdminHealth /></Suspense>} />
                 <Route path="ai"             element={<Suspense fallback={<PortalFallback />}><SuperAdminAI /></Suspense>} />
+                <Route path="users"          element={<Suspense fallback={<PortalFallback />}><SuperAdminUsers /></Suspense>} />
               </Route>
 
               {/* ── Fallbacks ── */}
