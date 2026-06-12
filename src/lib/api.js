@@ -450,6 +450,82 @@ export async function updateProfile(userId, updates) {
   );
 }
 
+// ── Customer Addresses ──────────────────────────────────────
+
+export async function getAddresses(userId) {
+  return safeQuery(
+    () => supabase
+      .from('customer_addresses')
+      .select('*')
+      .eq('user_id', userId)
+      .order('is_default', { ascending: false })
+      .order('created_at', { ascending: true }),
+    [],
+    'getAddresses'
+  );
+}
+
+export async function createAddress(userId, address) {
+  return safeQuery(
+    () => supabase
+      .from('customer_addresses')
+      .insert({
+        user_id:    userId,
+        label:      address.label,
+        address:    address.address,
+        landmark:   address.landmark || null,
+        is_default: !!address.isDefault,
+      })
+      .select()
+      .single(),
+    null,
+    'createAddress'
+  );
+}
+
+export async function updateAddress(addressId, updates) {
+  const payload = {};
+  if (updates.label      !== undefined) payload.label      = updates.label;
+  if (updates.address    !== undefined) payload.address    = updates.address;
+  if (updates.landmark   !== undefined) payload.landmark   = updates.landmark || null;
+  if (updates.isDefault  !== undefined) payload.is_default = updates.isDefault;
+
+  return safeQuery(
+    () => supabase
+      .from('customer_addresses')
+      .update(payload)
+      .eq('id', addressId)
+      .select()
+      .single(),
+    null,
+    'updateAddress'
+  );
+}
+
+export async function setDefaultAddress(addressId) {
+  return safeQuery(
+    () => supabase
+      .from('customer_addresses')
+      .update({ is_default: true })
+      .eq('id', addressId)
+      .select()
+      .single(),
+    null,
+    'setDefaultAddress'
+  );
+}
+
+export async function deleteAddress(addressId) {
+  return safeQuery(
+    () => supabase
+      .from('customer_addresses')
+      .delete()
+      .eq('id', addressId),
+    null,
+    'deleteAddress'
+  );
+}
+
 // ── Support ───────────────────────────────────────────────
 
 export async function getSupportTickets(userId) {
