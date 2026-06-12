@@ -97,8 +97,14 @@ export function AuthProvider({ children }) {
     let initialised = false;
 
     if (!isSupabaseConfigured) {
-      setUser({ id: DEMO_PROFILE.id, phone: DEMO_PROFILE.phone });
-      setProfile(DEMO_PROFILE);
+      // For E2E tests, we might want to start as unauthenticated even in demo mode
+      const skipDemoLogin = typeof window !== 'undefined' && 
+                            window.localStorage.getItem('setu_test_unauth') === 'true';
+      
+      if (!skipDemoLogin) {
+        setUser({ id: DEMO_PROFILE.id, phone: DEMO_PROFILE.phone });
+        setProfile(DEMO_PROFILE);
+      }
       setIsLoading(false);
       return;
     }
