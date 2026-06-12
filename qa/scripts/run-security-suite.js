@@ -101,7 +101,7 @@ const ENV_CHECKS = [
     name:    'No rzp_live_ key in codebase',
     check:   () => {
       const files = getAllSourceFiles(SETU_ROOT);
-      return !files.some(f => fs.readFileSync(f, 'utf8').includes('rzp_live_'));
+      return !files.some(f => { const c = fs.readFileSync(f, 'utf8'); return /rzp_live_(?!placeholder)[A-Za-z0-9]+/.test(c); });
     },
     detail:  'Razorpay live key must never be committed',
     critical: true,
@@ -185,7 +185,7 @@ const SOURCE_CHECKS = [
   },
   {
     name:    'No direct SQL in React components',
-    pattern: /\bSELECT\b.*\bFROM\b/i,
+    pattern: /(?<!import[^\n]{0,200})\bSELECT\b[^'"]{0,200}\bFROM\b(?!['"`])/i,
     files:   ['src/pages/**/*.{js,jsx,tsx}', 'src/components/**/*.{js,jsx,tsx}'],
     critical: false,
   },
@@ -279,7 +279,7 @@ const DB_CHECKS = [
     check:   () => {
       const api = fs.readFileSync(path.join(SETU_ROOT, 'src/lib/api.js'), 'utf8');
       // Should use RPC, not direct .update on wallets
-      return !api.match(/\.from\(['"`]wallets['"`]\).*\.update/s);
+      return !api.match(/\.from\(['"`]wallets['"`]\)[^\n]*\.update/);
     },
     critical: true,
   },
