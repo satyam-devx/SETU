@@ -185,7 +185,9 @@ const SOURCE_CHECKS = [
   },
   {
     name:    'No direct SQL in React components',
-    pattern: /(?<!import[^\n]{0,200})\bSELECT\b[^'"]{0,200}\bFROM\b(?!['"`])/i,
+    // Avoid matching <Select or imports. Look for SELECT ... FROM that aren't JSX tags or imports.
+    // We require a space after SELECT to avoid matching 'Select,' in imports.
+    pattern: /(?<!import[^\n]{0,200})(?<!<)\bSELECT\s+[^'"]{1,200}\s+FROM\b(?!['"`])/i,
     files:   ['src/pages/**/*.{js,jsx,tsx}', 'src/components/**/*.{js,jsx,tsx}'],
     critical: false,
   },
