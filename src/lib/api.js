@@ -1359,47 +1359,384 @@ export async function getCODDeposits() {
   );
 }
 
+// ── Categories CRUD (admin) ───────────────────────────────
+
+export async function getAllCategories() {
+  return safeQuery(
+    () => supabase.from('categories').select('*').order('sort_order'),
+    CATEGORIES,
+    'getAllCategories'
+  );
+}
+
+export async function upsertCategory(catData) {
+  return safeQuery(
+    () => supabase.from('categories').upsert(catData).select().single(),
+    null,
+    'upsertCategory'
+  );
+}
+
+export async function deleteCategory(id) {
+  return safeQuery(
+    () => supabase.from('categories').delete().eq('id', id),
+    null,
+    'deleteCategory'
+  );
+}
+
+export async function reorderCategories(orderedIds) {
+  // orderedIds: string[] — categories in new sort order
+  if (!isSupabaseConfigured) return ok(null);
+  try {
+    const updates = orderedIds.map((id, index) =>
+      supabase.from('categories').update({ sort_order: index + 1 }).eq('id', id)
+    );
+    await Promise.all(updates);
+    return ok(true);
+  } catch (e) {
+    return err(e, 'reorderCategories');
+  }
+}
+
+// ── Products admin ────────────────────────────────────────
+
+export async function getAdminProducts({ vendorId, categoryId, search, page = 0, limit = 50 } = {}) {
+  return safeQuery(() => {
+    let q = supabase
+      .from('admin_products_view')
+      .select('*')
+      .range(page * limit, (page + 1) * limit - 1);
+
+    if (vendorId)    q = q.eq('vendor_id', vendorId);
+    if (categoryId)  q = q.eq('category_id', categoryId);
+    if (search)      q = q.ilike('name', `%${search}%`);
+    return q;
+  }, [], 'getAdminProducts');
+}
+
+export async function adminUpdateProduct(id, updates) {
+  return safeQuery(
+    () => supabase.from('products').update(updates).eq('id', id).select().single(),
+    null,
+    'adminUpdateProduct'
+  );
+}
+
+export async function adminDeleteProduct(id) {
+  return safeQuery(
+    () => supabase.from('products').delete().eq('id', id),
+    null,
+    'adminDeleteProduct'
+  );
+}
+
+// ── Platform Config ───────────────────────────────────────
+
+export async function getPlatformConfig() {
+  return safeQuery(
+    () => supabase.from('platform_config').select('*').order('key'),
+    [],
+    'getPlatformConfig'
+  );
+}
+
+export async function savePlatformConfig(entries) {
+  // entries: Array<{ key: string, value: string }>
+  return safeQuery(
+    () => supabase.rpc('upsert_platform_config_bulk', { p_entries: entries }),
+    null,
+    'savePlatformConfig'
+  );
+}
+
+// ── Banners CRUD ──────────────────────────────────────────
+
+export async function getBanners({ adminView = false } = {}) {
+  return safeQuery(() => {
+    let q = supabase.from('banners').select('*').order('sort_order');
+    if (!adminView) q = q.eq('is_active', true);
+    return q;
+  }, [], 'getBanners');
+}
+
+export async function upsertBanner(bannerData) {
+  return safeQuery(
+    () => supabase.from('banners').upsert(bannerData).select().single(),
+    null,
+    'upsertBanner'
+  );
+}
+
+export async function deleteBanner(id) {
+  return safeQuery(
+    () => supabase.from('banners').delete().eq('id', id),
+    null,
+    'deleteBanner'
+  );
+}
+
+export async function toggleBannerActive(id, isActive) {
+  return safeQuery(
+    () => supabase.from('banners').update({ is_active: isActive }).eq('id', id).select().single(),
+    null,
+    'toggleBannerActive'
+  );
+}
+
+// ── Notifications broadcast ───────────────────────────────
+
+export async function broadcastNotification({ title, body, type = 'system', targetRole = null, villageId = null, data = null }) {
+  // Inserts a notification for every matching user
+  if (!isSupabaseConfigured) return ok(null);
+  try {
+    // Fetch target user IDs
+    let q = supabase.from('profiles').select('id');
+    if (targetRole)  q = q.eq('role', targetRole);
+    if (villageId)   q = q.eq('village_id', villageId);
+    const { data: users, error: usersErr } = await q;
+    if (usersErr) return err(usersErr, 'broadcastNotification/fetch');
+
+    if (!users || users.length === 0) return ok({ sent: 0 });
+
+    const rows = users.map(u => ({
+      user_id: u.id,
+      type,
+      title,
+      body,
+      data: data ?? {},
+    }));
+
+    // Insert in batches of 200
+    for (let i = 0; i < rows.length; i += 200) {
+      const { error: insErr } = await supabase.from('notifications').insert(rows.slice(i, i + 200));
+      if (insErr) return err(insErr, 'broadcastNotification/insert');
+    }
+    return ok({ sent: rows.length });
+  } catch (e) {
+    return err(e, 'broadcastNotification');
+  }
+}
+
+// ── Image moderation ──────────────────────────────────────
+
+export async function getImageModerationQueue({ status = 'pending' } = {}) {
+  return safeQuery(() => {
+    let q = supabase
+      .from('image_moderation')
+      .select(`*, profiles!uploaded_by(name, phone)`)
+      .order('created_at', { ascending: false });
+    if (status !== 'all') q = q.eq('status', status);
+    return q;
+  }, [], 'getImageModerationQueue');
+}
+
+export async function reviewImage(imageId, status, reason = null) {
+  return safeQuery(
+    () => supabase.rpc('review_image', {
+      p_image_id: imageId,
+      p_status:   status,
+      p_reason:   reason,
+    }),
+    null,
+    'reviewImage'
+  );
+}
+
+// ── Live analytics ────────────────────────────────────────
+
+export async function getLiveAnalytics() {
+  return safeQuery(
+    () => supabase.from('admin_analytics').select('*').single(),
+    null,
+    'getLiveAnalytics'
+  );
+}
+
+export async function getDailyOrderTrend() {
+  return safeQuery(
+    () => supabase.from('daily_order_trend').select('*').limit(30),
+    [],
+    'getDailyOrderTrend'
+  );
+}
+
+export async function getHourlyOrderTrend() {
+  return safeQuery(
+    () => supabase.from('hourly_order_trend').select('*'),
+    [],
+    'getHourlyOrderTrend'
+  );
+}
+
+// ── User management ───────────────────────────────────────
+
+export async function getAllUsers({ role, search, page = 0, limit = 50 } = {}) {
+  return safeQuery(() => {
+    let q = supabase
+      .from('profiles')
+      .select('*, villages(name)')
+      .range(page * limit, (page + 1) * limit - 1)
+      .order('created_at', { ascending: false });
+    if (role)   q = q.eq('role', role);
+    if (search) q = q.ilike('name', `%${search}%`);
+    return q;
+  }, [], 'getAllUsers');
+}
+
+export async function banUser(userId, reason = null) {
+  return safeQuery(
+    () => supabase.rpc('ban_user', { p_user_id: userId, p_reason: reason }),
+    null,
+    'banUser'
+  );
+}
+
+export async function unbanUser(userId) {
+  return safeQuery(
+    () => supabase.rpc('unban_user', { p_user_id: userId }),
+    null,
+    'unbanUser'
+  );
+}
+
+export async function assignRole(userId, role) {
+  return safeQuery(
+    () => supabase.rpc('assign_role', { p_user_id: userId, p_role: role }),
+    null,
+    'assignRole'
+  );
+}
+
+// ── KYC review ────────────────────────────────────────────
+
+export async function getKYCQueue({ status = 'submitted' } = {}) {
+  return safeQuery(() => {
+    let q = supabase
+      .from('kyc_records')
+      .select(`*, profiles!user_id(name, phone, role, village_id, villages(name))`)
+      .order('created_at', { ascending: false });
+    if (status !== 'all') q = q.eq('status', status);
+    return q;
+  }, [], 'getKYCQueue');
+}
+
+export async function reviewKYC(kycId, status, reason = null) {
+  const updates = {
+    status,
+    failure_reason: reason,
+    verified_at:    status === 'verified' ? new Date().toISOString() : null,
+  };
+  return safeQuery(
+    () => supabase.from('kyc_records').update(updates).eq('id', kycId).select().single(),
+    null,
+    'reviewKYC'
+  );
+}
+
+// ── Vendor approval (wired to real DB) ───────────────────
+
+export async function getPendingVendors() {
+  return safeQuery(
+    () => supabase
+      .from('vendors')
+      .select(`
+        id, name, category, village, village_id, phone,
+        image_url, kyc_status, created_at, subscription_tier,
+        kyc_records(type, status, doc_url, aadhaar_last4)
+      `)
+      .eq('kyc_status', 'pending')
+      .order('created_at', { ascending: true }),
+    [],
+    'getPendingVendors'
+  );
+}
+
 export const AdminAPI = {
-  // Stats
-  getStats:          ()                       => getAdminDashboardStats(),
-  getHourlyOrders:   ()                       => getTodayHourlyOrders(),
-  // Orders
-  getOrders:         (opts)                   => getAdminOrders(opts),
-  assignRider:       (orderId, riderId, name) => adminAssignRider(orderId, riderId, name),
-  // Vendors
-  getVendors:        ()                       => getAdminVendors(),
-  setVendorOpen:     (id, open)               => setVendorOpen(id, open),
-  approveVendor:     (vendorId)               => safeQuery(
+  // ── Dashboard ─────────────────────────────────────────
+  getStats:             ()                         => getAdminDashboardStats(),
+  getHourlyOrders:      ()                         => getTodayHourlyOrders(),
+  getLiveAnalytics:     ()                         => getLiveAnalytics(),
+  getDailyTrend:        ()                         => getDailyOrderTrend(),
+  getHourlyTrend:       ()                         => getHourlyOrderTrend(),
+
+  // ── Orders ────────────────────────────────────────────
+  getOrders:            (opts)                     => getAdminOrders(opts),
+  assignRider:          (orderId, riderId, name)   => adminAssignRider(orderId, riderId, name),
+
+  // ── Vendors ───────────────────────────────────────────
+  getVendors:           ()                         => getAdminVendors(),
+  getPendingVendors:    ()                         => getPendingVendors(),
+  setVendorOpen:        (id, open)                 => setVendorOpen(id, open),
+  approveVendor:        (vendorId)                 => safeQuery(
     () => supabase.from('vendors').update({ is_verified: true, kyc_status: 'approved' }).eq('id', vendorId).select().single(),
     null, 'AdminAPI.approveVendor'
   ),
-  rejectVendor:      (vendorId)               => safeQuery(
+  rejectVendor:         (vendorId, reason)         => safeQuery(
     () => supabase.from('vendors').update({ kyc_status: 'rejected' }).eq('id', vendorId).select().single(),
     null, 'AdminAPI.rejectVendor'
   ),
-  // Riders
-  getRiders:         ()                       => getAdminRiders(),
-  setRiderActive:    (id, active)             => setRiderActive(id, active),
-  updateCashBalance: (riderId, amount)        => safeQuery(
+
+  // ── Riders ────────────────────────────────────────────
+  getRiders:            ()                         => getAdminRiders(),
+  setRiderActive:       (id, active)               => setRiderActive(id, active),
+  updateCashBalance:    (riderId, amount)           => safeQuery(
     () => supabase.from('riders').update({ cod_balance: amount }).eq('id', riderId).select().single(),
     null, 'AdminAPI.updateCashBalance'
   ),
-  // Seva Providers
-  getSevaProviders:  ()                       => getAdminSevaProviders(),
-  setSevaAvailable:  (id, avail)              => setSevaAvailable(id, avail),
-  // Villages
-  getVillages:       ()                       => getAdminVillages(),
-  // Support
-  getSupportTickets: (opts)                   => getAdminSupportTickets(opts),
-  replyToTicket:     (id, name, text)         => replyToTicket(id, name, text),
-  resolveTicket:     (id)                     => resolveTicket(id),
-  // COD / Cash
-  getCODDeposits:    ()                       => getCODDeposits(),
-  confirmCODDeposit: (depositId, adminUserId) => confirmCODDeposit(depositId, adminUserId),
-  disputeCODDeposit: (depositId)              => disputeCODDeposit(depositId),
-  // Legacy
-  getUsers:          ()                       => safeQuery(
-    () => supabase.from('profiles').select('*').order('created_at', { ascending: false }),
-    [], 'AdminAPI.getUsers'
-  ),
+
+  // ── Seva Providers ────────────────────────────────────
+  getSevaProviders:     ()                         => getAdminSevaProviders(),
+  setSevaAvailable:     (id, avail)                => setSevaAvailable(id, avail),
+
+  // ── Villages ──────────────────────────────────────────
+  getVillages:          ()                         => getAdminVillages(),
+
+  // ── Support ───────────────────────────────────────────
+  getSupportTickets:    (opts)                     => getAdminSupportTickets(opts),
+  replyToTicket:        (id, name, text)           => replyToTicket(id, name, text),
+  resolveTicket:        (id)                       => resolveTicket(id),
+
+  // ── COD / Cash ────────────────────────────────────────
+  getCODDeposits:       ()                         => getCODDeposits(),
+  confirmCODDeposit:    (depositId, adminUserId)   => confirmCODDeposit(depositId, adminUserId),
+  disputeCODDeposit:    (depositId)                => disputeCODDeposit(depositId),
+
+  // ── Categories ────────────────────────────────────────
+  getAllCategories:     ()                         => getAllCategories(),
+  upsertCategory:      (data)                     => upsertCategory(data),
+  deleteCategory:      (id)                       => deleteCategory(id),
+  reorderCategories:   (ids)                      => reorderCategories(ids),
+
+  // ── Products ──────────────────────────────────────────
+  getProducts:         (opts)                     => getAdminProducts(opts),
+  updateProduct:       (id, updates)              => adminUpdateProduct(id, updates),
+  deleteProduct:       (id)                       => adminDeleteProduct(id),
+
+  // ── Platform Config ───────────────────────────────────
+  getConfig:           ()                         => getPlatformConfig(),
+  saveConfig:          (entries)                  => savePlatformConfig(entries),
+
+  // ── Banners ───────────────────────────────────────────
+  getBanners:          (opts)                     => getBanners({ ...opts, adminView: true }),
+  upsertBanner:        (data)                     => upsertBanner(data),
+  deleteBanner:        (id)                       => deleteBanner(id),
+  toggleBanner:        (id, active)               => toggleBannerActive(id, active),
+
+  // ── Notifications ─────────────────────────────────────
+  broadcastNotification: (payload)                => broadcastNotification(payload),
+
+  // ── Image Moderation ──────────────────────────────────
+  getImageQueue:       (opts)                     => getImageModerationQueue(opts),
+  reviewImage:         (id, status, reason)       => reviewImage(id, status, reason),
+
+  // ── Users ─────────────────────────────────────────────
+  getUsers:            (opts)                     => getAllUsers(opts),
+  banUser:             (userId, reason)           => banUser(userId, reason),
+  unbanUser:           (userId)                   => unbanUser(userId),
+  assignRole:          (userId, role)             => assignRole(userId, role),
+
+  // ── KYC ───────────────────────────────────────────────
+  getKYCQueue:         (opts)                     => getKYCQueue(opts),
+  reviewKYC:           (id, status, reason)       => reviewKYC(id, status, reason),
 };
