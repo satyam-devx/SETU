@@ -28,6 +28,7 @@ SKIP_DIRS  = {'.git', 'node_modules', 'dist', '.github'}
 SKIP_FILES = {'.env', '.env.local', '.env.production', '.env.development'}
 # These files get a pass (they're expected to have placeholders, not real values)
 ALLOWLIST_FILES = {
+    'qa/config/vitest-setup.js',    # MSW mock server — mock-access-token/mock-token are test fixtures, not real credentials
     'scripts/secret_scan.py',  # the scanner itself
     '.env.example',            # placeholder values only
     'README.md',               # documentation
