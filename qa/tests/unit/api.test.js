@@ -172,7 +172,7 @@ describe('Cart operations', () => {
 // ── Test: Supabase error handling ─────────────────────────────
 describe('Supabase error normalization', () => {
   function normalizeError(e, ctx) {
-    const msg = e?.message || e?.error_description || String(e) || 'Unknown error';
+    const msg = e?.message || e?.error_description || (e != null ? String(e) : null) || 'Unknown error';
     return { data: null, error: { message: msg, code: e?.code, details: e?.details } };
   }
 
