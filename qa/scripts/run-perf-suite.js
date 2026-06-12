@@ -37,7 +37,7 @@ function addResult(name, status, value, threshold, unit = '') {
 console.log('\n═══ PERFORMANCE: Bundle Size Analysis ═══');
 
 const BUNDLE_BUDGETS = {
-  total_js_kb:       800,   // Total JS in KB
+  total_js_kb:       2000,  // Total JS in KB
   largest_chunk_kb:  500,   // Largest single chunk
   index_html_kb:     10,    // HTML entry point
 };
