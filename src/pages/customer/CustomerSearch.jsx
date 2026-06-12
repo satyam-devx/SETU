@@ -94,7 +94,7 @@ export default function CustomerSearch() {
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background px-4 py-3 border-b border-border space-y-2">
         <div className="flex items-center gap-2">
-          <Link to="/customer" className="shrink-0">
+          <Link to="/customer" className="shrink-0" aria-label="Close search">
             <X className="w-5 h-5 text-muted-foreground" />
           </Link>
           <div className="relative flex-1">
@@ -112,7 +112,7 @@ export default function CustomerSearch() {
               </button>
             )}
           </div>
-          <Button variant="ghost" size="icon" className="shrink-0 text-primary">
+          <Button variant="ghost" size="icon" className="shrink-0 text-primary" aria-label="Voice search">
             <Mic className="w-5 h-5" />
           </Button>
         </div>
