@@ -25,18 +25,18 @@
     --popover:           0 0% 100%;
     --popover-foreground: 20 14% 10%;
 
-    /* SETU Saffron */
-    --primary:           24 95% 50%;
+    /* SETU Saffron - darkened for WCAG 2.1 AA (4.5:1 on white) */
+    --primary:           20 90% 40%;
     --primary-foreground: 0 0% 100%;
 
     /* Teal accent */
-    --secondary:         180 55% 38%;
+    --secondary:         180 55% 35%;
     --secondary-foreground: 0 0% 100%;
 
     --muted:             30 15% 94%;
-    --muted-foreground:  20 10% 46%;
+    --muted-foreground:  24 6% 38%;
 
-    --accent:            142 45% 52%;
+    --accent:            142 45% 42%;
     --accent-foreground: 0 0% 100%;
 
     --destructive:       0 72% 51%;
@@ -174,7 +174,7 @@
   }
 
   .section-link {
-    @apply text-xs text-primary font-medium;
+    @apply text-xs text-primary font-semibold;
   }
 
   /* Shimmer loading animation */
