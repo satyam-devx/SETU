@@ -230,7 +230,7 @@ export async function getOrderById(id) {
 }
 
 export async function placeOrder(orderPayload) {
-  // orderPayload: { customer_id, vendor_id, village_id, items, payment_method, delivery_address }
+  // orderPayload: { customer_id, customer_name, vendor_id, vendor_name, village_id, village, items, payment_method, delivery_address }
   if (!isSupabaseConfigured) {
     // Offline / mock: return a fake order
     const fakeOrder = {
@@ -244,48 +244,30 @@ export async function placeOrder(orderPayload) {
     return ok(fakeOrder);
   }
 
-  const orderNumber = `SETU-${Date.now().toString(36).toUpperCase()}`;
-  const { items, ...orderHead } = orderPayload;
-
-  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+  const subtotal = orderPayload.items.reduce((s, i) => s + i.price * i.qty, 0);
   const deliveryFee = subtotal >= 200 ? 0 : 20;
   const platformFee = Math.round(subtotal * 0.01);
   const total       = subtotal + deliveryFee + platformFee;
 
-  try {
-    const { data: order, error: orderErr } = await supabase
-      .from('orders')
-      .insert({
-        ...orderHead,
-        order_number:   orderNumber,
-        subtotal,
-        delivery_fee:   deliveryFee,
-        platform_fee:   platformFee,
-        total,
-        is_cod:         orderPayload.payment_method === 'COD',
-        status:         'pending',
-        payment_status: 'pending',
-      })
-      .select()
-      .single();
-
-    if (orderErr) return err(orderErr, 'placeOrder/insert');
-
-    const orderItems = items.map(i => ({
-      order_id:   order.id,
-      product_id: i.product_id,
-      name:       i.name,
-      qty:        i.qty,
-      price:      i.price,
-    }));
-
-    const { error: itemsErr } = await supabase.from('order_items').insert(orderItems);
-    if (itemsErr) console.warn('[SETU API] placeOrder: items insert error', itemsErr);
-
-    return ok(order);
-  } catch (e) {
-    return err(e, 'placeOrder');
-  }
+  return safeQuery(
+    () => supabase.rpc('place_order', {
+      p_customer_id:      orderPayload.customer_id,
+      p_customer_name:    orderPayload.customer_name,
+      p_vendor_id:        orderPayload.vendor_id,
+      p_vendor_name:      orderPayload.vendor_name,
+      p_village_id:       orderPayload.village_id,
+      p_village:          orderPayload.village,
+      p_payment_method:   orderPayload.payment_method,
+      p_subtotal:         subtotal,
+      p_delivery_fee:     deliveryFee,
+      p_platform_fee:     platformFee,
+      p_total:            total,
+      p_items:            orderPayload.items,
+      p_delivery_address: orderPayload.delivery_address,
+    }),
+    null,
+    'placeOrder'
+  );
 }
 
 export async function updateOrderStatus(orderId, status, extra = {}) {
@@ -375,12 +357,16 @@ export async function getAvailableOrders(villageId) {
 
 export async function assignRider(orderId, riderId, riderName) {
   return safeQuery(
-    () => supabase.from('orders').update({
-      rider_id:   riderId,
-      rider_name: riderName,
-      status:     'picked_up',
-      picked_up_at: new Date().toISOString(),
-    }).eq('id', orderId).select().single(),
+    () =>
+      supabase.rpc('update_order_status', {
+        p_order_id:   orderId,
+        p_new_status: 'picked_up',
+        p_actor_id:   null,   // auth.uid() resolved inside the function
+        p_meta:       {
+          rider_id:   riderId,
+          rider_name: riderName,
+        },
+      }),
     null,
     'assignRider'
   );
@@ -503,16 +489,23 @@ export async function updateAddress(addressId, updates) {
 }
 
 export async function setDefaultAddress(addressId) {
-  return safeQuery(
-    () => supabase
-      .from('customer_addresses')
-      .update({ is_default: true })
-      .eq('id', addressId)
-      .select()
-      .single(),
-    null,
-    'setDefaultAddress'
-  );
+  if (!isSupabaseConfigured) return ok(null);
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return err('Unauthorized', 'setDefaultAddress');
+
+    const { data, error } = await supabase.rpc('set_default_address', {
+      p_user_id:    user.id,
+      p_address_id: addressId,
+    });
+
+    if (error) return err(error, 'setDefaultAddress');
+    if (!data?.success) return err(data?.error || 'Failed to set default address', 'setDefaultAddress');
+
+    return ok(data);
+  } catch (e) {
+    return err(e, 'setDefaultAddress');
+  }
 }
 
 export async function deleteAddress(addressId) {
@@ -795,9 +788,9 @@ export const RiderAPI = {
 export const SevaAPI = {
   getProviders:    (opts)           => getSevaProviders(opts),
   getJobs:         async (userId)   => {
-    // Seva jobs = orders assigned to this seva provider
+    // Seva jobs = jobs assigned to this seva provider's profile ID
     return safeQuery(
-      () => supabase.from('orders').select('*').eq('customer_id', userId).order('created_at', { ascending: false }),
+      () => supabase.from('seva_jobs').select('*').eq('provider_id', userId).order('created_at', { ascending: false }),
       [],
       'SevaAPI.getJobs'
     );
@@ -1804,7 +1797,7 @@ export const AdminAPI = {
 
 export async function adminUpdateOrderStatus(orderId, status, note = null) {
   return safeQuery(
-    () => supabase.rpc('update_order_status', {
+    () => supabase.rpc('admin_update_order_status', {
       p_order_id:   orderId,
       p_new_status: status,
       p_note:       note,
@@ -1816,7 +1809,7 @@ export async function adminUpdateOrderStatus(orderId, status, note = null) {
 
 export async function adminCancelOrder(orderId, reason) {
   return safeQuery(
-    () => supabase.rpc('update_order_status', {
+    () => supabase.rpc('admin_update_order_status', {
       p_order_id:   orderId,
       p_new_status: 'cancelled',
       p_note:       reason ?? 'Cancelled by admin',

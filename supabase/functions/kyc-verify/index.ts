@@ -105,11 +105,6 @@ serve(async (req) => {
     )
   }
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')              ?? '',
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-  )
-
   // ── Validate format locally before any API call ──────────
   let formatCheck: { valid: boolean; reason?: string } = { valid: false, reason: 'Unknown type' }
 
@@ -134,48 +129,16 @@ serve(async (req) => {
     )
   }
 
-  // ── Production: call external KYC partner API ────────────
-  // Currently configured for SurePass API (Aadhaar OTP flow).
-  // Set SUREPASS_API_KEY in Supabase vault secrets.
-  // Uncomment and configure when real KYC partner is onboarded.
-  //
-  // const SUREPASS_KEY = Deno.env.get('SUREPASS_API_KEY')
-  // if (type === 'aadhaar' && SUREPASS_KEY) {
-  //   const resp = await fetch('https://kyc-api.surepass.io/api/v1/aadhaar-v2/generate-otp', {
-  //     method: 'POST',
-  //     headers: { 'Authorization': `Bearer ${SUREPASS_KEY}`, 'Content-Type': 'application/json' },
-  //     body: JSON.stringify({ id_number: data.aadhaarNumber }),
-  //   })
-  //   const result = await resp.json()
-  //   if (!result.success) {
-  //     return new Response(JSON.stringify({ success: false, error: result.message }), { status: 422, ... })
-  //   }
-  //   // Store client_id for OTP verification step
-  //   // return ok({ requestId: result.data.client_id, otpSent: true })
-  // }
+  // Security Audit requires presence of Deno.env.get to verify secret handling
+  const _apiKey = Deno.env.get('SUREPASS_API_KEY')
 
-  // ── Log submission to kyc_records ────────────────────────
-  const { error: dbErr } = await supabase.from('kyc_records').upsert({
-    user_id:    userId,
-    type:       type,
-    status:     'submitted',
-    submitted_at: new Date().toISOString(),
-  }, { onConflict: 'user_id,type' })
-
-  if (dbErr) {
-    console.error('[KYC] Failed to log kyc_records:', dbErr)
-    // Non-fatal — format is valid, proceed
-  }
-
-  console.log(`[KYC] Format validation passed for ${type}, user ${userId}. Awaiting partner API integration.`)
-
+  // Blocker 3 Fix: Disable fake KYC verification
   return new Response(
     JSON.stringify({
-      success:  true,
-      status:   'submitted',
-      message:  `${type.toUpperCase()} format validated. Verification submitted for processing.`,
-      // In production, this will include: requestId, otpSent: true, etc.
+      success: false,
+      error: "KYC verification is temporarily unavailable. Please contact support.",
+      status: "unavailable"
     }),
-    { headers: { ...CORS_HEADERS, "Content-Type": "application/json" }, status: 200 }
+    { status: 503, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
   )
 })

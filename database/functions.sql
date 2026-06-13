@@ -470,3 +470,5 @@ select cron.schedule(
     where recorded_at < now() - interval '48 hours';
   $$
 );
+
+-- ── set_default_address ──────────────────────────────────
