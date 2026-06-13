@@ -1,146 +1,240 @@
-import React from 'react';
-import { Globe, IndianRupee, Users, Store, Shield, Activity, CreditCard, AlertTriangle, TrendingUp, CheckCircle } from 'lucide-react';
+// ═══════════════════════════════════════════════════════════
+// SETU — SuperAdminDashboard  (v2 — Live DB)
+// Fixed: all mock data replaced with real API calls.
+// Sources: getLiveAnalytics, getAuditLog, getRevenueAnalytics
+// ═══════════════════════════════════════════════════════════
+import React, { useEffect, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  Globe, IndianRupee, Users, Store, Activity,
+  CreditCard, AlertTriangle, RefreshCw, ShieldAlert,
+} from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
+import {
+  AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip,
+} from 'recharts';
 import StatCard from '@/components/shared/StatCard';
-import { SUPER_ADMIN_STATS, ANALYTICS_DATA, VILLAGES, AUDIT_LOG } from '@/lib/mockData';
+import { AdminAPI } from '@/lib/api';
 
-const gmvTrend = [
-  { month: 'Jan', gmv: 85000 }, { month: 'Feb', gmv: 125000 }, { month: 'Mar', gmv: 185000 },
-  { month: 'Apr', gmv: 310000 }, { month: 'May', gmv: 825000 },
-];
+function fmtCurrency(n) {
+  n = Number(n ?? 0);
+  if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
+  if (n >= 1000)   return `₹${(n / 1000).toFixed(1)}K`;
+  return `₹${n}`;
+}
 
-const blockHealth = [
-  { name: 'Madhepur', orders: 461, vendors: 48, riders: 12, health: 94 },
-  { name: 'Jhanjharpur', orders: 280, vendors: 32, riders: 8, health: 87 },
-  { name: 'Rajnagar', orders: 0, vendors: 0, riders: 0, health: 0 },
-];
+function relTime(iso) {
+  if (!iso) return '';
+  const diff = Math.floor((Date.now() - new Date(iso)) / 60000);
+  if (diff < 60)   return `${diff}m ago`;
+  if (diff < 1440) return `${Math.floor(diff / 60)}h ago`;
+  return `${Math.floor(diff / 1440)}d ago`;
+}
 
 export default function SuperAdminDashboard() {
+  const [stats,      setStats]      = useState(null);
+  const [revenue,    setRevenue]    = useState([]);
+  const [auditLog,   setAuditLog]   = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async (manual = false) => {
+    if (manual) setRefreshing(true);
+    else setLoading(true);
+
+    const [liveRes, revenueRes, auditRes] = await Promise.all([
+      AdminAPI.getLiveAnalytics(),
+      AdminAPI.getRevenueAnalytics({ days: 30 }),
+      AdminAPI.getAuditLog({ limit: 5 }),
+    ]);
+
+    if (liveRes.data)    setStats(liveRes.data);
+    if (revenueRes.data) setRevenue(revenueRes.data ?? []);
+    if (auditRes.data)   setAuditLog(auditRes.data ?? []);
+
+    setLoading(false);
+    setRefreshing(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Build daily GMV trend from raw orders
+  const gmvByDay = React.useMemo(() => {
+    const map = {};
+    (revenue ?? []).forEach(o => {
+      const day = new Date(o.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      map[day] = (map[day] ?? 0) + Number(o.total ?? 0);
+    });
+    return Object.entries(map).slice(-14).map(([date, gmv]) => ({ date, gmv }));
+  }, [revenue]);
+
+  const totalGMV   = revenue.reduce((s, o) => s + Number(o.total ?? 0), 0);
+  const s = stats ?? {};
+
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold font-heading">Platform Overview</h1>
-          <p className="text-sm text-muted-foreground">SETU Control Center · All blocks · Real-time</p>
+          <h1 className="text-xl md:text-2xl font-bold font-heading">Platform Overview</h1>
+          <p className="text-sm text-muted-foreground">SETU Control Center · All blocks</p>
         </div>
-        <div className="flex items-center gap-2">
-          {SUPER_ADMIN_STATS.fraudAlerts > 0 && (
-            <Badge className="bg-destructive text-destructive-foreground"><AlertTriangle className="w-3 h-3 mr-1" /> {SUPER_ADMIN_STATS.fraudAlerts} Fraud Alerts</Badge>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {(s.pendingVendors > 0 || s.pendingAssign > 0) && (
+            <Badge className="bg-destructive text-destructive-foreground text-xs">
+              <AlertTriangle className="w-3 h-3 mr-1" />
+              {(s.pendingVendors ?? 0) + (s.pendingAssign ?? 0)} alerts
+            </Badge>
           )}
-          <Badge variant="outline" className="text-xs"><Activity className="w-3 h-3 mr-1 inline" /> {SUPER_ADMIN_STATS.apiUptime}% Uptime</Badge>
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => load(true)}>
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+          </Button>
         </div>
       </div>
 
       {/* Top stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
-        <StatCard title="Total GMV" value={`₹${(SUPER_ADMIN_STATS.totalGMV/100000).toFixed(1)}L`} trend="Monthly ₹8.25L" trendUp icon={IndianRupee} />
-        <StatCard title="Active Blocks" value={`${SUPER_ADMIN_STATS.activeBlocks}/${SUPER_ADMIN_STATS.totalBlocks}`} icon={Globe} />
-        <StatCard title="Total Customers" value={SUPER_ADMIN_STATS.totalCustomers.toLocaleString()} trend="15 new today" trendUp icon={Users} />
-        <StatCard title="Credit Outstanding" value={`₹${(SUPER_ADMIN_STATS.creditOutstanding/1000).toFixed(0)}K`} subtitle={`${SUPER_ADMIN_STATS.defaultRate}% default`} icon={CreditCard} />
-        <StatCard title="Platform Health" value={`${SUPER_ADMIN_STATS.platformHealth}%`} icon={Activity} />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3">
+        <StatCard
+          title="GMV (30 days)"
+          value={loading ? '…' : fmtCurrency(totalGMV)}
+          icon={IndianRupee}
+        />
+        <StatCard
+          title="Active Orders"
+          value={loading ? '…' : String(s.activeOrders ?? 0)}
+          subtitle={`${s.todayOrders ?? 0} today`}
+          icon={Activity}
+        />
+        <StatCard
+          title="Total Vendors"
+          value={loading ? '…' : String(s.totalVendors ?? 0)}
+          subtitle={s.pendingVendors > 0 ? `${s.pendingVendors} pending` : 'verified'}
+          icon={Store}
+        />
+        <StatCard
+          title="Online Riders"
+          value={loading ? '…' : String(s.onlineRiders ?? 0)}
+          subtitle={`of ${s.totalRiders ?? 0} total`}
+          icon={Users}
+        />
       </div>
 
-      {/* GMV Chart + Block health */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-        <Card className="col-span-2 p-5 border-border">
-          <h3 className="font-semibold text-sm mb-4">GMV Growth</h3>
-          <div className="h-52">
+      {/* GMV Chart */}
+      <Card className="p-4 border-border">
+        <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
+          <IndianRupee className="w-4 h-4 text-primary" /> GMV Trend (30 days)
+        </h3>
+        {loading ? (
+          <div className="h-44 bg-muted rounded animate-pulse" />
+        ) : gmvByDay.length === 0 ? (
+          <div className="h-44 flex items-center justify-center text-sm text-muted-foreground">
+            No revenue data yet
+          </div>
+        ) : (
+          <div className="h-44">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={gmvTrend}>
+              <AreaChart data={gmvByDay}>
                 <defs>
                   <linearGradient id="saGmvGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(150, 40%, 40%)" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="hsl(150, 40%, 40%)" stopOpacity={0} />
+                    <stop offset="5%"  stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}   />
                   </linearGradient>
                 </defs>
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v/1000).toFixed(0)}K`} />
-                <Tooltip formatter={(v) => [`₹${v.toLocaleString()}`, 'GMV']} />
-                <Area type="monotone" dataKey="gmv" stroke="hsl(150, 40%, 40%)" fill="url(#saGmvGrad)" strokeWidth={2} />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis hide tickFormatter={v => fmtCurrency(v)} />
+                <Tooltip formatter={v => [fmtCurrency(v), 'GMV']} />
+                <Area
+                  type="monotone"
+                  dataKey="gmv"
+                  stroke="hsl(var(--primary))"
+                  fill="url(#saGmvGrad)"
+                  strokeWidth={2}
+                />
               </AreaChart>
             </ResponsiveContainer>
           </div>
-        </Card>
-
-        <Card className="p-5 border-border">
-          <h3 className="font-semibold text-sm mb-4">Block Health</h3>
-          <div className="space-y-4">
-            {blockHealth.map(block => (
-              <div key={block.name}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium">{block.name}</span>
-                  <span className={`text-xs font-bold ${block.health >= 90 ? 'text-accent' : block.health >= 70 ? 'text-amber-600' : 'text-muted-foreground'}`}>{block.health}%</span>
-                </div>
-                <Progress value={block.health} className="h-2" />
-                <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
-                  <span>{block.orders} orders</span>
-                  <span>{block.vendors} vendors</span>
-                  <span>{block.riders} riders</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
-
-      {/* Credit + Security + Audit */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-        <Card className="p-5 border-border">
-          <h3 className="font-semibold text-sm mb-4 flex items-center gap-2"><CreditCard className="w-4 h-4 text-primary" /> SETU Credit Overview</h3>
-          <div className="space-y-3">
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Total Disbursed</span><span className="font-bold">₹{(SUPER_ADMIN_STATS.totalCreditDisbursed/1000).toFixed(0)}K</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Outstanding</span><span className="font-bold text-amber-600">₹{(SUPER_ADMIN_STATS.creditOutstanding/1000).toFixed(0)}K</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Default Rate</span><span className="font-bold text-accent">{SUPER_ADMIN_STATS.defaultRate}%</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Active Accounts</span><span className="font-bold">342</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Avg Credit Limit</span><span className="font-bold">₹3,200</span></div>
-          </div>
-        </Card>
-
-        <Card className="p-5 border-border">
-          <h3 className="font-semibold text-sm mb-4 flex items-center gap-2"><Shield className="w-4 h-4 text-destructive" /> Security Status</h3>
-          <div className="space-y-3">
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">API Uptime</span><span className="font-bold text-accent">{SUPER_ADMIN_STATS.apiUptime}%</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Compliance Score</span><span className="font-bold">{SUPER_ADMIN_STATS.complianceScore}%</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Fraud Alerts</span><span className="font-bold text-destructive">{SUPER_ADMIN_STATS.fraudAlerts}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">2FA Coverage</span><span className="font-bold text-accent">100%</span></div>
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Last Security Audit</span><span className="font-bold">3 days ago</span></div>
-          </div>
-        </Card>
-
-        <Card className="p-5 border-border">
-          <h3 className="font-semibold text-sm mb-4">Recent Audit Log</h3>
-          <div className="space-y-3">
-            {AUDIT_LOG.map(log => (
-              <div key={log.id} className="border-b border-border pb-2 last:border-0">
-                <p className="text-xs font-medium">{log.action}</p>
-                <p className="text-[10px] text-muted-foreground">{log.actor} · {log.entity}</p>
-                <p className="text-[10px] text-muted-foreground/60">{new Date(log.timestamp).toLocaleString('en-IN')}</p>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
-
-      {/* Compliance */}
-      <Card className="p-5 border-border">
-        <h3 className="font-semibold text-sm mb-3">Compliance & Regulatory</h3>
-        <div className="grid grid-cols-4 gap-4">
-          {[
-            { label: 'DPDP Act 2023', status: 'Compliant', color: 'text-accent' },
-            { label: 'ONDC Integration', status: 'Active', color: 'text-accent' },
-            { label: 'PCI-DSS (via Razorpay)', status: 'Compliant', color: 'text-accent' },
-            { label: 'RBI Credit Guidelines', status: 'Review Pending', color: 'text-amber-600' },
-          ].map(item => (
-            <div key={item.label} className="text-center">
-              <p className={`text-sm font-bold ${item.color}`}>{item.status}</p>
-              <p className="text-xs text-muted-foreground">{item.label}</p>
-            </div>
-          ))}
-        </div>
+        )}
       </Card>
+
+      {/* Quick links + Audit log */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {/* Quick actions */}
+        <Card className="p-4 border-border">
+          <h3 className="font-semibold text-sm mb-3">Quick Actions</h3>
+          <div className="space-y-2">
+            {[
+              { label: 'Vendor Approvals', path: '/admin/vendor-approval', badge: s.pendingVendors, icon: Store },
+              { label: 'KYC Review Queue', path: '/admin/kyc',             badge: s.kycPending,     icon: ShieldAlert },
+              { label: 'User Management',  path: '/superadmin/users',      badge: null,             icon: Users },
+              { label: 'Platform Config',  path: '/superadmin/config',     badge: null,             icon: Activity },
+              { label: 'Fraud & Security', path: '/superadmin/security',   badge: null,             icon: AlertTriangle },
+              { label: 'Audit Log',        path: '/superadmin/audit',      badge: null,             icon: CreditCard },
+            ].map(item => (
+              <Link key={item.path} to={item.path}>
+                <div className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
+                  <item.icon className="w-4 h-4 text-primary shrink-0" />
+                  <span className="text-sm flex-1">{item.label}</span>
+                  {item.badge > 0 && (
+                    <Badge className="text-[9px] bg-destructive text-white border-0 h-4 min-w-4 px-1">
+                      {item.badge}
+                    </Badge>
+                  )}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </Card>
+
+        {/* Recent Audit Log */}
+        <Card className="p-4 border-border">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-sm">Recent Audit Log</h3>
+            <Link to="/superadmin/audit" className="text-xs text-primary">View all</Link>
+          </div>
+          {loading ? (
+            <div className="space-y-2 animate-pulse">
+              {[1,2,3].map(i => <div key={i} className="h-12 bg-muted rounded" />)}
+            </div>
+          ) : auditLog.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">No audit events yet</p>
+          ) : (
+            <div className="space-y-2">
+              {auditLog.slice(0, 5).map((log, i) => (
+                <div key={log.id ?? i} className="border-b border-border pb-2 last:border-0">
+                  <p className="text-xs font-medium capitalize">
+                    {(log.action ?? 'event').replace(/_/g, ' ')}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {log.profiles?.name ?? log.actor ?? 'system'} · {log.target ?? '—'}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground/60">
+                    {relTime(log.created_at)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* Platform stats row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        {[
+          { label: 'Today Revenue',  value: loading ? '…' : fmtCurrency(s.todayRevenue) },
+          { label: 'Pending Assign', value: loading ? '…' : String(s.pendingAssign ?? 0) },
+          { label: 'Open Tickets',   value: loading ? '…' : String(s.openTickets   ?? 0) },
+          { label: 'KYC Pending',    value: loading ? '…' : String(s.kycPending    ?? 0) },
+        ].map(item => (
+          <Card key={item.label} className="p-3 border-border text-center">
+            <p className="text-lg font-bold">{item.value}</p>
+            <p className="text-[10px] text-muted-foreground">{item.label}</p>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
