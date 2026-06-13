@@ -64,15 +64,15 @@ TESTS = [
     },
     {
         'function': 'create-razorpay-order',
-        'description': 'POST with missing fields returns 400',
+        'description': 'POST without valid user JWT returns 401',
         'method': 'POST',
         'headers': {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {ANON_KEY}',
             'apikey': ANON_KEY,
         },
-        'body': {},   # missing amount, orderId, etc.
-        'expect_status': [400, 422],   # should reject, not 500
+        'body': {},
+        'expect_status': [401],
     },
     {
         'function': 'kyc-verify',
@@ -112,7 +112,7 @@ TESTS = [
         'method': 'POST',
         'headers': {'Content-Type': 'application/json'},
         'body': {'event': 'payment.captured'},
-        'expect_status': [400, 401, 403, 500],  # any rejection is fine; 200 would be wrong
+        'expect_status': [400, 401, 403],  # any rejection is fine; 200 would be wrong
     },
 ]
 
