@@ -134,6 +134,16 @@ serve(async (req) => {
     )
   }
 
+  // Blocker 3 Fix: Disable fake KYC verification
+  return new Response(
+    JSON.stringify({
+      success: false,
+      error: "KYC verification is temporarily unavailable. Please contact support.",
+      status: "unavailable"
+    }),
+    { status: 503, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+  )
+
   // ── Production: call external KYC partner API ────────────
   // Currently configured for SurePass API (Aadhaar OTP flow).
   // Set SUREPASS_API_KEY in Supabase vault secrets.

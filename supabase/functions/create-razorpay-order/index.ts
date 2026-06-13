@@ -23,6 +23,30 @@ serve(async (req) => {
     return new Response("ok", { headers: CORS_HEADERS })
   }
 
+  // ── Auth: Verify JWT ──────────────────────────────────────
+  const authHeader = req.headers.get("authorization") ?? ""
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')              ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  )
+
+  const callerToken = authHeader.replace("Bearer ", "")
+  if (!callerToken) {
+    return new Response(
+      JSON.stringify({ error: "Missing authorization header" }),
+      { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+    )
+  }
+
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(callerToken)
+
+  if (authErr || !user) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized" }),
+      { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+    )
+  }
+
   let body: any
   try {
     body = await req.json()
@@ -50,6 +74,14 @@ serve(async (req) => {
     )
   }
 
+  // Blocker 1 Fix: Ensure user can only create orders for themselves
+  if (customerId !== user.id) {
+    return new Response(
+      JSON.stringify({ error: "Forbidden: customerId mismatch" }),
+      { status: 403, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+    )
+  }
+
   if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
     console.error('[create-razorpay-order] Razorpay credentials not set')
     return new Response(
@@ -57,11 +89,6 @@ serve(async (req) => {
       { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
     )
   }
-
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')              ?? '',
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-  )
 
   // Create Razorpay Order via server-side API (secret never touches client)
   const auth = btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`)

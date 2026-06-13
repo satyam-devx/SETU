@@ -133,14 +133,22 @@ function Step1({ onNext, user }) {
             <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {error}
           </div>
         )}
-        <Button
-          variant="outline" size="sm" className="w-full text-xs"
-          onClick={otpSent ? () => onNext() : handleVerify}
-          disabled={loading || aadhaar.length !== 12}
-        >
-          {loading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-          {otpSent ? 'Confirm OTP & Continue' : 'Request OTP via UIDAI'}
-        </Button>
+        <div className="space-y-3">
+          <Button
+            variant="outline" size="sm" className="w-full text-xs"
+            onClick={otpSent ? () => onNext() : handleVerify}
+            disabled={true || loading || aadhaar.length !== 12}
+          >
+            {loading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+            {otpSent ? 'Confirm OTP & Continue' : 'Request OTP via UIDAI'}
+          </Button>
+          <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+            <AlertCircle className="w-3.5 h-3.5 text-amber-600 mt-0.5 shrink-0" />
+            <p className="text-[10px] text-amber-700 font-medium">
+              KYC verification temporarily unavailable — contact support.
+            </p>
+          </div>
+        </div>
       </Card>
 
       <Card className="p-4 border-border">
