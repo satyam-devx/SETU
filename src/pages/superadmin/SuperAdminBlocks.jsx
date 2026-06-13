@@ -1,143 +1,199 @@
-import React from 'react';
-import { MapPin, Store, Users, Bike, TrendingUp, CheckCircle, Clock } from 'lucide-react';
+// ═══════════════════════════════════════════════════════════
+// SETU — SuperAdminBlocks  (v2 — Live DB)
+// Fixed: reads real villages table grouped by block.
+// ═══════════════════════════════════════════════════════════
+import React, { useMemo } from 'react';
+import { MapPin, Store, Users, Bike, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { VILLAGES } from '@/lib/mockData';
+import AppHeader from '@/components/shared/AppHeader';
+import { useDataFetch } from '@/hooks/useDataFetch';
+import { supabase } from '@/lib/supabase';
 
-const blocks = [
-  {
-    id: 'b1', name: 'Madhepur', district: 'Madhubani', status: 'active',
-    villages: 18, activeVillages: 12, population: 85000,
-    vendors: 48, riders: 12, customers: 1850,
-    monthlyGMV: 580000, ordersThisMonth: 325,
-    launchDate: '2024-11-01', setuScore: 82,
-  },
-  {
-    id: 'b2', name: 'Jhanjharpur', district: 'Madhubani', status: 'active',
-    villages: 22, activeVillages: 8, population: 120000,
-    vendors: 32, riders: 8, customers: 920,
-    monthlyGMV: 245000, ordersThisMonth: 136,
-    launchDate: '2025-01-15', setuScore: 68,
-  },
-  {
-    id: 'b3', name: 'Rajnagar', district: 'Madhubani', status: 'onboarding',
-    villages: 14, activeVillages: 0, population: 62000,
-    vendors: 0, riders: 0, customers: 0,
-    monthlyGMV: 0, ordersThisMonth: 0,
-    launchDate: null, setuScore: 0,
-  },
-  {
-    id: 'b4', name: 'Phulparas', district: 'Madhubani', status: 'planned',
-    villages: 19, activeVillages: 0, population: 78000,
-    vendors: 0, riders: 0, customers: 0,
-    monthlyGMV: 0, ordersThisMonth: 0,
-    launchDate: null, setuScore: 0,
-  },
-  {
-    id: 'b5', name: 'Basopatti', district: 'Madhubani', status: 'planned',
-    villages: 16, activeVillages: 0, population: 55000,
-    vendors: 0, riders: 0, customers: 0,
-    monthlyGMV: 0, ordersThisMonth: 0,
-    launchDate: null, setuScore: 0,
-  },
-];
-
-const statusConfig = {
-  active: { label: 'Active', className: 'bg-green-100 text-green-800' },
-  onboarding: { label: 'Onboarding', className: 'bg-amber-100 text-amber-800' },
-  planned: { label: 'Planned', className: 'bg-gray-100 text-gray-600' },
-};
+async function fetchBlockData() {
+  const [villagesRes, vendorsRes, ridersRes, customersRes] = await Promise.all([
+    supabase.from('villages').select('*').order('block').order('name'),
+    supabase.from('vendors').select('village_id, is_verified, is_active'),
+    supabase.from('riders').select('village_id, is_online, is_active'),
+    supabase.from('profiles').select('village_id, role').eq('role', 'customer'),
+  ]);
+  return {
+    data: {
+      villages:  villagesRes.data  ?? [],
+      vendors:   vendorsRes.data   ?? [],
+      riders:    ridersRes.data    ?? [],
+      customers: customersRes.data ?? [],
+    }
+  };
+}
 
 export default function SuperAdminBlocks() {
+  const { data, isLoading, error, refetch } = useDataFetch(
+    fetchBlockData,
+    [],
+    { cacheKey: 'superadmin-blocks', staleTime: 60_000 }
+  );
+
+  const villages  = data?.villages  ?? [];
+  const vendors   = data?.vendors   ?? [];
+  const riders    = data?.riders    ?? [];
+  const customers = data?.customers ?? [];
+
+  // Group villages by block
+  const blocks = useMemo(() => {
+    const map = {};
+    villages.forEach(v => {
+      if (!map[v.block]) {
+        map[v.block] = { name: v.block, district: v.district, villages: [], activeVillages: 0 };
+      }
+      map[v.block].villages.push(v);
+      if (v.is_active) map[v.block].activeVillages++;
+    });
+
+    // Attach vendor/rider/customer counts per block
+    return Object.values(map).map(block => {
+      const villageIds = new Set(block.villages.map(v => v.id));
+      const blockVendors   = vendors.filter(v => villageIds.has(v.village_id));
+      const blockRiders    = riders.filter(r => villageIds.has(r.village_id));
+      const blockCustomers = customers.filter(c => villageIds.has(c.village_id));
+      return {
+        ...block,
+        totalVillages:  block.villages.length,
+        vendors:        blockVendors.filter(v => v.is_verified && v.is_active !== false).length,
+        riders:         blockRiders.filter(r => r.is_active !== false).length,
+        onlineRiders:   blockRiders.filter(r => r.is_online).length,
+        customers:      blockCustomers.length,
+        population:     block.villages.reduce((s, v) => s + (v.population ?? 0), 0),
+        hasAnchor:      block.villages.some(v => v.anchor_id),
+      };
+    });
+  }, [villages, vendors, riders, customers]);
+
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold font-heading mb-1">Blocks & Geography</h1>
-      <p className="text-sm text-muted-foreground mb-6">Expand SETU block by block across Madhubani district</p>
+    <div className="flex-1 overflow-auto pb-6">
+      <AppHeader
+        title="Blocks & Geography"
+        subtitle={`${blocks.length} blocks · ${villages.length} villages`}
+        rightAction={
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={refetch}>
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </Button>
+        }
+      />
 
-      {/* Map placeholder */}
-      <Card className="h-52 bg-muted border-border mb-6 flex items-center justify-center">
-        <div className="text-center">
-          <MapPin className="w-12 h-12 text-primary mx-auto mb-2" />
-          <p className="font-semibold">Madhubani District Map</p>
-          <p className="text-xs text-muted-foreground">Interactive block coverage view</p>
-          <div className="flex gap-3 mt-3 justify-center text-xs">
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-accent inline-block" /> Active</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-amber-500 inline-block" /> Onboarding</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-gray-400 inline-block" /> Planned</span>
+      <div className="p-4 space-y-4 max-w-3xl">
+
+        {/* Map placeholder — real map integration is a future phase */}
+        <Card className="h-36 bg-muted border-border flex items-center justify-center">
+          <div className="text-center">
+            <MapPin className="w-8 h-8 text-primary mx-auto mb-1" />
+            <p className="font-semibold text-sm">Madhubani District</p>
+            <p className="text-xs text-muted-foreground">{blocks.length} blocks · map integration planned</p>
           </div>
-        </div>
-      </Card>
+        </Card>
 
-      <div className="space-y-4">
-        {blocks.map(block => (
-          <Card key={block.id} className="p-5 border-border">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <h3 className="font-semibold text-base">{block.name} Block</h3>
-                  <Badge variant="outline" className={`text-[9px] ${statusConfig[block.status].className}`}>
-                    {statusConfig[block.status].label}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">{block.district} District · Pop: {block.population.toLocaleString()}</p>
-                {block.launchDate && <p className="text-xs text-muted-foreground">Launched: {new Date(block.launchDate).toLocaleDateString('en-IN')}</p>}
-              </div>
-              {block.status === 'active' && (
-                <div className="text-right">
-                  <p className="text-lg font-bold">₹{(block.monthlyGMV / 1000).toFixed(0)}K</p>
-                  <p className="text-xs text-muted-foreground">monthly GMV</p>
-                </div>
-              )}
-              {block.status === 'planned' && (
-                <Button size="sm" className="text-xs h-7">Start Onboarding</Button>
-              )}
-            </div>
+        {error && (
+          <Card className="p-3 border-destructive/20 bg-destructive/5">
+            <p className="text-xs text-destructive">{error.message}</p>
+            <Button size="sm" variant="outline" className="mt-2" onClick={refetch}>Retry</Button>
+          </Card>
+        )}
 
-            {block.status === 'active' && (
-              <>
-                <div className="grid grid-cols-4 gap-3 mb-4">
-                  <div className="text-center p-2 bg-muted rounded-lg">
-                    <p className="text-lg font-bold">{block.vendors}</p>
-                    <p className="text-[10px] text-muted-foreground">Vendors</p>
-                  </div>
-                  <div className="text-center p-2 bg-muted rounded-lg">
-                    <p className="text-lg font-bold">{block.riders}</p>
-                    <p className="text-[10px] text-muted-foreground">Riders</p>
-                  </div>
-                  <div className="text-center p-2 bg-muted rounded-lg">
-                    <p className="text-lg font-bold">{block.customers.toLocaleString()}</p>
-                    <p className="text-[10px] text-muted-foreground">Customers</p>
-                  </div>
-                  <div className="text-center p-2 bg-muted rounded-lg">
-                    <p className="text-lg font-bold">{block.ordersThisMonth}</p>
-                    <p className="text-[10px] text-muted-foreground">Orders</p>
+        {isLoading && (
+          <div className="space-y-3 animate-pulse">
+            {[1,2,3].map(i => <div key={i} className="h-32 bg-muted rounded-xl" />)}
+          </div>
+        )}
+
+        {!isLoading && blocks.length === 0 && (
+          <Card className="p-6 border-border text-center">
+            <MapPin className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">No villages in the database yet</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Add villages to the <code className="bg-muted px-1 rounded">villages</code> table to see blocks here
+            </p>
+          </Card>
+        )}
+
+        <div className="space-y-4">
+          {blocks.map(block => {
+            const coveragePct = block.totalVillages > 0
+              ? Math.round((block.activeVillages / block.totalVillages) * 100)
+              : 0;
+            const isActive = block.vendors > 0 || block.riders > 0;
+
+            return (
+              <Card key={block.name} className="p-4 border-border">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <h3 className="font-semibold text-base">{block.name} Block</h3>
+                      <Badge
+                        variant="outline"
+                        className={`text-[9px] ${isActive ? 'bg-green-100 text-green-800 border-green-200' : 'bg-gray-100 text-gray-600'}`}
+                      >
+                        {isActive ? 'Active' : 'Not started'}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {block.district} District
+                      {block.population > 0 ? ` · Pop. ${block.population.toLocaleString('en-IN')}` : ''}
+                    </p>
                   </div>
                 </div>
+
+                <div className="grid grid-cols-4 gap-2 mb-3 text-center">
+                  <div className="p-2 bg-muted/40 rounded-lg">
+                    <p className="text-base font-bold">{block.vendors}</p>
+                    <p className="text-[9px] text-muted-foreground">Vendors</p>
+                  </div>
+                  <div className="p-2 bg-muted/40 rounded-lg">
+                    <p className="text-base font-bold">{block.riders}</p>
+                    <p className="text-[9px] text-muted-foreground">Riders</p>
+                  </div>
+                  <div className="p-2 bg-muted/40 rounded-lg">
+                    <p className="text-base font-bold">{block.customers}</p>
+                    <p className="text-[9px] text-muted-foreground">Customers</p>
+                  </div>
+                  <div className="p-2 bg-muted/40 rounded-lg">
+                    <p className="text-base font-bold">{block.onlineRiders}</p>
+                    <p className="text-[9px] text-muted-foreground">Online</p>
+                  </div>
+                </div>
+
                 <div>
                   <div className="flex justify-between text-xs mb-1">
-                    <span>Village Coverage</span>
-                    <span>{block.activeVillages}/{block.villages} villages · SETU Score: {block.setuScore}</span>
+                    <span className="text-muted-foreground">Village coverage</span>
+                    <span>{block.activeVillages}/{block.totalVillages} villages</span>
                   </div>
-                  <Progress value={(block.activeVillages / block.villages) * 100} className="h-2" />
+                  <Progress value={coveragePct} className="h-1.5" />
                 </div>
-              </>
-            )}
 
-            {block.status === 'onboarding' && (
-              <div className="grid grid-cols-3 gap-3">
-                {['Vendor Recruitment', 'Rider Hiring', 'Community Awareness'].map((step, i) => (
-                  <div key={step} className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-center">
-                    <Clock className="w-5 h-5 text-amber-600 mx-auto mb-1" />
-                    <p className="text-xs font-medium">{step}</p>
-                    <p className="text-[10px] text-muted-foreground">In Progress</p>
+                {/* Villages list */}
+                {block.villages.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1">
+                    {block.villages.slice(0, 8).map(v => (
+                      <Badge
+                        key={v.id}
+                        variant="outline"
+                        className={`text-[9px] ${v.is_active ? 'border-green-200 text-green-700' : 'text-muted-foreground'}`}
+                      >
+                        {v.name}
+                      </Badge>
+                    ))}
+                    {block.villages.length > 8 && (
+                      <Badge variant="outline" className="text-[9px] text-muted-foreground">
+                        +{block.villages.length - 8} more
+                      </Badge>
+                    )}
                   </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        ))}
+                )}
+              </Card>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
