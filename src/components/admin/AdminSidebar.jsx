@@ -10,7 +10,7 @@ import {
   AlertTriangle, ArrowLeft, Wrench, Users,
   ShieldAlert, Activity, Tag, Package, Bell,
   Image, FileCheck, Megaphone, TrendingUp,
-  ClipboardList, Scale, ChevronRight,
+  ClipboardList, Scale, ChevronRight, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -64,7 +64,7 @@ const GROUP_LABELS = {
   platform:  'Platform',
 };
 
-export default function AdminSidebar() {
+export default function AdminSidebar({ onClose }) {
   const location = useLocation();
   const [badges,  setBadges]  = useState({});
   const [profile, setProfile] = useState(null);
@@ -114,10 +114,19 @@ export default function AdminSidebar() {
 
   return (
     <aside className="w-60 bg-sidebar text-sidebar-foreground border-r border-sidebar-border h-screen sticky top-0 flex flex-col">
-      <div className="p-5 border-b border-sidebar-border">
+      <div className="p-5 border-b border-sidebar-border relative">
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="lg:hidden absolute top-4 right-4 text-sidebar-foreground/50 hover:text-white"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
         <Link
           to="/"
           className="text-xs text-sidebar-foreground/50 flex items-center gap-1 mb-3 hover:text-sidebar-foreground"
+          onClick={onClose}
         >
           <ArrowLeft className="w-3 h-3" /> Back to SETU
         </Link>
@@ -141,6 +150,7 @@ export default function AdminSidebar() {
                   <Link
                     key={item.path}
                     to={item.path}
+                    onClick={onClose}
                     className={cn(
                       'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
                       isActive
