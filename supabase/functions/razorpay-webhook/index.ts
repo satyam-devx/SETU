@@ -69,9 +69,11 @@ serve(async (req) => {
   const signature = req.headers.get("x-razorpay-signature");
 
   // 1. Signature verification — reject anything unsigned
-  if (!WEBHOOK_SECRET) {
-    console.error("[webhook] RAZORPAY_WEBHOOK_SECRET not set");
-    return err("Server misconfiguration", 500);
+  // Fail closed: if secret is missing or signature is absent/wrong, always 401.
+  // Never 500 — do not leak misconfiguration state to callers.
+  if (!WEBHOOK_SECRET || !signature) {
+    console.error("[webhook] Missing secret or signature");
+    return err("Unauthorized", 401);
   }
 
   const expected = crypto
@@ -81,7 +83,7 @@ serve(async (req) => {
 
   if (signature !== expected) {
     console.warn("[webhook] Invalid signature — rejected");
-    return err("Invalid signature", 401);
+    return err("Unauthorized", 401);
   }
 
   let payload: Record<string, unknown>;
