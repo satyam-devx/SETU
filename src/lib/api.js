@@ -1546,6 +1546,12 @@ export async function reviewImage(imageId, status, reason = null) {
 // ── Live analytics ────────────────────────────────────────
 
 export async function getLiveAnalytics() {
+  // First try the RPC (migration 011) for rich aggregated data
+  try {
+    const { data, error } = await supabase.rpc('get_live_admin_analytics');
+    if (!error && data) return ok(data);
+  } catch (_) {}
+  // Fallback: view-based query (older schema)
   return safeQuery(
     () => supabase.from('admin_analytics').select('*').single(),
     null,
@@ -1627,11 +1633,28 @@ export async function reviewKYC(kycId, status, reason = null) {
     failure_reason: reason,
     verified_at:    status === 'verified' ? new Date().toISOString() : null,
   };
-  return safeQuery(
-    () => supabase.from('kyc_records').update(updates).eq('id', kycId).select().single(),
-    null,
-    'reviewKYC'
-  );
+  try {
+    const { data, error } = await supabase
+      .from('kyc_records')
+      .update(updates)
+      .eq('id', kycId)
+      .select()
+      .single();
+    if (error) return err(error, 'reviewKYC');
+    // Audit log
+    const actorId = (await supabase.auth.getUser()).data.user?.id;
+    await supabase.from('audit_log').insert({
+      actor_id:    actorId,
+      actor:       'admin',
+      action:      'review_kyc',
+      target:      kycId,
+      target_type: 'kyc',
+      detail:      status === 'rejected' ? reason : `Approved KYC — ${status}`,
+    });
+    return ok(data);
+  } catch (e) {
+    return err(e, 'reviewKYC');
+  }
 }
 
 // ── Vendor approval (wired to real DB) ───────────────────
@@ -1739,4 +1762,301 @@ export const AdminAPI = {
   // ── KYC ───────────────────────────────────────────────
   getKYCQueue:         (opts)                     => getKYCQueue(opts),
   reviewKYC:           (id, status, reason)       => reviewKYC(id, status, reason),
+
+  // ── Order management (extended) ───────────────────────
+  updateOrderStatus:   (orderId, status, note)    => adminUpdateOrderStatus(orderId, status, note),
+  cancelOrder:         (orderId, reason)          => adminCancelOrder(orderId, reason),
+  getOrderDetail:      (orderId)                  => getOrderDetail(orderId),
+
+  // ── Vendor management (extended) ──────────────────────
+  getVendorDetail:     (vendorId)                 => getVendorDetail(vendorId),
+  suspendVendor:       (vendorId, reason)         => suspendVendor(vendorId, reason),
+  unsuspendVendor:     (vendorId)                 => unsuspendVendor(vendorId),
+  getVendorAnalytics:  (vendorId)                 => getVendorAnalytics(vendorId),
+
+  // ── User management (extended) ────────────────────────
+  getUserDetail:       (userId)                   => getUserDetail(userId),
+  getUserOrders:       (userId, opts)             => getUserOrders(userId, opts),
+
+  // ── Audit log ─────────────────────────────────────────
+  getAuditLog:         (opts)                     => getAuditLog(opts),
+
+  // ── Analytics ─────────────────────────────────────────
+  getRevenueAnalytics: (opts)                     => getRevenueAnalytics(opts),
+
+  // ── Disputes ──────────────────────────────────────────
+  getDisputes:         (opts)                     => getAdminDisputes(opts),
+  resolveDispute:      (id, resolution)           => resolveDispute(id, resolution),
+
+  // ── Product creation ──────────────────────────────────
+  createProduct:       (data)                     => adminCreateProduct(data),
+
+  // ── Rider management (extended) ───────────────────────
+  getRiderDetail:      (riderId)                  => getRiderDetail(riderId),
+  verifyRider:         (riderId)                  => adminVerifyRider(riderId),
 };
+
+// ═══════════════════════════════════════════════════════════
+// ADMIN API EXTENSIONS  (production-grade additions)
+// ═══════════════════════════════════════════════════════════
+
+// ── Order management (admin) ──────────────────────────────
+
+export async function adminUpdateOrderStatus(orderId, status, note = null) {
+  return safeQuery(
+    () => supabase.rpc('update_order_status', {
+      p_order_id:   orderId,
+      p_new_status: status,
+      p_note:       note,
+    }),
+    null,
+    'adminUpdateOrderStatus'
+  );
+}
+
+export async function adminCancelOrder(orderId, reason) {
+  return safeQuery(
+    () => supabase.rpc('update_order_status', {
+      p_order_id:   orderId,
+      p_new_status: 'cancelled',
+      p_note:       reason ?? 'Cancelled by admin',
+    }),
+    null,
+    'adminCancelOrder'
+  );
+}
+
+export async function getOrderDetail(orderId) {
+  return safeQuery(
+    () => supabase
+      .from('orders')
+      .select('*, order_items(*)')
+      .eq('id', orderId)
+      .single(),
+    null,
+    'getOrderDetail'
+  );
+}
+
+// ── Vendor detail & suspension ────────────────────────────
+
+export async function getVendorDetail(vendorId) {
+  return safeQuery(
+    () => supabase
+      .from('vendors')
+      .select(`
+        *, 
+        kyc_records(id, type, status, doc_url, aadhaar_last4, created_at, verified_at, failure_reason),
+        products(id, name, price, stock, is_available)
+      `)
+      .eq('id', vendorId)
+      .single(),
+    null,
+    'getVendorDetail'
+  );
+}
+
+export async function suspendVendor(vendorId, reason) {
+  try {
+    const { error: vendorErr } = await supabase
+      .from('vendors')
+      .update({ is_active: false, is_open: false })
+      .eq('id', vendorId);
+    if (vendorErr) return err(vendorErr, 'suspendVendor/vendor');
+
+    await supabase.from('audit_log').insert({
+      actor_id: (await supabase.auth.getUser()).data.user?.id,
+      actor:    'admin',
+      action:   'suspend_vendor',
+      target:   vendorId,
+      detail:   reason ?? null,
+    });
+    return ok(true);
+  } catch (e) {
+    return err(e, 'suspendVendor');
+  }
+}
+
+export async function unsuspendVendor(vendorId) {
+  try {
+    const { error: vendorErr } = await supabase
+      .from('vendors')
+      .update({ is_active: true })
+      .eq('id', vendorId);
+    if (vendorErr) return err(vendorErr, 'unsuspendVendor');
+
+    await supabase.from('audit_log').insert({
+      actor_id: (await supabase.auth.getUser()).data.user?.id,
+      actor:    'admin',
+      action:   'unsuspend_vendor',
+      target:   vendorId,
+      detail:   null,
+    });
+    return ok(true);
+  } catch (e) {
+    return err(e, 'unsuspendVendor');
+  }
+}
+
+// ── User detail & activity ────────────────────────────────
+
+export async function getUserDetail(userId) {
+  return safeQuery(
+    () => supabase
+      .from('profiles')
+      .select('*, villages(name)')
+      .eq('id', userId)
+      .single(),
+    null,
+    'getUserDetail'
+  );
+}
+
+export async function getUserOrders(userId, { limit = 20 } = {}) {
+  return safeQuery(
+    () => supabase
+      .from('orders')
+      .select('id, order_number, status, total, payment_method, created_at, vendor_name')
+      .eq('customer_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit),
+    [],
+    'getUserOrders'
+  );
+}
+
+// ── Audit log viewer ──────────────────────────────────────
+
+export async function getAuditLog({ page = 0, limit = 50, action, actorId } = {}) {
+  return safeQuery(() => {
+    let q = supabase
+      .from('audit_log')
+      .select('*, profiles!actor_id(name, role)')
+      .order('created_at', { ascending: false })
+      .range(page * limit, (page + 1) * limit - 1);
+    if (action)  q = q.eq('action', action);
+    if (actorId) q = q.eq('actor_id', actorId);
+    return q;
+  }, [], 'getAuditLog');
+}
+
+// ── Analytics (revenue trend, per-vendor) ────────────────
+
+export async function getRevenueAnalytics({ days = 30 } = {}) {
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+  return safeQuery(
+    () => supabase
+      .from('orders')
+      .select('created_at, total, platform_fee, status, payment_method, vendor_name, village')
+      .gte('created_at', since)
+      .not('status', 'eq', 'cancelled')
+      .order('created_at', { ascending: true }),
+    [],
+    'getRevenueAnalytics'
+  );
+}
+
+export async function getVendorAnalytics(vendorId) {
+  const [ordersRes, productsRes] = await Promise.all([
+    supabase
+      .from('orders')
+      .select('id, status, total, created_at, payment_method')
+      .eq('vendor_id', vendorId)
+      .order('created_at', { ascending: false })
+      .limit(100),
+    supabase
+      .from('products')
+      .select('id, name, stock, is_available, price')
+      .eq('vendor_id', vendorId),
+  ]);
+  return ok({
+    orders:   ordersRes.data  ?? [],
+    products: productsRes.data ?? [],
+  });
+}
+
+// ── Disputes / escalations ────────────────────────────────
+
+export async function getAdminDisputes({ status, page = 0, limit = 50 } = {}) {
+  return safeQuery(() => {
+    let q = supabase
+      .from('disputes')
+      .select(`
+        *,
+        profiles!raised_by(name, phone, role),
+        orders(order_number, total, vendor_name)
+      `)
+      .order('created_at', { ascending: false })
+      .range(page * limit, (page + 1) * limit - 1);
+    if (status) q = q.eq('status', status);
+    return q;
+  }, [], 'getAdminDisputes');
+}
+
+export async function resolveDispute(disputeId, resolution) {
+  return safeQuery(
+    () => supabase
+      .from('disputes')
+      .update({ status: 'resolved', resolution, resolved_at: new Date().toISOString() })
+      .eq('id', disputeId)
+      .select().single(),
+    null,
+    'resolveDispute'
+  );
+}
+
+// ── Product creation ──────────────────────────────────────
+
+export async function adminCreateProduct(productData) {
+  return safeQuery(
+    () => supabase.from('products').insert(productData).select().single(),
+    null,
+    'adminCreateProduct'
+  );
+}
+
+// ── Notification broadcast log (persistent) ──────────────
+
+export async function getNotificationBroadcasts({ page = 0, limit = 30 } = {}) {
+  return safeQuery(
+    () => supabase
+      .from('notifications')
+      .select('type, title, body, created_at')
+      .is('user_id', null)  // broadcast rows have no specific user_id
+      .order('created_at', { ascending: false })
+      .range(page * limit, (page + 1) * limit - 1),
+    [],
+    'getNotificationBroadcasts'
+  );
+}
+
+// ── Rider detail ──────────────────────────────────────────
+
+export async function getRiderDetail(riderId) {
+  return safeQuery(
+    () => supabase
+      .from('riders')
+      .select('*, kyc_records!user_id(id, type, status, doc_url, aadhaar_last4, failure_reason)')
+      .eq('id', riderId)
+      .single(),
+    null,
+    'getRiderDetail'
+  );
+}
+
+export async function adminVerifyRider(riderId) {
+  try {
+    const { error: rErr } = await supabase
+      .from('riders')
+      .update({ is_verified: true, kyc_status: 'approved' })
+      .eq('id', riderId);
+    if (rErr) return err(rErr, 'adminVerifyRider');
+    await supabase.from('audit_log').insert({
+      actor_id: (await supabase.auth.getUser()).data.user?.id,
+      actor: 'admin', action: 'verify_rider', target: riderId,
+    });
+    return ok(true);
+  } catch(e) { return err(e, 'adminVerifyRider'); }
+}
+
+// Extend AdminAPI with all new functions
