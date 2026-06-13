@@ -108,4 +108,10 @@ create policy "customer_addresses_own_delete"
   using (auth.uid() = user_id);
 
 -- ── Realtime ─────────────────────────────────────────────────
-alter publication supabase_realtime add table customer_addresses;
+do $$
+begin
+  alter publication supabase_realtime add table customer_addresses;
+exception
+  when duplicate_object then
+    null;
+end $$;
