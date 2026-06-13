@@ -1,132 +1,307 @@
-import React, { useState } from 'react';
-import { Shield, AlertTriangle, Eye, Ban, CheckCircle, Search, TrendingUp } from 'lucide-react';
+// ═══════════════════════════════════════════════════════════
+// SETU — SuperAdminSecurity  (v2 — Live DB)
+// Fixed: reads real banned users + audit events; block/clear
+// actions write to DB via AdminAPI.banUser / unbanUser.
+// Fraud scoring is not yet implemented in DB — that section
+// shows real banned user list as the actionable security view.
+// ═══════════════════════════════════════════════════════════
+import React, { useState, useCallback } from 'react';
+import {
+  Shield, AlertTriangle, Ban, CheckCircle, Search,
+  RefreshCw, Loader2, ShieldCheck, ShieldOff, User,
+  Phone, MapPin,
+} from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import { useDataFetch } from '@/hooks/useDataFetch';
+import { AdminAPI } from '@/lib/api';
 
-const FRAUD_EVENTS = [
-  { id: 'f1', type: 'Multiple accounts',    user: 'Device ID: A8F2...',   risk: 0.92, status: 'blocked',    time: '10 min ago',  village: 'Laxmipur'  },
-  { id: 'f2', type: 'Unusual order pattern', user: 'Customer cu-4821',    risk: 0.78, status: 'flagged',    time: '45 min ago',  village: 'Madhepur'  },
-  { id: 'f3', type: 'COD manipulation',      user: 'Rider r-0042',        risk: 0.85, status: 'under_review', time: '2 hr ago',  village: 'Parsad'    },
-  { id: 'f4', type: 'Fake KYC document',     user: 'Vendor vn-0091',      risk: 0.95, status: 'blocked',    time: '4 hr ago',   village: 'Madhepur'  },
-  { id: 'f5', type: 'Price manipulation',    user: 'Vendor vn-0034',      risk: 0.61, status: 'monitoring', time: '6 hr ago',   village: 'Jhanjharpur'},
-];
+function fmtDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' });
+}
 
-const FRAUD_TREND = [
-  { day: 'Mon', events: 2 }, { day: 'Tue', events: 5 }, { day: 'Wed', events: 3 },
-  { day: 'Thu', events: 7 }, { day: 'Fri', events: 4 }, { day: 'Sat', events: 8 }, { day: 'Sun', events: 5 },
-];
-
-const riskColor   = (r) => r >= 0.85 ? 'text-red-600' : r >= 0.7 ? 'text-amber-600' : 'text-yellow-600';
-const statusStyle = {
-  blocked:       'bg-red-100 text-red-700',
-  flagged:       'bg-amber-100 text-amber-700',
-  under_review:  'bg-blue-100 text-blue-700',
-  monitoring:    'bg-yellow-100 text-yellow-700',
-  cleared:       'bg-green-100 text-green-700',
+const ROLE_COLORS = {
+  customer:      'bg-blue-100 text-blue-700',
+  vendor:        'bg-green-100 text-green-700',
+  rider:         'bg-amber-100 text-amber-700',
+  seva_provider: 'bg-purple-100 text-purple-700',
+  anchor:        'bg-teal-100 text-teal-700',
 };
 
 export default function SuperAdminSecurity() {
-  const [tab, setTab]       = useState('all');
-  const [query, setQuery]   = useState('');
-  const [events, setEvents] = useState(FRAUD_EVENTS);
-  const [acting, setActing] = useState(null);
+  const [tab,      setTab]      = useState('banned');
+  const [query,    setQuery]    = useState('');
+  const [acting,   setActing]   = useState(null);
+  const [banModal, setBanModal] = useState(null);
+  const [banReason,setBanReason]= useState('');
 
-  const filtered = events.filter(e => {
-    const matchQ = !query || e.type.toLowerCase().includes(query.toLowerCase()) || e.user.toLowerCase().includes(query.toLowerCase());
-    if (tab === 'blocked')  return matchQ && e.status === 'blocked';
-    if (tab === 'flagged')  return matchQ && (e.status === 'flagged' || e.status === 'under_review');
-    return matchQ;
+  // Load all users filtered by tab
+  const { data, isLoading, error, refetch } = useDataFetch(
+    () => AdminAPI.getUsers({ limit: 200 }),
+    [],
+    { cacheKey: 'security-users', staleTime: 20_000 }
+  );
+
+  // Load recent audit log for security events
+  const { data: auditData } = useDataFetch(
+    () => AdminAPI.getAuditLog({ limit: 20 }),
+    [],
+    { cacheKey: 'security-audit', staleTime: 30_000 }
+  );
+
+  const allUsers   = data ?? [];
+  const bannedUsers = allUsers.filter(u => u.is_verified === false);
+  const activeUsers = allUsers.filter(u => u.is_verified !== false);
+
+  // Security-relevant audit events
+  const securityEvents = (auditData ?? []).filter(e =>
+    ['ban_user', 'unban_user', 'assign_role', 'vendor_suspended', 'review_kyc'].includes(e.action)
+  );
+
+  const displayed = tab === 'banned' ? bannedUsers : tab === 'events' ? [] : activeUsers;
+
+  const filtered = displayed.filter(u => {
+    if (!query) return true;
+    return (
+      (u.name ?? '').toLowerCase().includes(query.toLowerCase()) ||
+      (u.phone ?? '').includes(query) ||
+      (u.role  ?? '').includes(query)
+    );
   });
 
-  const act = (id, newStatus) => {
-    setActing(id + newStatus);
-    setTimeout(() => {
-      setEvents(es => es.map(e => e.id === id ? { ...e, status: newStatus } : e));
-      setActing(null);
-    }, 500);
+  const handleUnban = async (userId) => {
+    setActing(userId);
+    await AdminAPI.unbanUser(userId);
+    refetch();
+    setActing(null);
+  };
+
+  const handleBan = async () => {
+    if (!banModal) return;
+    setActing(banModal.id);
+    await AdminAPI.banUser(banModal.id, banReason || null);
+    refetch();
+    setBanModal(null);
+    setBanReason('');
+    setActing(null);
   };
 
   return (
-    <div className="flex-1 overflow-auto">
-      <AppHeader title="Fraud & Security" />
-      <div className="p-4 space-y-4">
+    <div className="flex-1 overflow-auto pb-10">
+      <AppHeader
+        title="Fraud & Security"
+        subtitle="User bans, security events, audit trail"
+        rightAction={
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={refetch}>
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </Button>
+        }
+      />
 
+      <div className="p-4 space-y-4 max-w-3xl">
+
+        {/* Stats */}
         <div className="grid grid-cols-2 gap-2">
-          <StatCard title="Active Threats" value={String(events.filter(e => e.status !== 'cleared').length)} icon={AlertTriangle} />
-          <StatCard title="Blocked Today"  value={String(events.filter(e => e.status === 'blocked').length)} icon={Ban} />
+          <StatCard title="Banned Users"    value={isLoading ? '…' : String(bannedUsers.length)}  icon={Ban}        />
+          <StatCard title="Security Events" value={isLoading ? '…' : String(securityEvents.length)} icon={Shield} />
         </div>
 
-        <Card className="p-4 border-border">
-          <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-primary" /> Fraud Events (7 days)
-          </h3>
-          <div className="h-28">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={FRAUD_TREND} barSize={16}>
-                <XAxis dataKey="day" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} />
-                <YAxis hide />
-                <Tooltip formatter={v => [v, 'Events']} />
-                <Bar dataKey="events" fill="hsl(var(--destructive))" radius={[3,3,0,0]} opacity={0.7} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Search events..." className="pl-9" value={query} onChange={e => setQuery(e.target.value)} />
-        </div>
-
+        {/* Tabs */}
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList className="w-full grid grid-cols-3">
-            <TabsTrigger value="all"     className="text-xs">All ({events.length})</TabsTrigger>
-            <TabsTrigger value="flagged" className="text-xs">Flagged</TabsTrigger>
-            <TabsTrigger value="blocked" className="text-xs">Blocked</TabsTrigger>
+            <TabsTrigger value="banned" className="text-xs">
+              Banned ({isLoading ? '…' : bannedUsers.length})
+            </TabsTrigger>
+            <TabsTrigger value="active" className="text-xs">
+              Active Users
+            </TabsTrigger>
+            <TabsTrigger value="events" className="text-xs">
+              Security Events
+            </TabsTrigger>
           </TabsList>
         </Tabs>
 
-        <div className="space-y-2">
-          {filtered.map(e => (
-            <Card key={e.id} className="p-4 border-border">
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold">{e.type}</p>
-                  <p className="text-xs text-muted-foreground">{e.user} · {e.village} · {e.time}</p>
+        {/* Search (for users tabs) */}
+        {tab !== 'events' && (
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by name, phone or role…"
+              className="pl-9"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+            />
+          </div>
+        )}
+
+        {error && (
+          <Card className="p-3 border-destructive/20 bg-destructive/5">
+            <p className="text-xs text-destructive">{error.message}</p>
+            <Button size="sm" variant="outline" className="mt-2" onClick={refetch}>Retry</Button>
+          </Card>
+        )}
+
+        {/* Security Events tab */}
+        {tab === 'events' && (
+          <div className="space-y-2">
+            {securityEvents.length === 0 ? (
+              <Card className="p-6 border-border text-center">
+                <Shield className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">No security events recorded yet</p>
+              </Card>
+            ) : securityEvents.map((e, i) => (
+              <Card key={e.id ?? i} className="p-3 border-border">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <Badge className="text-[9px] border-0 bg-amber-100 text-amber-700 mb-1 capitalize">
+                      {(e.action ?? '').replace(/_/g, ' ')}
+                    </Badge>
+                    <p className="text-xs">
+                      Target: <span className="font-medium">{e.target ?? '—'}</span>
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      by {e.profiles?.name ?? e.actor ?? 'system'}
+                      {e.detail ? ` · ${e.detail}` : ''}
+                    </p>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground shrink-0">
+                    {new Date(e.created_at).toLocaleDateString('en-IN', { dateStyle: 'short' })}
+                  </p>
                 </div>
-                <div className="text-right shrink-0 ml-2">
-                  <p className={`text-sm font-bold ${riskColor(e.risk)}`}>{Math.round(e.risk * 100)}% risk</p>
-                  <Badge className={`text-[9px] border-0 ${statusStyle[e.status]}`}>{e.status}</Badge>
-                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* Users list */}
+        {tab !== 'events' && (
+          <>
+            {isLoading && (
+              <div className="space-y-2 animate-pulse">
+                {[1,2,3].map(i => <div key={i} className="h-20 bg-muted rounded-xl" />)}
               </div>
-              {e.status !== 'blocked' && e.status !== 'cleared' && (
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" className="flex-1 h-7 text-xs gap-1 text-destructive border-destructive/30"
-                    disabled={acting === e.id + 'blocked'}
-                    onClick={() => act(e.id, 'blocked')}>
-                    <Ban className="w-3 h-3" />
-                    {acting === e.id + 'blocked' ? '...' : 'Block'}
-                  </Button>
-                  <Button size="sm" variant="outline" className="flex-1 h-7 text-xs gap-1"
-                    disabled={acting === e.id + 'cleared'}
-                    onClick={() => act(e.id, 'cleared')}>
-                    <CheckCircle className="w-3 h-3" />
-                    {acting === e.id + 'cleared' ? '...' : 'Clear'}
-                  </Button>
-                  <Button size="sm" variant="outline" className="h-7 w-7 p-0">
-                    <Eye className="w-3 h-3" />
-                  </Button>
-                </div>
-              )}
-            </Card>
-          ))}
-        </div>
+            )}
+
+            {!isLoading && filtered.length === 0 && (
+              <Card className="p-6 border-border text-center">
+                <Shield className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">
+                  {tab === 'banned' ? 'No banned users — platform is clean' : 'No users match your search'}
+                </p>
+              </Card>
+            )}
+
+            <div className="space-y-2">
+              {filtered.map(u => {
+                const isBanned = u.is_verified === false;
+                return (
+                  <Card key={u.id} className="p-3 border-border">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center shrink-0">
+                          <User className="w-4 h-4 text-muted-foreground" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-medium">{u.name ?? 'Unknown'}</p>
+                            <Badge className={`text-[9px] border-0 ${ROLE_COLORS[u.role] ?? 'bg-muted'}`}>
+                              {u.role}
+                            </Badge>
+                            {isBanned && (
+                              <Badge className="text-[9px] border-0 bg-red-100 text-red-700">Banned</Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5 flex-wrap">
+                            {u.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{u.phone}</span>}
+                            {u.villages?.name && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{u.villages.name}</span>}
+                            <span>Joined {fmtDate(u.created_at)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        {isBanned ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs gap-1 text-green-600 border-green-200"
+                            disabled={acting === u.id}
+                            onClick={() => handleUnban(u.id)}
+                          >
+                            {acting === u.id
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <ShieldCheck className="w-3 h-3" />}
+                            Unban
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs gap-1 text-destructive border-destructive/30"
+                            disabled={acting === u.id}
+                            onClick={() => { setBanModal(u); setBanReason(''); }}
+                          >
+                            <ShieldOff className="w-3 h-3" /> Ban
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
+
+      {/* Ban modal */}
+      <Dialog open={!!banModal} onOpenChange={v => !v && setBanModal(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Ban User</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-1">
+            <p className="text-sm text-muted-foreground">
+              Banning <span className="font-semibold text-foreground">{banModal?.name}</span> will
+              prevent them from accessing the platform. This is logged to the audit trail.
+            </p>
+            <div>
+              <Label className="text-xs mb-1 block">Reason (optional)</Label>
+              <Textarea
+                placeholder="Reason for ban…"
+                className="h-20 text-sm"
+                value={banReason}
+                onChange={e => setBanReason(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setBanModal(null)}>Cancel</Button>
+              <Button
+                variant="destructive"
+                className="flex-1 gap-2"
+                disabled={acting === banModal?.id}
+                onClick={handleBan}
+              >
+                {acting === banModal?.id
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : <ShieldOff className="w-4 h-4" />}
+                Confirm Ban
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
