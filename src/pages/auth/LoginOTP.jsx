@@ -176,7 +176,7 @@ export default function LoginOTP() {
             type="button"
             variant={mode === 'phone' ? 'default' : 'outline'}
             onClick={() => { setMode('phone'); setError(''); }}
-            className="flex-1"
+            className="flex-1 h-11"
           >
             Phone
           </Button>
@@ -184,7 +184,7 @@ export default function LoginOTP() {
             type="button"
             variant={mode === 'google' ? 'default' : 'outline'}
             onClick={() => { setMode('google'); setError(''); }}
-            className="flex-1 gap-2"
+            className="flex-1 h-11 gap-2"
           >
             <Mail className="w-4 h-4" />
             Google
