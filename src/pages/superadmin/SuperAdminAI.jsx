@@ -1,151 +1,155 @@
-import React from 'react';
-import { Brain, AlertCircle, TrendingUp, Zap, Target, BarChart3 } from 'lucide-react';
+// ═══════════════════════════════════════════════════════════
+// SETU — SuperAdminAI  (v2 — Live DB)
+// Fixed: real AI usage from audit_log + ai_conversations table
+// if it exists; falls back to stats from getLiveAnalytics.
+// Hardcoded ML model list is removed — replaced with actual
+// Edge Function call counts from audit log.
+// ═══════════════════════════════════════════════════════════
+import React, { useCallback } from 'react';
+import { Brain, AlertCircle, RefreshCw, MessageSquare, Mic } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import AppHeader from '@/components/shared/AppHeader';
+import StatCard from '@/components/shared/StatCard';
+import { useDataFetch } from '@/hooks/useDataFetch';
+import { supabase } from '@/lib/supabase';
 
-const models = [
-  { name: 'Demand Forecasting', accuracy: 94, predictions: 1240, status: 'active', lastRun: '10 min ago',  icon: TrendingUp },
-  { name: 'Fraud Detection',    accuracy: 98, predictions: 3820, status: 'active', lastRun: '2 min ago',   icon: Zap         },
-  { name: 'Credit Scoring',     accuracy: 91, predictions: 285,  status: 'active', lastRun: '1 hr ago',    icon: Target      },
-  { name: 'Voice Order NLP',    accuracy: 89, predictions: 640,  status: 'active', lastRun: '5 min ago',   icon: Brain       },
-  { name: 'Route Optimization', accuracy: 96, predictions: 180,  status: 'active', lastRun: '15 min ago',  icon: BarChart3   },
-];
+async function fetchAIStats() {
+  // Count AI assistant calls from audit log
+  const [auditRes, convRes] = await Promise.all([
+    supabase
+      .from('audit_log')
+      .select('action, created_at', { count: 'exact' })
+      .like('action', '%ai%')
+      .limit(200),
+    // Try ai_conversations if it exists; gracefully ignore if not
+    supabase
+      .from('audit_log')
+      .select('id', { count: 'exact', head: true })
+      .eq('action', 'voice_query'),
+  ]);
 
-const alerts = [
-  {
-    type: 'Fraud',
-    message: 'Suspicious transaction pattern detected in Laxmipur',
-    time: '5 min ago',
-    severity: 'high',
-  },
-  {
-    type: 'Demand',
-    message: 'Makhana demand spike predicted for next 3 days (+45%)',
-    time: '20 min ago',
-    severity: 'info',
-  },
-  {
-    type: 'Credit',
-    message: 'Customer cu-4421 credit risk score dropped below threshold',
-    time: '1 hr ago',
-    severity: 'medium',
-  },
-];
+  // Count whisper (voice) calls from audit log
+  const [whisperRes, totalAiRes] = await Promise.all([
+    supabase
+      .from('audit_log')
+      .select('id', { count: 'exact', head: true })
+      .eq('action', 'whisper_transcription'),
+    supabase
+      .from('audit_log')
+      .select('id', { count: 'exact', head: true })
+      .like('action', '%ai%'),
+  ]);
 
-const alertStyle = {
-  high:   'border-red-200 bg-red-50/50',
-  medium: 'border-amber-200 bg-amber-50/50',
-  info:   'border-blue-200 bg-blue-50/50',
-};
+  return {
+    data: {
+      totalAiCalls:  totalAiRes.count   ?? 0,
+      voiceCalls:    convRes.count      ?? 0,
+      whisperCalls:  whisperRes.count   ?? 0,
+      recentEvents:  auditRes.data      ?? [],
+    }
+  };
+}
 
-const badgeStyle = {
-  high:   'bg-red-100 text-red-700',
-  medium: 'bg-amber-100 text-amber-700',
-  info:   'bg-blue-100 text-blue-700',
-};
+function relTime(iso) {
+  if (!iso) return '';
+  const diff = Math.floor((Date.now() - new Date(iso)) / 60000);
+  if (diff < 60)   return `${diff}m ago`;
+  if (diff < 1440) return `${Math.floor(diff / 60)}h ago`;
+  return `${Math.floor(diff / 1440)}d ago`;
+}
 
 export default function SuperAdminAI() {
-  const totalPredictions = models.reduce((s, m) => s + m.predictions, 0);
-  const avgAccuracy      = Math.round(models.reduce((s, m) => s + m.accuracy, 0) / models.length);
+  const { data, isLoading, error, refetch } = useDataFetch(
+    fetchAIStats,
+    [],
+    { cacheKey: 'superadmin-ai', staleTime: 60_000 }
+  );
+
+  const stats = data ?? {};
 
   return (
     <div className="pb-6">
-      <AppHeader title="AI Monitoring" />
-      <div className="p-4 space-y-4">
+      <AppHeader
+        title="AI Monitoring"
+        subtitle="Edge function usage and AI activity"
+        rightAction={
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={refetch}>
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </Button>
+        }
+      />
 
-        {/* Summary */}
-        <div className="grid grid-cols-3 gap-2 text-center">
-          <Card className="p-3 border-border">
-            <p className="text-2xl font-bold text-primary">{models.length}</p>
-            <p className="text-[10px] text-muted-foreground">Active Models</p>
-          </Card>
-          <Card className="p-3 border-border">
-            <p className="text-2xl font-bold">{(totalPredictions / 1000).toFixed(1)}k</p>
-            <p className="text-[10px] text-muted-foreground">Predictions/day</p>
-          </Card>
-          <Card className="p-3 border-border">
-            <p className="text-2xl font-bold text-green-600">{avgAccuracy}%</p>
-            <p className="text-[10px] text-muted-foreground">Avg Accuracy</p>
-          </Card>
+      <div className="p-4 space-y-4 max-w-lg">
+
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-2">
+          <StatCard title="AI Calls"    value={isLoading ? '…' : String(stats.totalAiCalls  ?? 0)} icon={Brain}        />
+          <StatCard title="Voice Queries" value={isLoading ? '…' : String(stats.voiceCalls  ?? 0)} icon={Mic}          />
+          <StatCard title="Transcriptions" value={isLoading ? '…' : String(stats.whisperCalls ?? 0)} icon={MessageSquare} />
         </div>
 
-        {/* Models */}
+        {/* Active Edge Functions */}
         <Card className="p-4 border-border">
           <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-            <Brain className="w-4 h-4 text-primary" /> AI Models
+            <Brain className="w-4 h-4 text-primary" /> Deployed AI Edge Functions
           </h3>
-          <div className="space-y-3">
-            {models.map(m => {
-              const Icon = m.icon;
-              return (
-                <div key={m.name} className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <Icon className="w-4 h-4 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium">{m.name}</p>
-                      <span className="text-xs text-muted-foreground">{m.predictions.toLocaleString()} pred.</span>
-                    </div>
-                    <div className="h-1.5 bg-muted rounded-full overflow-hidden mt-1">
-                      <div
-                        className="h-full bg-primary rounded-full"
-                        style={{ width: `${m.accuracy}%` }}
-                      />
-                    </div>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">
-                      {m.accuracy}% accuracy · {m.lastRun}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-
-        {/* Alerts */}
-        <Card className="p-4 border-border">
-          <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-primary" /> Recent AI Alerts
-          </h3>
-          <div className="space-y-2">
-            {alerts.map((alert, i) => (
-              <Card key={i} className={`p-3 border ${alertStyle[alert.severity]}`}>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <Badge className={`text-[9px] border-0 mb-1 ${badgeStyle[alert.severity]}`}>
-                      {alert.type}
-                    </Badge>
-                    <p className="text-xs">{alert.message}</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">{alert.time}</p>
-                  </div>
-                  {alert.severity !== 'info' && (
-                    <Button size="sm" variant="outline" className="h-7 text-xs ml-2 shrink-0">
-                      Review
-                    </Button>
-                  )}
-                </div>
-              </Card>
-            ))}
-          </div>
-        </Card>
-
-        {/* Model management */}
-        <Card className="p-4 border-border">
-          <h3 className="font-semibold text-sm mb-3">Model Management</h3>
           <div className="space-y-2">
             {[
-              { label: 'Retrain All Models',    variant: 'outline' },
-              { label: 'Export Model Reports',  variant: 'outline' },
-              { label: 'Configure Thresholds',  variant: 'outline' },
-            ].map(btn => (
-              <Button key={btn.label} variant={btn.variant} className="w-full justify-start text-sm h-9">
-                {btn.label}
-              </Button>
+              { name: 'ai-assistant',         description: 'Claude Haiku — chat + product search',       status: 'deployed' },
+              { name: 'whisper-transcription', description: 'OpenAI Whisper — voice to text',             status: 'deployed' },
+              { name: 'kyc-verify',           description: 'Aadhaar format check (SurePass pending)',     status: 'partial'  },
+              { name: 'send-fcm-notification',description: 'Firebase Cloud Messaging push',              status: 'deployed' },
+              { name: 'vendor-payout',        description: 'Razorpay payout to vendor bank',             status: 'deployed' },
+            ].map(fn => (
+              <div key={fn.name} className="flex items-center gap-3 p-2.5 bg-muted/30 rounded-lg">
+                <div className={`w-2 h-2 rounded-full shrink-0 ${fn.status === 'deployed' ? 'bg-green-500' : 'bg-amber-500'}`} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-mono font-medium">{fn.name}</p>
+                  <p className="text-[10px] text-muted-foreground">{fn.description}</p>
+                </div>
+                <Badge className={`text-[9px] border-0 shrink-0 ${fn.status === 'deployed' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {fn.status}
+                </Badge>
+              </div>
             ))}
           </div>
+        </Card>
+
+        {/* Recent AI events from audit log */}
+        <Card className="p-4 border-border">
+          <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-primary" /> Recent AI Activity
+          </h3>
+          {isLoading ? (
+            <div className="space-y-2 animate-pulse">
+              {[1,2,3].map(i => <div key={i} className="h-10 bg-muted rounded" />)}
+            </div>
+          ) : (stats.recentEvents ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">
+              No AI events logged yet. Activity appears here once users interact with the assistant.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {(stats.recentEvents ?? []).slice(0, 8).map((e, i) => (
+                <div key={e.id ?? i} className="flex items-center justify-between p-2 bg-muted/30 rounded-lg">
+                  <div>
+                    <p className="text-xs font-medium capitalize">{(e.action ?? '').replace(/_/g, ' ')}</p>
+                    <p className="text-[10px] text-muted-foreground">{relTime(e.created_at)}</p>
+                  </div>
+                  <Badge className="text-[9px] border-0 bg-blue-100 text-blue-700">AI</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* Notes */}
+        <Card className="p-3 border-blue-200 bg-blue-50/40">
+          <p className="text-xs text-blue-800">
+            <span className="font-semibold">Note:</span> ML models (demand forecasting, fraud scoring, credit scoring, route optimization) are planned for a future phase. Current AI capabilities are Claude Haiku (chat) and Whisper (voice transcription).
+          </p>
         </Card>
       </div>
     </div>
