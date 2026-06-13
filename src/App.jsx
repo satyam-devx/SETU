@@ -131,6 +131,9 @@ const AdminBanners        = lazy(() => import('@/pages/admin/AdminBanners'));
 const AdminNotifications  = lazy(() => import('@/pages/admin/AdminNotifications'));
 const AdminImageModeration= lazy(() => import('@/pages/admin/AdminImageModeration'));
 const AdminKYC            = lazy(() => import('@/pages/admin/AdminKYC'));
+const AdminAnalytics      = lazy(() => import('@/pages/admin/AdminAnalytics'));
+const AdminAuditLog       = lazy(() => import('@/pages/admin/AdminAuditLog'));
+const AdminDisputes       = lazy(() => import('@/pages/admin/AdminDisputes'));
 
 // ── Lazy: Super Admin portal ──────────────────────────────
 const SuperAdminLayout     = lazy(() => import('@/pages/superadmin/SuperAdminLayout'));
@@ -362,6 +365,9 @@ function App() {
                 <Route path="notifications"      element={<Suspense fallback={<PortalFallback />}><AdminNotifications /></Suspense>} />
                 <Route path="image-moderation"   element={<Suspense fallback={<PortalFallback />}><AdminImageModeration /></Suspense>} />
                 <Route path="kyc"                element={<Suspense fallback={<PortalFallback />}><AdminKYC /></Suspense>} />
+                <Route path="analytics"         element={<Suspense fallback={<PortalFallback />}><AdminAnalytics /></Suspense>} />
+                <Route path="audit-log"         element={<Suspense fallback={<PortalFallback />}><AdminAuditLog /></Suspense>} />
+                <Route path="disputes"          element={<Suspense fallback={<PortalFallback />}><AdminDisputes /></Suspense>} />
               </Route>
 
               {/* ── Super Admin portal ── */}
