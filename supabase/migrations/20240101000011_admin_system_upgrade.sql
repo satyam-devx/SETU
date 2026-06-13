@@ -113,7 +113,7 @@ create table if not exists notification_broadcasts (
   body         text        not null,
   type         text        not null default 'system',
   target_role  text,           -- null = all users
-  village_id   uuid        references villages(id) on delete set null,
+  village_id   text        references villages(id) on delete set null,
   data         jsonb,
   sent_count   integer     not null default 0,
   created_at   timestamptz not null default now()
