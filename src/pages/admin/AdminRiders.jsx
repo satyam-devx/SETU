@@ -67,6 +67,13 @@ export default function AdminRiders() {
     setToggling(null);
   };
 
+  const handleVerify = async (riderId) => {
+    setToggling(riderId);
+    const { error } = await AdminAPI.verifyRider(riderId);
+    if (!error) setRiders(rs => rs.map(r => r.id === riderId ? { ...r, is_verified: true, kyc_status: 'approved' } : r));
+    setToggling(null);
+  };
+
   // ── Derived ────────────────────────────────────────────
   const filtered = riders.filter(r => {
     const matchQ = !query

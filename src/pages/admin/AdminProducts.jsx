@@ -9,22 +9,175 @@
 // ═══════════════════════════════════════════════════════════
 import React, { useState, useCallback, useMemo } from 'react';
 import {
-  Search, Trash2, Pencil, Check, X, RefreshCw,
-  Loader2, PackageX, IndianRupee, ChevronDown, Package,
-  CheckSquare, Square, Layers
+  Search, Trash2, Check, X, RefreshCw,
+  Loader2, PackageX, Package, Plus,
+  CheckSquare, Square, Layers,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem,
   SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 import AppHeader from '@/components/shared/AppHeader';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { AdminAPI } from '@/lib/api';
+
+// ── Create Product Dialog ─────────────────────────────────
+const EMPTY_PRODUCT = {
+  vendor_id: '', category_id: '', name: '', name_hindi: '',
+  description: '', price: '', mrp: '', unit: 'piece',
+  stock: '0', image_url: '', is_available: true,
+};
+
+function CreateProductDialog({ open, onClose, vendors, categories, onCreated }) {
+  const [form,   setForm]   = useState(EMPTY_PRODUCT);
+  const [saving, setSaving] = useState(false);
+  const [err,    setErr]    = useState(null);
+
+  const setF = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErr(null); };
+
+  const handleCreate = async () => {
+    if (!form.vendor_id) { setErr('Vendor is required'); return; }
+    if (!form.name.trim()) { setErr('Product name is required'); return; }
+    if (!form.price || isNaN(Number(form.price)) || Number(form.price) <= 0) {
+      setErr('Valid price is required'); return;
+    }
+    setSaving(true);
+    const payload = {
+      vendor_id:   form.vendor_id,
+      category_id: form.category_id || null,
+      name:        form.name.trim(),
+      name_hindi:  form.name_hindi?.trim() || null,
+      description: form.description?.trim() || null,
+      price:       Number(form.price),
+      mrp:         form.mrp ? Number(form.mrp) : Number(form.price),
+      unit:        form.unit,
+      stock:       Number(form.stock ?? 0),
+      image_url:   form.image_url?.trim() || null,
+      is_available:form.is_available,
+    };
+    const { error } = await AdminAPI.createProduct(payload);
+    if (error) { setErr(error.message ?? 'Failed to create product'); setSaving(false); return; }
+    setSaving(false);
+    setForm(EMPTY_PRODUCT);
+    onCreated();
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Add New Product</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 pt-1">
+          {err && (
+            <p className="text-xs text-destructive p-2 bg-destructive/10 rounded-lg">{err}</p>
+          )}
+
+          <div>
+            <Label className="text-xs mb-1 block">Vendor *</Label>
+            <Select value={form.vendor_id} onValueChange={v => setF('vendor_id', v)}>
+              <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Select vendor…" /></SelectTrigger>
+              <SelectContent>
+                {(vendors ?? []).map(v => (
+                  <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label className="text-xs mb-1 block">Category</Label>
+            <Select value={form.category_id} onValueChange={v => setF('category_id', v)}>
+              <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Select category…" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">No category</SelectItem>
+                {(categories ?? []).map(c => (
+                  <SelectItem key={c.id} value={c.id}>{c.icon} {c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-xs mb-1 block">Name (English) *</Label>
+              <Input value={form.name} onChange={e => setF('name', e.target.value)} className="h-9 text-sm" placeholder="e.g. Rice 1kg" />
+            </div>
+            <div>
+              <Label className="text-xs mb-1 block">Name (Hindi)</Label>
+              <Input value={form.name_hindi} onChange={e => setF('name_hindi', e.target.value)} className="h-9 text-sm" placeholder="चावल" />
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-xs mb-1 block">Description</Label>
+            <Textarea value={form.description} onChange={e => setF('description', e.target.value)} className="h-16 text-sm resize-none" placeholder="Optional description…" />
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <Label className="text-xs mb-1 block">Price (₹) *</Label>
+              <Input type="number" min="0" value={form.price} onChange={e => setF('price', e.target.value)} className="h-9 text-sm" />
+            </div>
+            <div>
+              <Label className="text-xs mb-1 block">MRP (₹)</Label>
+              <Input type="number" min="0" value={form.mrp} onChange={e => setF('mrp', e.target.value)} className="h-9 text-sm" placeholder="=Price" />
+            </div>
+            <div>
+              <Label className="text-xs mb-1 block">Stock</Label>
+              <Input type="number" min="0" value={form.stock} onChange={e => setF('stock', e.target.value)} className="h-9 text-sm" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-xs mb-1 block">Unit</Label>
+              <Select value={form.unit} onValueChange={v => setF('unit', v)}>
+                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {['piece','kg','gram','litre','ml','dozen','pack','bundle','box'].map(u => (
+                    <SelectItem key={u} value={u}>{u}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs mb-1 block">Image URL</Label>
+              <Input value={form.image_url} onChange={e => setF('image_url', e.target.value)} className="h-9 text-sm" placeholder="https://…" />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-2.5 bg-muted/40 rounded-lg">
+            <div>
+              <p className="text-sm font-medium">Available</p>
+              <p className="text-xs text-muted-foreground">Visible to customers immediately</p>
+            </div>
+            <Switch checked={form.is_available} onCheckedChange={v => setF('is_available', v)} />
+          </div>
+
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
+            <Button className="flex-1 gap-2" disabled={saving} onClick={handleCreate}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              Create Product
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 // ── Inline-edit cell ─────────────────────────────────────
 function EditableCell({ value, type = 'number', onSave, prefix = '' }) {
@@ -70,13 +223,14 @@ function EditableCell({ value, type = 'number', onSave, prefix = '' }) {
 }
 
 export default function AdminProducts() {
-  const [search,    setSearch]    = useState('');
-  const [vendorFil, setVendorFil] = useState('all');
-  const [catFil,    setCatFil]    = useState('all');
-  const [selected,  setSelected]  = useState(new Set());
-  const [deleting,  setDeleting]  = useState(new Set());
-  const [toggling,  setToggling]  = useState(null);
-  const [bulkAct,   setBulkAct]   = useState(false);
+  const [search,      setSearch]      = useState('');
+  const [vendorFil,   setVendorFil]   = useState('all');
+  const [catFil,      setCatFil]      = useState('all');
+  const [selected,    setSelected]    = useState(new Set());
+  const [deleting,    setDeleting]    = useState(new Set());
+  const [toggling,    setToggling]    = useState(null);
+  const [bulkAct,     setBulkAct]     = useState(false);
+  const [createOpen,  setCreateOpen]  = useState(false);
 
   const { data: products, isLoading, refetch } = useDataFetch(
     () => AdminAPI.getProducts({ limit: 200 }),
@@ -88,6 +242,12 @@ export default function AdminProducts() {
     () => AdminAPI.getVendors(),
     [],
     { cacheKey: 'admin-vendors-list' }
+  );
+
+  const { data: categories } = useDataFetch(
+    () => AdminAPI.getCategories(),
+    [],
+    { cacheKey: 'admin-categories-list' }
   );
 
   const { data: allCats } = useDataFetch(
@@ -163,9 +323,14 @@ export default function AdminProducts() {
         title="Products"
         subtitle={`${rows.length} total · ${rows.filter(p => p.is_available).length} available`}
         rightAction={
-          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={refetch}>
-            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" onClick={() => setCreateOpen(true)}>
+              <Plus className="w-3.5 h-3.5" /> Add
+            </Button>
+            <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={refetch}>
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
         }
       />
 
@@ -349,6 +514,16 @@ export default function AdminProducts() {
           </Card>
         )}
       </div>
+
+      {createOpen && (
+        <CreateProductDialog
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          vendors={vendors ?? []}
+          categories={categories ?? []}
+          onCreated={refetch}
+        />
+      )}
     </div>
   );
 }

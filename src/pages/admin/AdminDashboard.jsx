@@ -29,13 +29,14 @@ export default function AdminDashboard() {
     if (showRefresh) setRefreshing(true);
     else setLoading(true);
 
-    const [statsRes, hourlyRes, ordersRes] = await Promise.all([
+    const [statsRes, hourlyRes, ordersRes, liveRes] = await Promise.all([
       AdminAPI.getStats(),
       AdminAPI.getHourlyOrders(),
       AdminAPI.getOrders({ limit: 5 }),
+      AdminAPI.getLiveAnalytics(),
     ]);
 
-    if (statsRes.data)  setStats(statsRes.data);
+    if (statsRes.data)  setStats({ ...statsRes.data, ...(liveRes.data ?? {}) });
     if (hourlyRes.data) setHourly(hourlyRes.data);
     if (ordersRes.data) setOrders(ordersRes.data);
 
