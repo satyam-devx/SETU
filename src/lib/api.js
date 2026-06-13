@@ -1993,18 +1993,6 @@ export async function getAdminDisputes({ status, page = 0, limit = 50 } = {}) {
   }, [], 'getAdminDisputes');
 }
 
-export async function resolveDispute(disputeId, resolution) {
-  return safeQuery(
-    () => supabase
-      .from('disputes')
-      .update({ status: 'resolved', resolution, resolved_at: new Date().toISOString() })
-      .eq('id', disputeId)
-      .select().single(),
-    null,
-    'resolveDispute'
-  );
-}
-
 // ── Product creation ──────────────────────────────────────
 
 export async function adminCreateProduct(productData) {
