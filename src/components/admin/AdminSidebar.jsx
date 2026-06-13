@@ -1,53 +1,57 @@
 // ═══════════════════════════════════════════════════════════
-// SETU — AdminSidebar (v2)
-// Added new menu items for all implemented features:
-// Categories, Products, KYC, Banners, Notifications,
-// Image Moderation. Replaces src/components/admin/AdminSidebar.jsx
+// SETU — AdminSidebar (v3 — production-grade)
+// Includes all new pages: Analytics, Audit Log, Disputes
 // ═══════════════════════════════════════════════════════════
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ShoppingBag, Store, Bike,
   IndianRupee, HeadphonesIcon, Settings, MapPin,
   AlertTriangle, ArrowLeft, Wrench, Users,
   ShieldAlert, Activity, Tag, Package, Bell,
-  Image, FileCheck, Megaphone
+  Image, FileCheck, Megaphone, TrendingUp,
+  ClipboardList, Scale, ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
+import { Badge } from '@/components/ui/badge';
 
 const menuItems = [
   // ── Core ──────────────────────────────────────────────
-  { label: 'Dashboard',         icon: LayoutDashboard, path: '/admin',                group: 'core'     },
-  { label: 'Orders',            icon: ShoppingBag,     path: '/admin/orders',         group: 'core'     },
-  { label: 'Live Monitoring',   icon: Activity,        path: '/admin/monitoring',     group: 'core'     },
+  { label: 'Dashboard',         icon: LayoutDashboard, path: '/admin',                      group: 'core'     },
+  { label: 'Orders',            icon: ShoppingBag,     path: '/admin/orders',               group: 'core'     },
+  { label: 'Analytics',         icon: TrendingUp,      path: '/admin/analytics',            group: 'core'     },
+  { label: 'Live Monitoring',   icon: Activity,        path: '/admin/monitoring',           group: 'core'     },
+  { label: 'Disputes',          icon: Scale,           path: '/admin/disputes',             group: 'core', badge: 'disputes' },
 
   // ── Onboarding ────────────────────────────────────────
-  { label: 'Vendor Approvals',  icon: AlertTriangle,   path: '/admin/vendor-approval',group: 'onboard'  },
-  { label: 'KYC Review',        icon: FileCheck,       path: '/admin/kyc',            group: 'onboard'  },
-  { label: 'Image Moderation',  icon: Image,           path: '/admin/image-moderation',group: 'onboard' },
+  { label: 'Vendor Approvals',  icon: AlertTriangle,   path: '/admin/vendor-approval',      group: 'onboard', badge: 'pending_vendors' },
+  { label: 'KYC Review',        icon: FileCheck,       path: '/admin/kyc',                  group: 'onboard', badge: 'kyc_queue' },
+  { label: 'Image Moderation',  icon: Image,           path: '/admin/image-moderation',     group: 'onboard'  },
 
   // ── People ────────────────────────────────────────────
-  { label: 'Customers',         icon: Users,           path: '/admin/customers',      group: 'people'   },
-  { label: 'Vendors',           icon: Store,           path: '/admin/vendors',        group: 'people'   },
-  { label: 'Riders',            icon: Bike,            path: '/admin/riders',         group: 'people'   },
-  { label: 'Seva Providers',    icon: Wrench,          path: '/admin/seva-providers', group: 'people'   },
+  { label: 'Users',             icon: Users,           path: '/admin/customers',            group: 'people'   },
+  { label: 'Vendors',           icon: Store,           path: '/admin/vendors',              group: 'people'   },
+  { label: 'Riders',            icon: Bike,            path: '/admin/riders',               group: 'people'   },
+  { label: 'Seva Providers',    icon: Wrench,          path: '/admin/seva-providers',       group: 'people'   },
 
   // ── Catalogue ─────────────────────────────────────────
-  { label: 'Categories',        icon: Tag,             path: '/admin/categories',     group: 'catalogue'},
-  { label: 'Products',          icon: Package,         path: '/admin/products',       group: 'catalogue'},
+  { label: 'Categories',        icon: Tag,             path: '/admin/categories',           group: 'catalogue'},
+  { label: 'Products',          icon: Package,         path: '/admin/products',             group: 'catalogue'},
 
   // ── Content & Comms ───────────────────────────────────
-  { label: 'Banners',           icon: Megaphone,       path: '/admin/banners',        group: 'content'  },
-  { label: 'Notifications',     icon: Bell,            path: '/admin/notifications',  group: 'content'  },
+  { label: 'Banners',           icon: Megaphone,       path: '/admin/banners',              group: 'content'  },
+  { label: 'Notifications',     icon: Bell,            path: '/admin/notifications',        group: 'content'  },
 
   // ── Finance ───────────────────────────────────────────
-  { label: 'COD & Cash',        icon: IndianRupee,     path: '/admin/cash',           group: 'finance'  },
-  { label: 'Incidents',         icon: ShieldAlert,     path: '/admin/incidents',      group: 'finance'  },
+  { label: 'COD & Cash',        icon: IndianRupee,     path: '/admin/cash',                 group: 'finance'  },
+  { label: 'Incidents',         icon: ShieldAlert,     path: '/admin/incidents',            group: 'finance'  },
 
   // ── Platform ──────────────────────────────────────────
-  { label: 'Support Tickets',   icon: HeadphonesIcon,  path: '/admin/support',        group: 'platform' },
-  { label: 'Villages',          icon: MapPin,          path: '/admin/villages',       group: 'platform' },
-  { label: 'Settings',          icon: Settings,        path: '/admin/settings',       group: 'platform' },
+  { label: 'Support Tickets',   icon: HeadphonesIcon,  path: '/admin/support',              group: 'platform' },
+  { label: 'Villages',          icon: MapPin,          path: '/admin/villages',             group: 'platform' },
+  { label: 'Settings',          icon: Settings,        path: '/admin/settings',             group: 'platform' },
+  { label: 'Audit Log',         icon: ClipboardList,   path: '/admin/audit-log',            group: 'platform' },
 ];
 
 const GROUP_LABELS = {
@@ -62,6 +66,44 @@ const GROUP_LABELS = {
 
 export default function AdminSidebar() {
   const location = useLocation();
+  const [badges,  setBadges]  = useState({});
+  const [profile, setProfile] = useState(null);
+
+  // Load badge counts (pending vendors, KYC queue, open disputes)
+  useEffect(() => {
+    async function loadBadges() {
+      const [pendingVendors, kycQueue, disputes] = await Promise.all([
+        supabase.from('vendors').select('id', { count: 'exact', head: true })
+          .eq('is_verified', false).neq('kyc_status', 'rejected'),
+        supabase.from('kyc_records').select('id', { count: 'exact', head: true })
+          .eq('status', 'submitted'),
+        supabase.from('disputes').select('id', { count: 'exact', head: true })
+          .in('status', ['open', 'escalated']),
+      ]);
+      setBadges({
+        pending_vendors: pendingVendors.count ?? 0,
+        kyc_queue:       kycQueue.count       ?? 0,
+        disputes:        disputes.count       ?? 0,
+      });
+    }
+
+    loadBadges();
+    const interval = setInterval(loadBadges, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Load current admin profile
+  useEffect(() => {
+    supabase.auth.getUser().then(async ({ data }) => {
+      if (!data.user) return;
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('name, role')
+        .eq('id', data.user.id)
+        .single();
+      setProfile(prof);
+    });
+  }, []);
 
   // Group items
   const groups = menuItems.reduce((acc, item) => {
@@ -80,7 +122,7 @@ export default function AdminSidebar() {
           <ArrowLeft className="w-3 h-3" /> Back to SETU
         </Link>
         <h1 className="font-heading text-xl font-bold text-white tracking-tight">SETU Admin</h1>
-        <p className="text-xs text-sidebar-foreground/60 mt-0.5">Madhepur Block</p>
+        <p className="text-xs text-sidebar-foreground/60 mt-0.5">Operations Control Center</p>
       </div>
 
       <nav className="flex-1 py-3 px-3 overflow-y-auto space-y-4">
@@ -94,6 +136,7 @@ export default function AdminSidebar() {
                 const isActive =
                   location.pathname === item.path ||
                   (item.path !== '/admin' && location.pathname.startsWith(item.path));
+                const badgeCount = item.badge ? (badges[item.badge] ?? 0) : 0;
                 return (
                   <Link
                     key={item.path}
@@ -106,7 +149,17 @@ export default function AdminSidebar() {
                     )}
                   >
                     <item.icon className="w-4 h-4 shrink-0" />
-                    <span>{item.label}</span>
+                    <span className="flex-1">{item.label}</span>
+                    {badgeCount > 0 && (
+                      <span className={cn(
+                        'text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
+                        isActive
+                          ? 'bg-white/20 text-white'
+                          : 'bg-red-500 text-white'
+                      )}>
+                        {badgeCount > 99 ? '99+' : badgeCount}
+                      </span>
+                    )}
                   </Link>
                 );
               })}
@@ -117,12 +170,12 @@ export default function AdminSidebar() {
 
       <div className="p-4 border-t border-sidebar-border">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-sidebar-primary flex items-center justify-center text-white text-xs font-bold">
-            A
+          <div className="w-8 h-8 rounded-full bg-sidebar-primary flex items-center justify-center text-white text-xs font-bold shrink-0">
+            {(profile?.name ?? 'A')[0].toUpperCase()}
           </div>
-          <div>
-            <p className="text-xs font-medium text-white">Admin User</p>
-            <p className="text-[10px] text-sidebar-foreground/50">admin@setu.in</p>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-white truncate">{profile?.name ?? 'Admin User'}</p>
+            <p className="text-[10px] text-sidebar-foreground/50 capitalize">{profile?.role ?? 'admin'}</p>
           </div>
         </div>
       </div>
