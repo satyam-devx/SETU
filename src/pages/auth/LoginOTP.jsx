@@ -176,7 +176,7 @@ export default function LoginOTP() {
             type="button"
             variant={mode === 'phone' ? 'default' : 'outline'}
             onClick={() => { setMode('phone'); setError(''); }}
-            className="flex-1 h-11"
+            className="flex-1 h-11 min-h-[44px] shrink-0"
           >
             Phone
           </Button>
@@ -184,7 +184,7 @@ export default function LoginOTP() {
             type="button"
             variant={mode === 'google' ? 'default' : 'outline'}
             onClick={() => { setMode('google'); setError(''); }}
-            className="flex-1 h-11 gap-2"
+            className="flex-1 h-11 min-h-[44px] gap-2 shrink-0"
           >
             <Mail className="w-4 h-4" />
             Google
@@ -199,7 +199,7 @@ export default function LoginOTP() {
                 अपना मोबाइल नंबर डालें
               </p>
               <div className="flex gap-2">
-                <div className="flex items-center justify-center bg-muted rounded-lg px-3 border border-border h-10 shrink-0">
+                <div className="flex items-center justify-center bg-muted rounded-lg px-3 border border-border h-11 shrink-0">
                   <span className="text-sm font-semibold text-foreground">🇮🇳 +91</span>
                 </div>
                 <Input
@@ -209,7 +209,7 @@ export default function LoginOTP() {
                   value={rawPhone}
                   onChange={handlePhoneChange}
                   onKeyDown={handleKeyDown}
-                  className="flex-1 h-10 text-base tracking-widest"
+                  className="flex-1 h-11 text-base tracking-widest"
                   maxLength={10}
                   autoFocus
                   autoComplete="tel-national"
@@ -242,7 +242,7 @@ export default function LoginOTP() {
             )}
 
             <Button
-              className="w-full h-11 gap-2 text-sm font-semibold"
+              className="w-full h-11 min-h-[44px] gap-2 text-sm font-semibold"
               onClick={handleSendOTP}
               disabled={!canSend}
             >
@@ -292,7 +292,7 @@ export default function LoginOTP() {
 
             <Button
               variant="outline"
-              className="w-full h-11 text-sm font-semibold gap-3"
+              className="w-full h-11 min-h-[44px] text-sm font-semibold gap-3"
               disabled={loading}
               onClick={handleGoogleSignIn}
             >

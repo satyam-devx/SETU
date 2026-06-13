@@ -1797,7 +1797,7 @@ export const AdminAPI = {
 
 export async function adminUpdateOrderStatus(orderId, status, note = null) {
   return safeQuery(
-    () => supabase.rpc('update_order_status', {
+    () => supabase.rpc('admin_update_order_status', {
       p_order_id:   orderId,
       p_new_status: status,
       p_note:       note,
@@ -1809,7 +1809,7 @@ export async function adminUpdateOrderStatus(orderId, status, note = null) {
 
 export async function adminCancelOrder(orderId, reason) {
   return safeQuery(
-    () => supabase.rpc('update_order_status', {
+    () => supabase.rpc('admin_update_order_status', {
       p_order_id:   orderId,
       p_new_status: 'cancelled',
       p_note:       reason ?? 'Cancelled by admin',

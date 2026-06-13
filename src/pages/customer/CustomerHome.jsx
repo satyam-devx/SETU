@@ -154,13 +154,13 @@ function ProductCard({ product }) {
             <button
               onClick={handleAdd}
               aria-label={inCart ? 'In cart' : `Add ${product.name} to cart`}
-              className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+              className={`w-11 h-11 rounded-xl flex items-center justify-center transition-colors shrink-0 ${
                 inCart
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground'
               }`}
             >
-              {inCart ? <ShoppingCart className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+              {inCart ? <ShoppingCart className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
             </button>
           </div>
         </div>
@@ -268,7 +268,7 @@ export default function CustomerHome() {
       <div className="px-4 pt-4 pb-2 flex items-center justify-between">
         <button
           onClick={() => navigate('/customer/location')}
-          className="flex items-center gap-2 min-w-0 flex-1"
+          className="flex items-center gap-2 min-w-0 flex-1 min-h-[44px]"
           aria-label="Change delivery location"
         >
           <MapPin className="w-4 h-4 text-primary shrink-0" />
@@ -368,16 +368,18 @@ export default function CustomerHome() {
           </div>
         </Link>
         {/* Dots */}
-        <div className="flex justify-center gap-1.5 mt-2" role="tablist" aria-label="Banner">
+        <div className="flex justify-center gap-1 mt-1" role="tablist" aria-label="Banner">
           {BANNERS.map((_, i) => (
             <button
               key={i}
               role="tab"
               aria-selected={bannerIdx === i}
               onClick={() => setBannerIdx(i)}
-              className={`h-1.5 rounded-full transition-all ${bannerIdx === i ? 'w-4 bg-primary' : 'w-1.5 bg-muted-foreground/30'}`}
+              className="w-8 h-11 flex items-center justify-center"
               aria-label={`Banner ${i + 1}`}
-            />
+            >
+              <div className={`h-1.5 rounded-full transition-all ${bannerIdx === i ? 'w-4 bg-primary' : 'w-1.5 bg-muted-foreground/30'}`} />
+            </button>
           ))}
         </div>
       </div>
