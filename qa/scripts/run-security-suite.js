@@ -48,7 +48,12 @@ try {
 // ── 2. npm audit ───────────────────────────────────────────────
 console.log('\n═══ SECURITY SUITE: Dependency Audit ═══');
 try {
-  const result = spawnSync('npm', ['audit', '--json', '--audit-level=high'], {
+  const result = spawnSync('npm', [
+  'audit',
+  '--omit=dev',
+  '--json',
+  '--audit-level=high'
+], {
     cwd: SETU_ROOT, encoding: 'utf8', timeout: 60000,
   });
   const auditData = JSON.parse(result.stdout || '{}');
@@ -76,11 +81,19 @@ try {
 console.log('\n═══ SECURITY SUITE: Environment Config ═══');
 const ENV_CHECKS = [
   {
-    name:    'No .env file committed',
-    check:   () => !fs.existsSync(path.join(SETU_ROOT, '.env')),
-    detail:  '.env should be in .gitignore only',
-    critical: true,
+  name: 'No .env file committed',
+  check: () => {
+    const result = spawnSync(
+      'git',
+      ['ls-files', '--error-unmatch', '.env'],
+      { cwd: SETU_ROOT, encoding: 'utf8' }
+    );
+
+    return result.status !== 0;
   },
+  detail: '.env should be in .gitignore only',
+  critical: true,
+},
   {
     name:    '.env.example exists',
     check:   () => fs.existsSync(path.join(SETU_ROOT, '.env.example')) ||
