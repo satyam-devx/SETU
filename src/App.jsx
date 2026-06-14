@@ -340,7 +340,7 @@ function App() {
 
               {/* ── Admin portal ── */}
               <Route path="/admin" element={
-                <ProtectedRoute allowedRoles={['admin']}>
+                <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
                   <Suspense fallback={<PortalFallback />}>
                     <AdminLayout />
                   </Suspense>
