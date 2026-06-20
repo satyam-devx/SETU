@@ -1,9 +1,19 @@
 /**
- * SETU — razorpay-webhook Edge Function  (Phase 0 hardened)
+ * SETU — razorpay-webhook Edge Function  (Phase 0 hardened, round 2)
  *
- * Security: HMAC-SHA256 signature verified before any DB write.
- * Idempotency: payment_events.event_id unique constraint; duplicate
- *              events are logged and silently skipped.
+ * Security: HMAC-SHA256 signature verified (constant-time compare)
+ *           before any DB write.
+ * Integrity: payment.captured amount is reconciled against the
+ *            order's authoritative `total` before the order is ever
+ *            marked paid/confirmed (CRITICAL-1).
+ * Reliability: an event is only marked `processed_at` once its
+ *            handler runs to completion without throwing. If the
+ *            handler throws, we return 500 so Razorpay retries the
+ *            webhook instead of silently losing the event (H3).
+ * Idempotency: payment_events.event_id unique constraint; a retried
+ *            event that already completed is skipped; a retried
+ *            event that previously failed is reprocessed (all
+ *            downstream RPCs are themselves idempotent).
  *
  * Events handled:
  *   payment.captured   → confirm order, record fee split, credit vendor escrow
@@ -20,31 +30,58 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import * as crypto from "https://deno.land/std@0.168.0/node/crypto.ts";
+import { corsHeaders } from "../_shared/cors.ts";
 
 /**
  * razorpay-webhook
  *
  * Required Supabase Vault Secrets:
  *   RAZORPAY_WEBHOOK_SECRET — HMAC-SHA256 webhook verification secret
+ *
+ * NOTE: this function is intentionally deployed with --no-verify-jwt
+ * (see .github/workflows/deploy.yml) because Razorpay calls it
+ * server-to-server with an HMAC signature, not a Supabase JWT. Every
+ * other function in this project DOES require a verified JWT.
  */
 
 const WEBHOOK_SECRET = Deno.env.get("RAZORPAY_WEBHOOK_SECRET");
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-razorpay-signature",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+// Allow a small amount of float/rounding drift between what Razorpay
+// captured (in paise, converted to rupees) and the stored order total.
+const AMOUNT_RECONCILIATION_TOLERANCE = 0.01;
 
 // ── helpers ────────────────────────────────────────────────
 
-function ok(msg = "OK"): Response {
-  return new Response(msg, { status: 200, headers: CORS_HEADERS });
+function ok(headers: Record<string, string>, msg = "OK"): Response {
+  return new Response(msg, { status: 200, headers });
 }
-function err(msg: string, status = 400): Response {
-  return new Response(msg, { status, headers: CORS_HEADERS });
+function err(headers: Record<string, string>, msg: string, status = 400): Response {
+  return new Response(msg, { status, headers });
+}
+
+/** Constant-time string comparison — avoids leaking timing info about
+ *  how many leading bytes of the HMAC signature matched (H2). */
+function timingSafeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
+async function hmacSha256Hex(secret: string, body: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sigBuf = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
+  return Array.from(new Uint8Array(sigBuf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 /** Call a Postgres security-definer RPC and log any error. */
@@ -63,7 +100,9 @@ async function rpc(
 // ── main handler ───────────────────────────────────────────
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") return ok("ok");
+  const CORS_HEADERS = corsHeaders(req, "authorization, x-client-info, apikey, content-type, x-razorpay-signature");
+
+  if (req.method === "OPTIONS") return ok(CORS_HEADERS, "ok");
 
   const body = await req.text();
   const signature = req.headers.get("x-razorpay-signature");
@@ -73,30 +112,27 @@ serve(async (req) => {
   // Never 500 — do not leak misconfiguration state to callers.
   if (!WEBHOOK_SECRET || !signature) {
     console.error("[webhook] Missing secret or signature");
-    return err("Unauthorized", 401);
+    return err(CORS_HEADERS, "Unauthorized", 401);
   }
 
-  const expected = crypto
-    .createHmac("sha256", WEBHOOK_SECRET)
-    .update(body)
-    .digest("hex");
+  const expected = await hmacSha256Hex(WEBHOOK_SECRET, body);
 
-  if (signature !== expected) {
+  if (!timingSafeEqualHex(signature, expected)) {
     console.warn("[webhook] Invalid signature — rejected");
-    return err("Unauthorized", 401);
+    return err(CORS_HEADERS, "Unauthorized", 401);
   }
 
   let payload: Record<string, unknown>;
   try {
     payload = JSON.parse(body);
   } catch {
-    return err("Invalid JSON body", 400);
+    return err(CORS_HEADERS, "Invalid JSON body", 400);
   }
 
   const eventId = payload.id as string;
   const eventType = payload.event as string;
 
-  if (!eventId || !eventType) return err("Missing event fields", 400);
+  if (!eventId || !eventType) return err(CORS_HEADERS, "Missing event fields", 400);
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL") ?? "",
@@ -104,24 +140,36 @@ serve(async (req) => {
   );
 
   // 2. Idempotency — INSERT ON CONFLICT DO NOTHING
-  //    If event_id already exists the insert is a no-op and we return 200.
+  //    If event_id already exists AND was already fully processed,
+  //    skip. If it exists but processing previously failed
+  //    (processed_at is null), fall through and retry — every
+  //    downstream operation below is itself idempotent.
   const { error: insertErr } = await supabase.from("payment_events").insert({
     event_id: eventId,
     type: eventType,
     payload,
   });
 
-  // unique violation = already processed
   if (insertErr?.code === "23505") {
-    console.log(`[webhook] Event ${eventId} already processed — skipping`);
-    return ok("Already processed");
-  }
-  if (insertErr) {
+    const { data: existing } = await supabase
+      .from("payment_events")
+      .select("processed_at")
+      .eq("event_id", eventId)
+      .single();
+
+    if ((existing as any)?.processed_at) {
+      console.log(`[webhook] Event ${eventId} already processed — skipping`);
+      return ok(CORS_HEADERS, "Already processed");
+    }
+    console.log(`[webhook] Event ${eventId} exists but not yet processed — retrying`);
+  } else if (insertErr) {
     console.error("[webhook] Failed to log event:", insertErr);
-    // Non-fatal: continue processing but don't silently lose events
+    // Idempotency tracking is degraded but we must not drop a real
+    // payment event over a logging failure — continue processing.
   }
 
   // 3. Route on event type
+  let handlerOk = true;
   try {
     switch (eventType) {
       // ── payment.captured ──────────────────────────────────
@@ -141,6 +189,51 @@ serve(async (req) => {
 
         if (paymentType === "order_payment" && notes.orderId) {
           const orderId = notes.orderId;
+
+          // ── CRITICAL-1 FIX ──────────────────────────────────
+          // Never confirm an order on payment_status alone. Reload
+          // the order's authoritative total from the DB and compare
+          // it to what Razorpay actually captured. Without this, a
+          // client that requested a Razorpay order for ₹1 against an
+          // order whose real total is ₹10,000 would get the full
+          // order confirmed and escrow released on a ₹1 payment.
+          const { data: orderRow, error: loadErr } = await supabase
+            .from("orders")
+            .select("id, total, payment_status")
+            .eq("id", orderId)
+            .single();
+
+          if (loadErr || !orderRow) {
+            console.error(`[webhook] CRITICAL: payment.captured for unknown order ${orderId}`, loadErr);
+            await supabase.from("audit_log").insert({
+              actor: "system",
+              action: "payment_amount_mismatch",
+              target: orderId,
+              detail: `payment.captured for ${paymentId} referenced unknown order ${orderId}`,
+            });
+            break;
+          }
+
+          const expectedTotal = Number((orderRow as any).total);
+          const amountMismatch = Math.abs(expectedTotal - amount) > AMOUNT_RECONCILIATION_TOLERANCE;
+
+          if (amountMismatch) {
+            // Do NOT confirm the order or release escrow. Flag loudly
+            // for manual review instead — this is exactly the fraud
+            // pattern from the audit (pay ₹1, order says ₹10,000).
+            console.error(
+              `[webhook] CRITICAL: amount mismatch on order ${orderId} — captured ₹${amount}, expected ₹${expectedTotal}`
+            );
+            await supabase.from("audit_log").insert({
+              actor: "system",
+              action: "payment_amount_mismatch",
+              target: orderId,
+              detail: `Razorpay payment ${paymentId} captured ₹${amount} but order total is ₹${expectedTotal}. Order NOT confirmed — manual review required.`,
+            });
+            handlerOk = false;
+            break;
+          }
+
           console.log(`[webhook] Order payment captured for ${orderId}`);
 
           // Update order status + payment_status via service_role direct update
@@ -158,24 +251,29 @@ serve(async (req) => {
 
           if (orderErr) {
             console.error("[webhook] Order update failed:", orderErr);
+            handlerOk = false;
           } else {
             // Record fee split + credit vendor escrow (idempotent RPC)
-            await rpc(supabase, "record_delivery_split", {
+            const { error: splitErr } = await rpc(supabase, "record_delivery_split", {
               p_order_id: orderId,
               p_razorpay_payment_id: paymentId,
             });
+            if (splitErr) handlerOk = false;
           }
         } else if (paymentType === "wallet_topup" && notes.customerId) {
           // ── Wallet top-up ──────────────────────────────────
+          // Uses the canonical topup_wallet RPC (supabase/migrations/
+          // 20240101000001_initial_schema.sql) — NOT a custom
+          // credit_wallet function, which only ever existed in the
+          // legacy database/ tree that CI doesn't deploy.
           console.log(`[webhook] Wallet topup for ${notes.customerId} ₹${amount}`);
 
-          await rpc(supabase, "credit_wallet", {
+          const { error: creditErr } = await rpc(supabase, "topup_wallet", {
             p_user_id: notes.customerId,
             p_amount: amount,
-            p_description: "Wallet top-up via UPI/Card",
             p_reference: paymentId,
-            p_source: "topup",
           });
+          if (creditErr) handlerOk = false;
 
           await supabase
             .from("wallet_topups")
@@ -197,6 +295,7 @@ serve(async (req) => {
 
           if (acctErr || !account) {
             console.error("[webhook] Credit account not found:", acctErr);
+            handlerOk = false;
           } else {
             const newOutstanding = Math.max(
               0,
@@ -257,7 +356,6 @@ serve(async (req) => {
         const refund = (payload.payload as any).refund.entity;
         const rzpRefundId: string = refund.id;
         const rzpPaymentId: string = refund.payment_id;
-        const refundAmount: number = refund.amount / 100;
 
         console.log(`[webhook] Refund created: ${rzpRefundId} for payment ${rzpPaymentId}`);
 
@@ -309,11 +407,12 @@ serve(async (req) => {
           .single();
 
         if (vp) {
-          await rpc(supabase, "confirm_vendor_payout", {
+          const { error: confirmErr } = await rpc(supabase, "confirm_vendor_payout", {
             p_payout_id: (vp as any).id,
             p_status: "paid",
             p_razorpay_payout_id: rzpPayoutId,
           });
+          if (confirmErr) handlerOk = false;
         }
         break;
       }
@@ -323,8 +422,16 @@ serve(async (req) => {
       case "payout.reversed": {
         const payout = (payload.payload as any).payout.entity;
         const rzpPayoutId: string = payout.id;
+
+        // H2 FIX: the original expression
+        //   payout.failure_reason ?? eventType === "payout.reversed" ? "reversed" : "failed"
+        // parses (?? binds looser than ===, but looser than the
+        // ternary too) as:
+        //   (payout.failure_reason ?? (eventType === "payout.reversed")) ? "reversed" : "failed"
+        // — so ANY truthy failure_reason string made `reason` become
+        // the literal word "reversed", discarding the real reason.
         const reason: string =
-          payout.failure_reason ?? eventType === "payout.reversed" ? "reversed" : "failed";
+          payout.failure_reason ?? (eventType === "payout.reversed" ? "reversed" : "failed");
 
         console.log(`[webhook] Vendor payout failed/reversed: ${rzpPayoutId}`);
 
@@ -335,12 +442,13 @@ serve(async (req) => {
           .single();
 
         if (vp) {
-          await rpc(supabase, "confirm_vendor_payout", {
+          const { error: confirmErr } = await rpc(supabase, "confirm_vendor_payout", {
             p_payout_id: (vp as any).id,
             p_status: "failed",
             p_razorpay_payout_id: rzpPayoutId,
             p_failure_reason: reason,
           });
+          if (confirmErr) handlerOk = false;
         }
         break;
       }
@@ -350,15 +458,20 @@ serve(async (req) => {
     }
   } catch (handlerErr) {
     console.error("[webhook] Handler error:", handlerErr);
-    // Mark event as processed even on handler error to prevent infinite retries
-    // The error is logged in audit_log by the RPC functions.
+    handlerOk = false;
   }
 
-  // 4. Mark event processed
-  await supabase
-    .from("payment_events")
-    .update({ processed_at: new Date().toISOString() })
-    .eq("event_id", eventId);
+  // 4. Mark event processed ONLY if the handler actually succeeded.
+  //    If it failed, leave processed_at null and return 500 so
+  //    Razorpay's webhook retry mechanism tries again later instead
+  //    of us silently dropping a payment/payout/refund event (H3).
+  if (handlerOk) {
+    await supabase
+      .from("payment_events")
+      .update({ processed_at: new Date().toISOString() })
+      .eq("event_id", eventId);
+    return ok(CORS_HEADERS, "OK");
+  }
 
-  return ok("OK");
+  return err(CORS_HEADERS, "Handler failed — will retry", 500);
 });

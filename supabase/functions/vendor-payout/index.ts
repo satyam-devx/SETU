@@ -25,6 +25,8 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders } from "../_shared/cors.ts";
+import { requireUser, getUserRole } from "../_shared/auth.ts";
 
 /**
  * vendor-payout
@@ -38,45 +40,46 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const RAZORPAY_KEY_ID     = Deno.env.get("RAZORPAY_KEY_ID");
 const RAZORPAY_KEY_SECRET = Deno.env.get("RAZORPAY_KEY_SECRET");
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
 serve(async (req) => {
+  const CORS_HEADERS = corsHeaders(req);
+
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
 
-  // ── Auth: only service_role or admin JWT allowed ──────────
-  const authHeader = req.headers.get("authorization") ?? "";
+  // ── Auth: only admin/super_admin JWT allowed ──────────────
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL") ?? "",
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
   );
 
-  // Verify caller identity via their JWT
-  const callerToken = authHeader.replace("Bearer ", "");
-  const { data: { user }, error: authErr } =
-    await supabase.auth.getUser(callerToken);
+  const { user, error: authErr } = await requireUser(req, supabase);
 
   if (authErr || !user) {
     return new Response(
-      JSON.stringify({ error: "Unauthorized" }),
+      JSON.stringify({ error: authErr ?? "Unauthorized" }),
       { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
     );
   }
 
   // Check admin role
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+  const role = await getUserRole(supabase, user.id);
 
-  if (!profile || !["admin", "super_admin"].includes((profile as any).role)) {
+  if (!role || !["admin", "super_admin"].includes(role)) {
     return new Response(
       JSON.stringify({ error: "Admin role required" }),
       { status: 403, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+    );
+  }
+
+  // ── Rate limit: 20 payout initiations / 10 min / admin ────
+  const { data: withinLimit } = await supabase.rpc('check_rate_limit', {
+    p_key: `vendor-payout:${user.id}`,
+    p_max_count: 20,
+    p_window_seconds: 600,
+  });
+  if (withinLimit === false) {
+    return new Response(
+      JSON.stringify({ error: "Too many payout requests. Please wait a few minutes." }),
+      { status: 429, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
     );
   }
 

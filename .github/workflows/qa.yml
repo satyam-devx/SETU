@@ -265,6 +265,7 @@ jobs:
         env:
           VITE_SUPABASE_URL:                 ''
           VITE_SUPABASE_ANON_KEY:            ''
+          VITE_DEMO_MODE:            'true'
           VITE_FIREBASE_API_KEY:             'placeholder'
           VITE_FIREBASE_AUTH_DOMAIN:         'placeholder.firebaseapp.com'
           VITE_FIREBASE_PROJECT_ID:          'placeholder-project'
@@ -336,6 +337,7 @@ jobs:
         env:
           VITE_SUPABASE_URL: ''
           VITE_SUPABASE_ANON_KEY: ''
+          VITE_DEMO_MODE: 'true'
           VITE_FIREBASE_API_KEY: 'placeholder'
           VITE_FIREBASE_AUTH_DOMAIN: 'placeholder.firebaseapp.com'
           VITE_FIREBASE_PROJECT_ID: 'placeholder-project'

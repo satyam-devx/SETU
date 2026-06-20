@@ -24,6 +24,7 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { VillageProvider } from '@/lib/village';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ErrorBoundary from '@/components/shared/ErrorBoundary';
+import { isSupabaseConfigured, isDemoModeEnabled } from '@/lib/supabase';
 
 // ── Eager: Auth & onboarding — tiny, always needed first ─
 import LoginOTP           from '@/pages/auth/LoginOTP';
@@ -202,8 +203,44 @@ function RoleError() {
   );
 }
 
+// ── Configuration error screen (CRITICAL-5 fix) ────────────
+//
+// If the Supabase env vars are missing AND demo mode was not
+// explicitly enabled, we used to silently boot the whole app logged
+// in as a hardcoded "demo customer" — meaning a real production
+// deploy with a broken env-injection step would let real visitors
+// browse around as a fake account instead of seeing any error at
+// all. We now fail closed: render this screen and never mount
+// AuthProvider/the router in that state.
+//
+// VITE_DEMO_MODE=true is what our own CI/QA workflows set when they
+// intentionally test the offline/demo experience — see qa.yml.
+function ConfigErrorScreen() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background px-6">
+      <div className="max-w-md text-center space-y-3">
+        <h1 className="text-xl font-semibold text-foreground">SETU isn't configured yet</h1>
+        <p className="text-sm text-muted-foreground">
+          VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY aren't set for this deployment,
+          so the app can't connect to its backend. To prevent showing a fake/demo
+          account to real visitors, SETU refuses to start instead of guessing.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          If this is intentional (a local preview or test run), set
+          <code className="mx-1 rounded bg-muted px-1 py-0.5">VITE_DEMO_MODE=true</code>
+          in your environment.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── APP ───────────────────────────────────────────────────
 function App() {
+  if (!isSupabaseConfigured && !isDemoModeEnabled) {
+    return <ConfigErrorScreen />;
+  }
+
   return (
     <ErrorBoundary portal="SETU" fallbackRoute="/login">
     <Router basename={import.meta.env.BASE_URL}>

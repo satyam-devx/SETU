@@ -7,10 +7,27 @@ import { createClient } from '@supabase/supabase-js';
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+// CRITICAL-5 FIX (audit): missing Supabase env used to silently boot
+// the app into a fake "demo" login as a hardcoded customer, with NO
+// signal beyond a console.warn — if Cloudflare Pages env injection
+// ever failed in a real deploy, real users would land in a fake
+// account instead of seeing an error. Demo mode now requires an
+// EXPLICIT opt-in flag (VITE_DEMO_MODE=true), which only our own CI
+// test/preview workflows set. If env is missing and that flag is
+// NOT set, App.jsx renders a hard configuration-error screen instead
+// of silently authenticating anyone.
+export const isDemoModeEnabled = import.meta.env.VITE_DEMO_MODE === 'true';
+
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.warn(
-    '[SETU] Missing Supabase env vars. Running in demo mode.'
-  );
+  if (isDemoModeEnabled) {
+    console.warn('[SETU] Missing Supabase env vars. VITE_DEMO_MODE=true — running in demo mode.');
+  } else {
+    console.error(
+      '[SETU] Missing Supabase env vars and VITE_DEMO_MODE is not set. ' +
+      'The app will show a configuration-error screen instead of starting. ' +
+      'Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, or VITE_DEMO_MODE=true for local/test previews.'
+    );
+  }
 }
 
 export const supabase = createClient(

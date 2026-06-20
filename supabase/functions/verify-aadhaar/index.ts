@@ -1,32 +1,44 @@
 /**
- * verify-aadhaar — Phase 7 KYC
+ * verify-aadhaar — Phase 7 KYC  (hardened, round 2)
  *
  * Two-step Aadhaar OTP verification using SurePass API.
  *
- * Step 1 (generate-otp):  POST { aadhaarNumber, userId }
+ * Step 1 (generate-otp):  POST { aadhaarNumber }
  *   → validates format, calls SurePass /aadhaar-v2/generate-otp
  *   → returns { success, requestId, message }
  *
- * Step 2 (verify-otp):    POST { requestId, otp, userId }
+ * Step 2 (verify-otp):    POST { requestId, otp }
  *   → calls SurePass /aadhaar-v2/submit-otp
  *   → on success: writes kyc_records row as 'verified', updates profiles
  *   → returns { success, name, dob, maskedAadhaar, careOf }
  *
- * Required Supabase Vault Secrets:
- *   SUREPASS_API_KEY  — SurePass bearer token (from surepass.io dashboard)
+ * SECURITY (audit CRITICAL-2 + CRITICAL-3):
+ *   - This function used to accept `userId` directly from the
+ *     request body with NO authentication at all, deployed with
+ *     --no-verify-jwt. Anyone on the internet could POST another
+ *     user's UUID and flip their `aadhaar_verified` flag.
+ *   - The dev-mode OTP bypass used to trigger on a CLIENT-SUPPLIED
+ *     `requestId.startsWith("dev_")` — meaning even with a real
+ *     SurePass key configured, anyone could "verify" any account by
+ *     sending `requestId: "dev_x"` + any 6 digits.
  *
- * If SUREPASS_API_KEY is not set, falls back to format-validation-only mode
- * so development environments don't break.
+ * Fixes:
+ *   - Caller identity now comes ONLY from the verified Supabase JWT
+ *     (requireUser). The body's userId, if present, is ignored.
+ *   - The dev bypass is now gated on a server-only environment flag
+ *     (ALLOW_KYC_DEV_BYPASS) that is never derivable from any client
+ *     input, and is only ever set in non-production environments.
+ *
+ * Required Supabase Vault Secrets:
+ *   SUREPASS_API_KEY      — SurePass bearer token (from surepass.io dashboard)
+ *   ALLOW_KYC_DEV_BYPASS   — set to "true" ONLY in dev/staging projects
+ *                            that intentionally have no SurePass key.
+ *                            Never set this in production.
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7?target=deno&no-check=true"
-
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin":  "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-}
+import { corsHeaders } from "../_shared/cors.ts"
+import { adminClient, requireUser } from "../_shared/auth.ts"
 
 const SUREPASS_BASE = "https://kyc-api.surepass.io/api/v1"
 
@@ -60,8 +72,36 @@ function validateAadhaarFormat(n: string): string | null {
 }
 
 serve(async (req) => {
+  const CORS_HEADERS = corsHeaders(req)
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS_HEADERS })
+  }
+
+  const supabase = adminClient()
+
+  // ── Auth: caller identity comes from the JWT only ─────────
+  const { user, error: authError } = await requireUser(req, supabase)
+  if (authError || !user) {
+    return new Response(
+      JSON.stringify({ success: false, error: authError ?? "Unauthorized" }),
+      { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+    )
+  }
+  const userId = user.id
+
+  // ── Rate limit: 5 attempts / 10 min / user — Aadhaar OTP is a
+  //    SurePass-billed external API call and a brute-force target.
+  const { data: withinLimit } = await supabase.rpc('check_rate_limit', {
+    p_key: `verify-aadhaar:${userId}`,
+    p_max_count: 5,
+    p_window_seconds: 600,
+  })
+  if (withinLimit === false) {
+    return new Response(
+      JSON.stringify({ success: false, error: "Too many attempts. Please wait 10 minutes and try again." }),
+      { status: 429, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+    )
   }
 
   let body: any
@@ -72,21 +112,12 @@ serve(async (req) => {
     )
   }
 
-  const { step = "generate-otp", aadhaarNumber, requestId, otp, userId } = body
-
-  if (!userId) {
-    return new Response(
-      JSON.stringify({ success: false, error: "userId is required" }),
-      { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
-    )
-  }
+  const { step = "generate-otp", aadhaarNumber, requestId, otp } = body
 
   const SUREPASS_API_KEY = Deno.env.get("SUREPASS_API_KEY")
-
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")              ?? "",
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
-  )
+  // CRITICAL-3 FIX: gated on a server-only env flag, never on
+  // anything the client sends. Leave unset (or "false") in production.
+  const DEV_BYPASS_ENABLED = Deno.env.get("ALLOW_KYC_DEV_BYPASS") === "true"
 
   // ── STEP 1: Generate OTP ──────────────────────────────────
   if (step === "generate-otp") {
@@ -105,9 +136,17 @@ serve(async (req) => {
       )
     }
 
-    // If no API key, return dev mode success (format passed)
+    // If no API key, return dev mode success (format passed) — only
+    // when the dev bypass flag is explicitly enabled server-side.
     if (!SUREPASS_API_KEY) {
-      console.warn("[verify-aadhaar] SUREPASS_API_KEY not set — dev mode: format validated only")
+      if (!DEV_BYPASS_ENABLED) {
+        console.error("[verify-aadhaar] SUREPASS_API_KEY not set and ALLOW_KYC_DEV_BYPASS is not enabled — refusing")
+        return new Response(
+          JSON.stringify({ success: false, error: "KYC verification is temporarily unavailable. Please contact support." }),
+          { status: 503, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+        )
+      }
+      console.warn("[verify-aadhaar] DEV BYPASS active — format validated only, no real OTP sent")
       return new Response(
         JSON.stringify({
           success:   true,
@@ -149,11 +188,13 @@ serve(async (req) => {
       )
     }
 
-    // Log attempt in kyc_records
+    // Log attempt in kyc_records — scoped to the authenticated caller
+    // (status must be one of pending/submitted/verified/rejected per
+    // the kyc_records CHECK constraint)
     await supabase.from("kyc_records").upsert({
       user_id:      userId,
       type:         "aadhaar",
-      status:       "otp_sent",
+      status:       "submitted",
       submitted_at: new Date().toISOString(),
       meta:         { request_id: spResp.data?.client_id },
     }, { onConflict: "user_id,type" })
@@ -184,9 +225,11 @@ serve(async (req) => {
       )
     }
 
-    // Dev mode: any 6-digit OTP passes
-    if (!SUREPASS_API_KEY || requestId.startsWith("dev_")) {
-      console.warn("[verify-aadhaar] Dev mode OTP verification — accepting without real check")
+    // Dev mode: only when explicitly enabled server-side AND there is
+    // no real SurePass key configured. The client-supplied requestId
+    // prefix is NEVER trusted to decide this (that was CRITICAL-3).
+    if (!SUREPASS_API_KEY && DEV_BYPASS_ENABLED) {
+      console.warn("[verify-aadhaar] DEV BYPASS active — accepting OTP without real check")
 
       await supabase.from("kyc_records").upsert({
         user_id:     userId,
@@ -202,12 +245,19 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({
-          success:     true,
-          name:        "Dev Mode User",
+          success:       true,
+          name:          "Dev Mode User",
           maskedAadhaar: "XXXX XXXX 1234",
-          devMode:     true,
+          devMode:       true,
         }),
         { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      )
+    }
+
+    if (!SUREPASS_API_KEY) {
+      return new Response(
+        JSON.stringify({ success: false, error: "KYC verification is temporarily unavailable. Please contact support." }),
+        { status: 503, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
       )
     }
 
@@ -246,7 +296,8 @@ serve(async (req) => {
 
     const kycData = spResp.data ?? {}
 
-    // Persist verification to kyc_records + update profile
+    // Persist verification to kyc_records + update profile — scoped
+    // to the authenticated caller, never to a body-supplied userId.
     await supabase.from("kyc_records").upsert({
       user_id:      userId,
       type:         "aadhaar",

@@ -1,5 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7?target=deno&no-check=true"
+import { corsHeaders } from "../_shared/cors.ts"
+import { requireUser } from "../_shared/auth.ts"
 
 /**
  * create-razorpay-order
@@ -12,38 +14,37 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7?target
 const RAZORPAY_KEY_ID     = Deno.env.get('RAZORPAY_KEY_ID')
 const RAZORPAY_KEY_SECRET = Deno.env.get('RAZORPAY_KEY_SECRET')
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin":  "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-}
-
 serve(async (req) => {
+  const CORS_HEADERS = corsHeaders(req)
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS_HEADERS })
   }
 
   // ── Auth: Verify JWT ──────────────────────────────────────
-  const authHeader = req.headers.get("authorization") ?? ""
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')              ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   )
 
-  const callerToken = authHeader.replace("Bearer ", "")
-  if (!callerToken) {
+  const { user, error: authError } = await requireUser(req, supabase)
+  if (authError || !user) {
     return new Response(
-      JSON.stringify({ error: "Missing authorization header" }),
+      JSON.stringify({ error: authError ?? "Unauthorized" }),
       { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
     )
   }
 
-  const { data: { user }, error: authErr } = await supabase.auth.getUser(callerToken)
-
-  if (authErr || !user) {
+  // ── Basic rate limit: 10 order-creation attempts / 5 min / user ──
+  const { data: withinLimit } = await supabase.rpc('check_rate_limit', {
+    p_key: `create-razorpay-order:${user.id}`,
+    p_max_count: 10,
+    p_window_seconds: 300,
+  })
+  if (withinLimit === false) {
     return new Response(
-      JSON.stringify({ error: "Unauthorized" }),
-      { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      JSON.stringify({ error: "Too many payment attempts. Please wait a few minutes and try again." }),
+      { status: 429, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
     )
   }
 
@@ -57,15 +58,8 @@ serve(async (req) => {
     )
   }
 
-  const { amount, orderId, customerId, type } = body
-
-  // Validate required fields
-  if (!amount || typeof amount !== 'number' || amount <= 0) {
-    return new Response(
-      JSON.stringify({ error: "Invalid amount" }),
-      { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
-    )
-  }
+  let { amount, orderId, customerId, type } = body
+  type = type ?? 'order_payment'
 
   if (!customerId) {
     return new Response(
@@ -74,11 +68,92 @@ serve(async (req) => {
     )
   }
 
-  // Blocker 1 Fix: Ensure user can only create orders for themselves
+  // Ensure user can only create orders for themselves
   if (customerId !== user.id) {
     return new Response(
       JSON.stringify({ error: "Forbidden: customerId mismatch" }),
       { status: 403, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+    )
+  }
+
+  // ── CRITICAL-1 FIX ──────────────────────────────────────────
+  // The client-supplied `amount` used to be trusted verbatim and
+  // sent straight to Razorpay. An attacker could open checkout on a
+  // ₹10,000 order, then call this function directly with
+  // amount: 1, pay ₹1, and have the webhook mark the full order as
+  // paid + release the full amount from escrow to the vendor.
+  //
+  // For real order payments we now IGNORE the client amount and
+  // load the authoritative total from the orders table ourselves.
+  // For wallet top-ups / credit repayments there is no "order" to
+  // check against — it's the customer adding their own money — but
+  // we still bound it to a sane range to stop fat-finger / abuse
+  // amounts reaching Razorpay.
+  let serverAmount: number
+
+  if (type === 'order_payment') {
+    if (!orderId) {
+      return new Response(
+        JSON.stringify({ error: "orderId is required for order_payment" }),
+        { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      )
+    }
+
+    const { data: order, error: orderErr } = await supabase
+      .from('orders')
+      .select('id, customer_id, total, payment_status')
+      .eq('id', orderId)
+      .single()
+
+    if (orderErr || !order) {
+      return new Response(
+        JSON.stringify({ error: "Order not found" }),
+        { status: 404, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      )
+    }
+
+    if ((order as any).customer_id !== user.id) {
+      return new Response(
+        JSON.stringify({ error: "Forbidden: not your order" }),
+        { status: 403, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      )
+    }
+
+    if (!['pending', 'failed'].includes((order as any).payment_status)) {
+      return new Response(
+        JSON.stringify({ error: `Order payment_status is '${(order as any).payment_status}' — cannot create a new payment order` }),
+        { status: 409, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      )
+    }
+
+    serverAmount = Number((order as any).total)
+  } else if (type === 'wallet_topup' || type === 'credit_repayment') {
+    if (typeof amount !== 'number' || amount <= 0) {
+      return new Response(
+        JSON.stringify({ error: "Invalid amount" }),
+        { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      )
+    }
+    // Sane bounds — tune to your real product limits.
+    const MAX_TOPUP = 50000
+    if (amount > MAX_TOPUP) {
+      return new Response(
+        JSON.stringify({ error: `Amount exceeds maximum allowed (₹${MAX_TOPUP})` }),
+        { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      )
+    }
+    serverAmount = amount
+  } else {
+    return new Response(
+      JSON.stringify({ error: `Unknown payment type: ${type}` }),
+      { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+    )
+  }
+
+  if (!serverAmount || serverAmount <= 0) {
+    return new Response(
+      JSON.stringify({ error: "Invalid amount" }),
+      { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
     )
   }
 
@@ -102,13 +177,13 @@ serve(async (req) => {
         'Content-Type':  'application/json',
       },
       body: JSON.stringify({
-        amount:   Math.round(amount * 100), // Razorpay uses paise
+        amount:   Math.round(serverAmount * 100), // Razorpay uses paise
         currency: 'INR',
         receipt:  orderId ?? `topup_${Date.now()}`,
         notes: {
           customerId,
           orderId: orderId ?? null,
-          type:    type ?? 'order_payment',
+          type,
         },
       }),
     })
@@ -135,9 +210,9 @@ serve(async (req) => {
     razorpay_order_id: razorpayOrder.id,
     order_id:          orderId ?? null,
     user_id:           customerId,
-    amount:            amount,
+    amount:            serverAmount,
     status:            'created',
-    notes:             { type: type ?? 'order_payment' },
+    notes:             { type },
   })
 
   if (dbErr) {

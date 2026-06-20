@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// SETU — send-fcm-notification  (Supabase Edge Function)
+// SETU — send-fcm-notification  (Supabase Edge Function, hardened)
 //
 // Sends a push notification to one or more users via Firebase
 // Cloud Messaging (FCM v1 HTTP API).
@@ -7,7 +7,17 @@
 // Called by:
 //  - razorpay-webhook     after payment.captured
 //  - update_order_status  (via pg_net or direct invoke) on status change
-//  - Any server-side flow that needs to ping a user's device
+//  - Admin broadcast tools (schemes/promos)
+//
+// SECURITY (audit CRITICAL-2): this function used to accept ANY
+// `user_ids` array with zero authentication — anyone on the internet
+// could mass-push notifications to every account on the platform.
+// It now requires EITHER:
+//   (a) the project's service-role key as the bearer token (proves
+//       the caller is our own backend — e.g. another Edge Function
+//       invoking this one server-to-server), or
+//   (b) an authenticated admin/super_admin user's JWT (for the admin
+//       broadcast UI).
 //
 // Environment variables required (set in Supabase Dashboard → Edge Functions → Secrets):
 //   SUPABASE_URL               — your project URL
@@ -28,13 +38,8 @@
 // ═══════════════════════════════════════════════════════════
 
 import { serve }         from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient }  from 'https://esm.sh/@supabase/supabase-js@2';
-
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+import { corsHeaders }   from '../_shared/cors.ts';
+import { adminClient, requireInternalOrAdmin } from '../_shared/auth.ts';
 
 // ── FCM v1 OAuth2 token (cached per invocation) ───────────
 let _cachedToken: string | null  = null;
@@ -158,6 +163,8 @@ async function sendFcmMessage(
 
 // ── Main handler ──────────────────────────────────────────
 serve(async (req) => {
+  const CORS_HEADERS = corsHeaders(req);
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS_HEADERS });
   }
@@ -166,8 +173,17 @@ serve(async (req) => {
     return new Response('Method not allowed', { status: 405, headers: CORS_HEADERS });
   }
 
-  const SUPABASE_URL      = Deno.env.get('SUPABASE_URL')               ?? '';
-  const SERVICE_ROLE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')  ?? '';
+  const supabase = adminClient();
+
+  // ── Auth: internal service call OR admin/super_admin JWT only ──
+  const authCheck = await requireInternalOrAdmin(req, supabase);
+  if (!authCheck.ok) {
+    return new Response(
+      JSON.stringify({ error: authCheck.error ?? 'Unauthorized' }),
+      { status: 401, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+    );
+  }
+
   const PROJECT_ID        = Deno.env.get('FIREBASE_PROJECT_ID')        ?? '';
   const SERVICE_ACCOUNT_S = Deno.env.get('FIREBASE_SERVICE_ACCOUNT')   ?? '';
 
@@ -204,8 +220,18 @@ serve(async (req) => {
     );
   }
 
+  // Cap broadcast size per call — even an authorised admin shouldn't
+  // be able to fat-finger the entire user base into one FCM batch
+  // that could exceed memory/time limits or runaway-loop on a bug.
+  const MAX_RECIPIENTS = 5000;
+  if (user_ids.length > MAX_RECIPIENTS) {
+    return new Response(
+      JSON.stringify({ error: `Too many recipients (max ${MAX_RECIPIENTS} per call)` }),
+      { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+    );
+  }
+
   // 1. Fetch FCM tokens from profiles
-  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
   const { data: profiles, error: profileErr } = await supabase
     .from('profiles')
     .select('id, fcm_token')

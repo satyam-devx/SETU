@@ -90,9 +90,15 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout:            120_000,
     env: {
-      // Run in demo mode (no real Supabase needed for E2E)
+      // Run in demo mode (no real Supabase needed for E2E).
+      // VITE_DEMO_MODE must be explicitly set for the app to allow
+      // booting without real Supabase env (see CRITICAL-5 fix in
+      // src/App.jsx) — it's derived here from whether a real
+      // Supabase URL was supplied, so existing CI behavior is
+      // unchanged.
       VITE_SUPABASE_URL:      process.env.VITE_SUPABASE_URL      || '',
       VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY || '',
+      VITE_DEMO_MODE:         process.env.VITE_SUPABASE_URL ? 'false' : 'true',
       VITE_FIREBASE_API_KEY:              'placeholder',
       VITE_FIREBASE_AUTH_DOMAIN:          'placeholder.firebaseapp.com',
       VITE_FIREBASE_PROJECT_ID:           'placeholder-project',

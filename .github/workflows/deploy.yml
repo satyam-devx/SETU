@@ -142,16 +142,20 @@ jobs:
         run: |
           # On first deploy, deploy all functions.
           # On subsequent deploys, only deploy functions that changed.
+          # _shared/ is a code-sharing folder, not a deployable function
+          # (it has no index.ts of its own) — always excluded.
           CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'supabase/functions/' 2>/dev/null \
                     | sed 's|supabase/functions/||' \
                     | cut -d'/' -f1 \
+                    | grep -v '^_shared$' \
+                    | grep -v '\.json$' \
                     | sort -u \
                     | tr '\n' ' ' \
                     | xargs)
           if [ -z "$CHANGED" ]; then
             echo "No function changes detected — deploying all."
             # Use space-separated single line — newlines break GITHUB_OUTPUT
-            FUNCTIONS=$(ls supabase/functions/ | tr '\n' ' ' | xargs)
+            FUNCTIONS=$(ls -d supabase/functions/*/ | xargs -n1 basename | grep -v '^_shared$' | tr '\n' ' ' | xargs)
             echo "functions=$FUNCTIONS" >> "$GITHUB_OUTPUT"
             echo "deploy_all=true" >> "$GITHUB_OUTPUT"
           else
@@ -160,17 +164,35 @@ jobs:
             echo "deploy_all=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Deploy all Edge Functions
+      - name: Deploy Edge Functions
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF:  ${{ secrets.SUPABASE_PROJECT_REF }}
         run: |
           echo "=== Deploying Edge Functions ==="
           FAILED=()
-          for dir in supabase/functions/*/; do
-            FNAME=$(basename "$dir")
-            echo "Deploying: $FNAME"
-            if supabase functions deploy "$FNAME" --no-verify-jwt 2>&1; then
+
+          # SECURITY (audit CRITICAL-2): --no-verify-jwt used to be applied
+          # to EVERY function, disabling Supabase's gateway-level JWT check
+          # platform-wide. razorpay-webhook genuinely needs it (Razorpay
+          # calls it server-to-server with an HMAC signature, not a
+          # Supabase JWT) — every other function now requires a verified
+          # JWT at the gateway, on top of the auth checks each function
+          # also does internally.
+          NO_VERIFY_JWT_FUNCTIONS="razorpay-webhook"
+
+          for FNAME in ${{ steps.changed_functions.outputs.functions }}; do
+            if [ "$FNAME" = "_shared" ]; then
+              continue
+            fi
+            FLAGS=""
+            if [[ " $NO_VERIFY_JWT_FUNCTIONS " == *" $FNAME "* ]]; then
+              FLAGS="--no-verify-jwt"
+              echo "Deploying: $FNAME (--no-verify-jwt — webhook, HMAC-verified internally)"
+            else
+              echo "Deploying: $FNAME (JWT verification enforced at gateway)"
+            fi
+            if supabase functions deploy "$FNAME" $FLAGS 2>&1; then
               echo "  ✓ $FNAME deployed"
             else
               echo "  ✗ $FNAME FAILED"

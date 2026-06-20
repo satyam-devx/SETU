@@ -1,18 +1,17 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { corsHeaders } from "../_shared/cors.ts"
+import { adminClient, requireUser } from "../_shared/auth.ts"
 
 /**
  * kyc-verify
  *
+ * SECURITY (audit CRITICAL-2): previously accepted `userId` from the
+ * request body with no authentication at all. Now requires a valid
+ * Supabase JWT and ignores any userId in the body.
+ *
  * Required Supabase Vault Secrets:
  *   SUREPASS_API_KEY — SurePass API key for Aadhaar/PAN verification
  */
-
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin":  "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-}
 
 // ── Aadhaar Verhoeff (Luhn-equivalent) check ──────────────
 // UIDAI's Aadhaar numbers pass the Verhoeff algorithm.
@@ -82,8 +81,31 @@ function validatePAN(pan: string): { valid: boolean; reason?: string } {
 }
 
 serve(async (req) => {
+  const CORS_HEADERS = corsHeaders(req)
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS_HEADERS })
+  }
+
+  const supabase = adminClient()
+  const { user, error: authError } = await requireUser(req, supabase)
+  if (authError || !user) {
+    return new Response(
+      JSON.stringify({ success: false, error: authError ?? "Unauthorized" }),
+      { status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+    )
+  }
+
+  const { data: withinLimit } = await supabase.rpc('check_rate_limit', {
+    p_key: `kyc-verify:${user.id}`,
+    p_max_count: 10,
+    p_window_seconds: 600,
+  })
+  if (withinLimit === false) {
+    return new Response(
+      JSON.stringify({ success: false, error: "Too many attempts. Please wait and try again." }),
+      { status: 429, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+    )
   }
 
   let body: any
@@ -96,11 +118,12 @@ serve(async (req) => {
     )
   }
 
-  const { type, data, userId } = body
+  const { type, data } = body
+  const userId = user.id
 
-  if (!type || !userId) {
+  if (!type) {
     return new Response(
-      JSON.stringify({ success: false, error: "type and userId are required" }),
+      JSON.stringify({ success: false, error: "type is required" }),
       { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
     )
   }
