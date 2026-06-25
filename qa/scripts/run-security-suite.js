@@ -367,7 +367,7 @@ const FUNCTION_CHECKS = [
   },
   {
     name:    'Edge functions return CORS headers',
-    file:    'supabase/functions/ai-assistant/index.ts',
+    file:    'supabase/functions/_shared/cors.ts',
     patterns: ['Access-Control-Allow-Origin'],
     critical: false,
   },

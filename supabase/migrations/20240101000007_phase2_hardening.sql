@@ -93,7 +93,8 @@ create index if not exists idx_disputes_status     on disputes(status);
 create index if not exists idx_disputes_order_id   on disputes(order_id);
 create index if not exists idx_disputes_created_at on disputes(created_at desc);
 
-create trigger if not exists trg_disputes_updated_at
+drop trigger if exists trg_disputes_updated_at on disputes;
+create trigger trg_disputes_updated_at
   before update on disputes
   for each row execute function update_updated_at();
 
@@ -120,7 +121,8 @@ create index if not exists idx_escalations_escalated_by on escalations(escalated
 create index if not exists idx_escalations_status       on escalations(status);
 create index if not exists idx_escalations_created_at   on escalations(created_at desc);
 
-create trigger if not exists trg_escalations_updated_at
+drop trigger if exists trg_escalations_updated_at on escalations;
+create trigger trg_escalations_updated_at
   before update on escalations
   for each row execute function update_updated_at();
 
@@ -144,7 +146,8 @@ create index if not exists idx_noticeboard_author_id  on noticeboard(author_id);
 create index if not exists idx_noticeboard_created_at on noticeboard(created_at desc);
 create index if not exists idx_noticeboard_is_pinned  on noticeboard(is_pinned) where is_pinned = true;
 
-create trigger if not exists trg_noticeboard_updated_at
+drop trigger if exists trg_noticeboard_updated_at on noticeboard;
+create trigger trg_noticeboard_updated_at
   before update on noticeboard
   for each row execute function update_updated_at();
 
