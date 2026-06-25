@@ -23,8 +23,11 @@ import urllib.error
 
 SUPABASE_URL      = os.environ.get('SUPABASE_URL', os.environ.get('VITE_SUPABASE_URL', ''))
 SERVICE_ROLE_KEY  = os.environ.get('SUPABASE_SERVICE_ROLE', os.environ.get('SUPABASE_SERVICE_ROLE_KEY', ''))
+SUPABASE_DB_URL   = os.environ.get('SUPABASE_DB_URL', '')
 
 if not SUPABASE_URL or not SERVICE_ROLE_KEY:
+    if SUPABASE_DB_URL:
+        print("ℹ  SUPABASE_URL/KEY not set, but SUPABASE_DB_URL found. Note: This script currently only supports REST API checks.")
     print("⚠  SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set — skipping DB health checks")
     sys.exit(0)
 
