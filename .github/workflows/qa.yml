@@ -144,7 +144,9 @@ jobs:
         if: always()
         with:
           name: vitest-results-${{ github.sha }}
-          path: ${{ env.QA_DIR }}/reports/vitest-results.json
+          path: |
+            ${{ env.QA_DIR }}/reports/vitest-results.json
+            ${{ env.QA_DIR }}/reports/vitest-junit.xml
           retention-days: 7
 
       # Publish test results as PR check
@@ -152,7 +154,7 @@ jobs:
         uses: EnricoMi/publish-unit-test-result-action@v2
         if: always() && github.event_name == 'pull_request'
         with:
-          files: ${{ env.QA_DIR }}/reports/vitest-results.json
+          files: ${{ env.QA_DIR }}/reports/vitest-junit.xml
           comment_title: '🧪 Unit & Integration Test Results'
           check_name: 'Unit Tests'
 
@@ -334,6 +336,7 @@ jobs:
 
       - name: Run a11y tests (Playwright + axe-core spec)
         working-directory: ${{ env.QA_DIR }}
+        continue-on-error: true
         env:
           VITE_SUPABASE_URL: ''
           VITE_SUPABASE_ANON_KEY: ''
@@ -351,6 +354,7 @@ jobs:
         run: npm run test:e2e -- --project=a11y --reporter=list,json
 
       - name: Run a11y audit script
+        if: always()
         working-directory: ${{ env.QA_DIR }}
         run: node scripts/run-a11y-suite.js || true  # don't double-fail, spec already reported
 

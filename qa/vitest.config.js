@@ -33,9 +33,10 @@ export default defineConfig({
         statements: 60,
       },
     },
-    reporters: ['verbose', 'json'],
+    reporters: ['verbose', 'json', 'junit'],
     outputFile: {
       json: './reports/vitest-results.json',
+      junit: './reports/vitest-junit.xml',
     },
   },
   resolve: {

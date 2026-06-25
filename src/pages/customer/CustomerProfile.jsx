@@ -149,7 +149,7 @@ export default function CustomerProfile() {
               )}
 
               <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <span className="text-xs bg-primary/15 text-primary px-2 py-0.5 rounded-full font-bold">
+                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold">
                   SETU Score: {setuScore}
                 </span>
                 {selectedVillage && (
