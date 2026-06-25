@@ -1,0 +1,5 @@
+# SETU — SPA history-API fallback (Cloudflare Pages / Netlify)
+# Every non-asset path serves index.html so React Router can handle it.
+# (On GitHub Pages this is done instead by copying index.html → 404.html
+#  in deploy.yml; this file is ignored there.)
+/*    /index.html    200

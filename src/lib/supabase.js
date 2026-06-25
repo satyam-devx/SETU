@@ -123,3 +123,20 @@ export function getPortalPath(role) {
 export const isSupabaseConfigured =
   !!import.meta.env.VITE_SUPABASE_URL &&
   !!import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+// ── Read-replica client (Phase 4 — read scaling) ──────────────
+// For high-volume PUBLIC, read-only data (catalog: vendors, products,
+// categories, schemes, villages) we can offload reads to a Supabase
+// read replica. Set VITE_SUPABASE_REPLICA_URL to enable; otherwise this
+// is just the primary client, so behaviour is unchanged by default.
+//
+// IMPORTANT: this client carries NO user session (anon role), so it must
+// ONLY be used for data exposed by public RLS policies. Never use it for
+// auth, wallet/credit, orders, or anything user-scoped — those need the
+// authenticated primary client. Reads may be slightly stale (replica lag).
+const SUPABASE_REPLICA_URL = import.meta.env.VITE_SUPABASE_REPLICA_URL;
+export const supabaseRead = SUPABASE_REPLICA_URL
+  ? createClient(SUPABASE_REPLICA_URL, SUPABASE_ANON_KEY || 'placeholder-key', {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+  : supabase;

@@ -1,0 +1,61 @@
+name: SETU Load Test (manual)
+
+# ─────────────────────────────────────────────────────────
+# MANUAL ONLY (workflow_dispatch). Load testing runs against a target
+# you choose — point it at STAGING, never production without a planned
+# window. Nothing here runs on push/PR.
+# ─────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      test:
+        description: 'Which test to run'
+        type: choice
+        default: catalog-read
+        options: [catalog-read, smoke]
+      base_url:
+        description: 'Frontend base URL (for the smoke test)'
+        type: string
+        default: ''
+      vus:
+        description: 'Virtual users'
+        type: string
+        default: '50'
+      hold:
+        description: 'Hold duration at peak (catalog-read), e.g. 2m'
+        type: string
+        default: '1m'
+
+permissions:
+  contents: read
+
+jobs:
+  load:
+    name: Run k6 load test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Run catalog-read load test
+        if: ${{ inputs.test == 'catalog-read' }}
+        env:
+          SUPABASE_URL:      ${{ secrets.LOADTEST_SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.LOADTEST_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          k6 run \
+            -e SUPABASE_URL="$SUPABASE_URL" \
+            -e SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
+            -e VUS="${{ inputs.vus }}" \
+            -e HOLD="${{ inputs.hold }}" \
+            qa/load/k6-catalog-read.js
+
+      - name: Run frontend smoke load test
+        if: ${{ inputs.test == 'smoke' }}
+        run: |
+          BASE="${{ inputs.base_url }}"
+          if [ -z "$BASE" ]; then BASE="${{ vars.PROD_URL }}"; fi
+          k6 run -e BASE_URL="$BASE" -e VUS="${{ inputs.vus }}" qa/load/k6-smoke.js

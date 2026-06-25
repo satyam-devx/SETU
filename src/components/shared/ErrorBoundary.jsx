@@ -6,6 +6,7 @@
 // ═══════════════════════════════════════════════════════════
 import React from 'react';
 import { RefreshCw, AlertTriangle } from 'lucide-react';
+import { captureError } from '@/lib/observability';
 
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -19,11 +20,12 @@ export default class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     this.setState({ errorInfo });
-    // In production, send to Sentry / monitoring
-    if (typeof window !== 'undefined' && window.__SETU_SENTRY__) {
-      window.__SETU_SENTRY__.captureException(error, { extra: errorInfo });
-    }
-    console.error('[SETU ErrorBoundary]', error, errorInfo);
+    // Central observability sink (console + Sentry hook + Supabase log).
+    captureError(error, {
+      portal: this.props.portal ?? 'App',
+      componentStack: errorInfo?.componentStack?.slice(0, 2000),
+      kind: 'react.errorBoundary',
+    }, 'fatal');
   }
 
   handleReset = () => {

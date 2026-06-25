@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Slider } from '@/components/ui/slider';
 import EmptyState from '@/components/shared/EmptyState';
+import Img from '@/components/shared/Img';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { getCategories, getProducts, getVendors } from '@/lib/api';
 
@@ -216,7 +217,7 @@ export default function CustomerSearch() {
                     <Link key={p.id} to={`/customer/product/${p.id}`}>
                       <Card className="overflow-hidden border-border">
                         <div className="h-28 bg-muted">
-                          <img src={image} alt={p.name} className="w-full h-full object-cover" />
+                          <Img src={image} alt={p.name} width={200} height={112} className="w-full h-full object-cover" />
                         </div>
                         <div className="p-3">
                           <h4 className="text-xs font-semibold line-clamp-2">{p.name}</h4>
@@ -256,7 +257,7 @@ export default function CustomerSearch() {
                     <Link key={v.id} to={`/customer/vendor/${v.id}`}>
                       <Card className="overflow-hidden border-border flex">
                         <div className="w-24 h-24 shrink-0">
-                          <img src={image} alt={v.name} className="w-full h-full object-cover" />
+                          <Img src={image} alt={v.name} width={96} height={96} className="w-full h-full object-cover" />
                         </div>
                         <div className="p-3 flex-1 min-w-0">
                           <div className="flex items-start gap-2">

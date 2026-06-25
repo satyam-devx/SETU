@@ -1,0 +1,88 @@
+name: SETU Deploy — Cloudflare Pages (WAF/CSP host)
+
+# ─────────────────────────────────────────────────────────
+# Production frontend deploy to Cloudflare Pages — the audit's
+# recommended replacement for GitHub Pages (which has no WAF, no
+# edge rate-limiting, and cannot serve a Content-Security-Policy).
+#
+# DORMANT BY DEFAULT. This workflow only runs its deploy job when the
+# repository variable ENABLE_CLOUDFLARE_DEPLOY == 'true'. To cut over:
+#   1. Create a Cloudflare Pages project (e.g. "setu").
+#   2. Add repo secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID.
+#   3. Add the existing VITE_* build secrets (same as deploy.yml).
+#   4. Set repo variable ENABLE_CLOUDFLARE_DEPLOY = true.
+#   5. Add the Pages URL/custom domain to Supabase Auth redirect URLs
+#      (supabase/config.toml additional_redirect_urls) and to the
+#      ALLOWED_ORIGINS Edge Function secret.
+#
+# Unlike GitHub Pages, Cloudflare Pages honours public/_headers
+# (CSP + HSTS) and public/_redirects (SPA fallback), and Cloudflare's
+# WAF/rate-limiting sits in front of the origin.
+# ─────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-cloudflare
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build & Deploy → Cloudflare Pages
+    runs-on: ubuntu-latest
+    # Stays dormant until ops explicitly enables it.
+    if: ${{ vars.ENABLE_CLOUDFLARE_DEPLOY == 'true' }}
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Inject Firebase config into service worker
+        env:
+          VITE_FIREBASE_API_KEY:             ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN:         ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID:          ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET:      ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID:              ${{ secrets.VITE_FIREBASE_APP_ID }}
+        run: python3 scripts/inject_sw_config.py
+
+      - name: Build production bundle (root base path)
+        env:
+          # Cloudflare Pages serves from the domain root, not /SETU/.
+          VITE_BASE_PATH:                    "/"
+          VITE_SUPABASE_URL:                 ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY:            ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_FIREBASE_API_KEY:             ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN:         ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID:          ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET:      ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID:              ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_VAPID_KEY:           ${{ secrets.VITE_FIREBASE_VAPID_KEY }}
+          VITE_MAPBOX_TOKEN:                 ${{ secrets.VITE_MAPBOX_TOKEN }}
+          VITE_RAZORPAY_KEY_ID:              ${{ secrets.VITE_RAZORPAY_KEY_ID }}
+        run: npm run build
+
+      - name: Verify no placeholder secrets leaked into the build
+        run: python3 scripts/verify_build_config.py
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT || 'setu' }} --branch=main

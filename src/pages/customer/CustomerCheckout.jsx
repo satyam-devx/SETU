@@ -2,17 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, MapPin, Smartphone, CreditCard, Wallet,
-  CheckCircle, Shield, Loader2, AlertCircle,
+  CheckCircle, Shield, Loader2, AlertCircle, Ticket, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { useCart } from '@/lib/cartContext';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/AuthContext';
 import { useVillage } from '@/lib/village';
-import { OrderAPI, PaymentAPI, cancelOrderWithRefund } from '@/lib/api';
+import { useFeatureFlag } from '@/lib/featureFlags';
+import { OrderAPI, PaymentAPI, cancelOrderWithRefund, getFeeConfig, CouponAPI } from '@/lib/api';
 import { loadRazorpayScript, initiatePayment } from '@/lib/payments';
 
 const PAY_METHODS = [
@@ -66,23 +68,80 @@ export default function CustomerCheckout() {
   const [placing,   setPlacing]   = useState(false);
   const [error,     setError]     = useState(null);
   const [placed,    setPlaced]    = useState(false);
+  // Fee parameters — single source of truth (server get_fee_config()).
+  // Defaults match the server defaults so the estimate is correct even
+  // before the fetch resolves; the authoritative total still comes from
+  // create_order on the server.
+  const [feeCfg, setFeeCfg] = useState({
+    commission_pct: 1, delivery_flat: 20, free_threshold: 200,
+    credit_discount_pct: 10, credit_discount_max: 500,
+  });
+
+  // Coupon state
+  const [couponCode, setCouponCode]         = useState('');
+  const [appliedCode, setAppliedCode]       = useState(null);
+  const [couponDiscount, setCouponDiscount] = useState(0);
+  const [couponMsg, setCouponMsg]           = useState(null);
+  const [couponBusy, setCouponBusy]         = useState(false);
 
   // Wallet balance from store (hydrated from Supabase on app load)
   const walletBalance = state.wallet?.balance ?? 0;
 
-  const creditDiscount = useCredit ? Math.min(totalPrice * 0.1, 500) : 0;
-  const finalTotal     = totalPrice - creditDiscount;
-  const deliveryFee    = totalPrice >= 200 ? 0 : 20;
-  const platformFee    = Math.round(finalTotal * 0.01);
-  const grandTotal     = finalTotal + deliveryFee + platformFee;
+  // Feature-flag gating: hide payment methods whose module is disabled.
+  const walletEnabled  = useFeatureFlag('wallet');
+  const onlineEnabled  = useFeatureFlag('payments');
+  const couponsEnabled = useFeatureFlag('coupons');
+  const payMethods = PAY_METHODS.filter(pm =>
+    (pm.id !== 'wallet' || walletEnabled) &&
+    (pm.id !== 'upi'    || onlineEnabled)
+  );
+
+  // If the selected method got disabled, fall back to the first available.
+  useEffect(() => {
+    if (!payMethods.some(pm => pm.id === payMethod)) {
+      setPayMethod(payMethods[0]?.id ?? 'cod');
+    }
+  }, [payMethods, payMethod]);
+
+  const creditDiscount = useCredit
+    ? Math.min(totalPrice * (Number(feeCfg.credit_discount_pct) / 100), Number(feeCfg.credit_discount_max))
+    : 0;
+  // Mirror server create_order math: discounts can't push the final below 0.
+  const finalAfter     = Math.max(0, totalPrice - creditDiscount - couponDiscount);
+  const deliveryFee    = totalPrice >= Number(feeCfg.free_threshold) ? 0 : Number(feeCfg.delivery_flat);
+  const platformFee    = Math.round(finalAfter * (Number(feeCfg.commission_pct) / 100));
+  const grandTotal     = finalAfter + deliveryFee + platformFee;
 
   const walletSufficient = walletBalance >= grandTotal;
 
   // Derive vendor from first item (single-vendor cart is enforced by cartContext)
   const vendor = resolveVendor(items[0]);
 
+  const applyCoupon = async () => {
+    const code = couponCode.trim();
+    if (!code) return;
+    setCouponBusy(true);
+    setCouponMsg(null);
+    const { data } = await CouponAPI.validate(code, totalPrice, vendor.id);
+    if (data?.valid) {
+      setCouponDiscount(Number(data.discount));
+      setAppliedCode(code.toUpperCase());
+      setCouponMsg({ ok: true, text: `Applied — ₹${Number(data.discount).toFixed(0)} off` });
+    } else {
+      setCouponDiscount(0);
+      setAppliedCode(null);
+      setCouponMsg({ ok: false, text: data?.reason ?? 'Invalid coupon' });
+    }
+    setCouponBusy(false);
+  };
+
+  const removeCoupon = () => {
+    setAppliedCode(null); setCouponDiscount(0); setCouponCode(''); setCouponMsg(null);
+  };
+
   useEffect(() => {
     loadRazorpayScript();
+    getFeeConfig().then(({ data }) => { if (data) setFeeCfg((prev) => ({ ...prev, ...data })); });
   }, []);
 
   const handlePlaceOrder = async () => {
@@ -102,21 +161,19 @@ export default function CustomerCheckout() {
     }
 
     try {
-      // 1. Build order payload — all vendor fields from resolved vendor object
+      // 1. Build order payload — NO prices/totals sent. The server
+      //    (create_order RPC) recomputes everything from the products
+      //    table and returns the authoritative order, including total.
       const orderPayload = {
-        customer_id:      user.id,
-        customer_name:    profile?.name || 'Customer',
         vendor_id:        vendor.id,
-        vendor_name:      vendor.name,
         village_id:       village?.id   ?? profile?.village_id ?? null,
-        village:          village?.name ?? profile?.village    ?? vendor.village ?? 'Village',
         items:            items.map(i => ({
           product_id: i.id,
-          name:       i.name,
           qty:        i.quantity,
-          price:      i.price,
         })),
-        payment_method:   payMethod.toUpperCase(),
+        payment_method:   ({ cod: 'COD', upi: 'UPI', wallet: 'wallet' })[payMethod] ?? 'COD',
+        use_credit:       useCredit,
+        coupon_code:      appliedCode ?? null,
         delivery_address: profile?.address
           ?? profile?.village
           ?? village?.name
@@ -126,10 +183,13 @@ export default function CustomerCheckout() {
       const { data: order, error: orderError } = await OrderAPI.create(orderPayload);
       if (orderError) throw orderError;
 
+      // Authoritative amount to charge comes from the server, never the client.
+      const serverTotal = order.total ?? grandTotal;
+
       // 2. Handle payment
       if (payMethod === 'upi') {
         const rzpResult = await initiatePayment({
-          amount:        grandTotal,
+          amount:        serverTotal,
           orderId:       order.id,
           customerId:    user.id,
           customerName:  profile?.name,
@@ -147,19 +207,17 @@ export default function CustomerCheckout() {
         // DO NOT set payment_status from here — the guard trigger will reject it.
 
       } else if (payMethod === 'wallet') {
-        const { error: walletError } = await PaymentAPI.walletPay(user.id, grandTotal, order.id);
+        // Single atomic RPC: charges order.total, confirms order, credits escrow.
+        const { data: walletRes, error: walletError } = await PaymentAPI.payOrderFromWallet(order.id);
         if (walletError) {
-          // Wallet debit failed — cancel the order atomically (no refund needed, nothing was captured)
+          // Wallet debit failed — cancel the order atomically (nothing captured)
           await cancelOrderWithRefund(order.id, user.id, 'customer', 'Wallet payment failed');
           throw new Error(walletError.message ?? 'Wallet payment failed. Please try again.');
         }
 
-        // Wallet deducted; advance order to confirmed via RPC (which sets payment_status internally)
-        await OrderAPI.advanceStatus(order.id, 'confirmed', {});
-
         dispatch({
           type:    'UPDATE_WALLET_BALANCE',
-          payload: { balance: walletBalance - grandTotal },
+          payload: { balance: walletRes?.new_balance ?? (walletBalance - serverTotal) },
         });
       }
       // COD: no payment action — stays 'pending'
@@ -244,7 +302,7 @@ export default function CustomerCheckout() {
         <Card className="p-4 border-border">
           <h3 className="font-semibold text-sm mb-3">Payment Method</h3>
           <div className="space-y-2">
-            {PAY_METHODS.map(pm => {
+            {payMethods.map(pm => {
               const isWallet = pm.id === 'wallet';
               const disabled = isWallet && !walletSufficient;
               return (
@@ -287,6 +345,41 @@ export default function CustomerCheckout() {
           </div>
         </Card>
 
+        {/* Coupon (feature-flagged) */}
+        {couponsEnabled && (
+          <Card className="p-4 border-border">
+            <h3 className="font-semibold text-sm mb-2 flex items-center gap-2">
+              <Ticket className="w-4 h-4 text-primary" /> Coupon
+            </h3>
+            {appliedCode ? (
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-green-100 text-green-700 border-0">{appliedCode}</Badge>
+                  <span className="text-xs text-green-700">−₹{couponDiscount.toFixed(0)}</span>
+                </div>
+                <button onClick={removeCoupon} className="text-muted-foreground" aria-label="Remove coupon">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Enter coupon code"
+                  value={couponCode}
+                  onChange={e => setCouponCode(e.target.value.toUpperCase())}
+                  className="h-9 flex-1"
+                />
+                <Button size="sm" variant="outline" className="h-9" disabled={couponBusy || !couponCode.trim()} onClick={applyCoupon}>
+                  {couponBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Apply'}
+                </Button>
+              </div>
+            )}
+            {couponMsg && (
+              <p className={`text-xs mt-2 ${couponMsg.ok ? 'text-green-700' : 'text-destructive'}`}>{couponMsg.text}</p>
+            )}
+          </Card>
+        )}
+
         {/* Order Summary */}
         <Card className="p-4 border-border">
           <h3 className="font-semibold text-sm mb-3">Order Summary</h3>
@@ -316,6 +409,11 @@ export default function CustomerCheckout() {
             {useCredit && (
               <div className="flex justify-between text-sm text-green-600 font-medium">
                 <span>SETU Credit</span><span>-₹{creditDiscount.toFixed(0)}</span>
+              </div>
+            )}
+            {appliedCode && couponDiscount > 0 && (
+              <div className="flex justify-between text-sm text-green-600 font-medium">
+                <span>Coupon ({appliedCode})</span><span>-₹{couponDiscount.toFixed(0)}</span>
               </div>
             )}
             <div className="flex justify-between font-bold text-base pt-1 border-t border-border">

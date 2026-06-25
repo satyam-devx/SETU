@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   MapPin, Navigation, IndianRupee, Package,
@@ -11,8 +11,9 @@ import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
 import StatusBadge from '@/components/shared/StatusBadge';
-import { useStore, useRiderState } from '@/lib/store';
+import { useRiderState } from '@/lib/store';
 import { useAuth } from '@/lib/AuthContext';
+import { useDataFetch } from '@/hooks/useDataFetch';
 import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
 import { useRiderLocation } from '@/hooks/useRiderLocation';
 import RiderNavigationMap from '@/components/maps/RiderNavigationMap';
@@ -28,74 +29,77 @@ function OrdersSkeleton() {
 }
 
 export default function RiderDashboard() {
-  const { state, dispatch }        = useStore();
   const { isOnline, toggleOnline } = useRiderState();
   const { user, profile }          = useAuth();
 
-  // ── Use authenticated user's real UUID — never hardcode seed ──
-  const riderUUID = user?.id ?? null;
+  // Resolve the rider's riders.id — orders, locations and earnings are
+  // all keyed by it, NOT the auth uid. (Bug fix: the dashboard used
+  // user.id everywhere, so orders never matched and accept/deliver wrote
+  // an invalid rider_id that violated the FK.)
+  const { data: rider } = useDataFetch(
+    () => RiderAPI.getProfile(user?.id),
+    [user?.id],
+    { cacheKey: `rider-profile-${user?.id}`, enabled: !!user?.id }
+  );
+  const riderId = rider?.id ?? null;
 
-  const { location: currentLocation } = useRiderLocation(riderUUID, isOnline);
+  const { location: currentLocation } = useRiderLocation(riderId, isOnline);
   const [accepting, setAccepting]     = useState(null);
   const [delivering, setDelivering]   = useState(null);
+  const [availableOrders, setAvailableOrders] = useState([]);
 
-  // ── Derived display values from real auth profile ─────────
-  const riderName = profile?.name ?? 'Rider';
-  const riderZone = profile?.zone  ?? 'Village Zone';
+  // ── Display values from the real rider row ────────────────
+  const riderName = rider?.name ?? profile?.name ?? 'Rider';
+  const riderZone = rider?.zone ?? profile?.zone  ?? 'Village Zone';
 
   // ── Realtime: orders assigned to this rider (active) ──────
-  const { orders: myOrders, isLoading: loadingMine } = useRealtimeOrders({
-    mode:       'rider',
-    riderId:    riderUUID,
-    activeOnly: true,
-  });
+  const { orders: myOrders, isLoading: loadingMine, refetch: refetchMine } =
+    useRealtimeOrders({ mode: 'rider', riderId });
 
-  // ── Realtime: available (unassigned pending) orders ───────
-  const availableOrders = state.orders.filter(o =>
-    !o.riderId && !o.rider_id && o.status === 'pending'
-  );
+  // ── Available (unassigned, ready) orders in the rider's village ──
+  // These are NOT in the rider's realtime store (which is filtered to
+  // orders already assigned to this rider), so fetch them directly.
+  const loadAvailable = useCallback(async () => {
+    if (!riderId || !rider?.village_id || !isOnline) { setAvailableOrders([]); return; }
+    const { data } = await RiderAPI.getAvailableOrders(rider.village_id);
+    setAvailableOrders(data ?? []);
+  }, [riderId, rider?.village_id, isOnline]);
+
+  useEffect(() => { loadAvailable(); }, [loadAvailable]);
 
   // ── Accept order ──────────────────────────────────────────
   const handleAccept = async (orderId) => {
-    if (!riderUUID) return;
+    if (!riderId) return;
     setAccepting(orderId);
-    // Optimistic update (uses local store ID for UI only)
-    dispatch({ type: 'RIDER_ACCEPT_ORDER', payload: { orderId, riderId: riderUUID } });
-    // Persist with real auth UUID
-    await RiderAPI.acceptOrder(orderId, riderUUID, riderName);
-    // Seed an initial location write so rider appears on map immediately
-    if (currentLocation) {
-      await RiderAPI.updateLocation(riderUUID, currentLocation.lat, currentLocation.lng);
+    const { error } = await RiderAPI.acceptOrder(orderId, riderId, riderName);
+    if (!error && currentLocation) {
+      await RiderAPI.updateLocation(riderId, currentLocation.lat, currentLocation.lng);
     }
+    await Promise.all([loadAvailable(), refetchMine()]);
     setAccepting(null);
   };
 
   // ── Mark delivered ────────────────────────────────────────
   const handleDeliver = async (orderId, total) => {
-    if (!riderUUID) return;
+    if (!riderId) return;
     setDelivering(orderId);
-    // Optimistic
-    dispatch({
-      type: 'RIDER_DELIVER',
-      payload: { orderId, riderId: riderUUID, codCollected: true, amount: total },
-    });
-    // Persist
     await RiderAPI.markDelivered(orderId, {
-      rider_id:      riderUUID,
+      rider_id:      riderId,
       cod_collected: true,
       amount:        total,
     });
+    await refetchMine();
     setDelivering(null);
   };
 
   // ── Toggle online → persist ───────────────────────────────
   const handleToggleOnline = async () => {
-    if (!riderUUID) return;
+    if (!riderId) return;
     toggleOnline();
-    await RiderAPI.toggleOnline(riderUUID, !isOnline);
+    await RiderAPI.toggleOnline(riderId, !isOnline);
   };
 
-  if (!riderUUID) {
+  if (!riderId) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -132,15 +136,15 @@ export default function RiderDashboard() {
       <div className="px-4 py-3 grid grid-cols-2 gap-2">
         <StatCard
           title="Today's Earnings"
-          value={`₹${state.riderEarningsToday ?? 0}`}
+          value={`₹${rider?.today_earnings ?? 0}`}
           trend="15% above avg"
           trendUp
           icon={IndianRupee}
         />
         <StatCard
           title="Deliveries Today"
-          value={String(state.riderDeliveriesToday ?? 0)}
-          subtitle={`${state.riderTotalDeliveries ?? 0} total`}
+          value={String(rider?.today_deliveries ?? 0)}
+          subtitle={`${rider?.total_deliveries ?? 0} total`}
           icon={Package}
         />
       </div>
@@ -281,7 +285,7 @@ export default function RiderDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs text-muted-foreground">COD Cash Balance</p>
-              <p className="text-xl font-bold">₹{state.riderCODBalance ?? 0}</p>
+              <p className="text-xl font-bold">₹{rider?.cod_balance ?? 0}</p>
               <p className="text-xs text-muted-foreground">Deposit before end of shift</p>
             </div>
             <Link to="/rider/cod">

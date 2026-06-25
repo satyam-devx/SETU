@@ -171,6 +171,56 @@ function setuReducer(state, action) {
       };
     }
 
+    // ── Realtime order actions (dispatched by useRealtimeOrders) ──
+    // These action names are what the realtime hook emits; previously
+    // the reducer had no matching cases, so order data from the initial
+    // DB fetch + realtime never reached state.orders at all (vendor/
+    // rider dashboards, live orders, order-detail store lookups were
+    // all silently empty). These cases close that gap.
+
+    case 'SET_ORDERS': {
+      // Initial DB fetch for a role — replace that role's known rows
+      // while preserving any optimistic rows not yet persisted.
+      const { orders } = action.payload;
+      const normOrders = (orders ?? []).map(normaliseOrder).filter(Boolean);
+      const dbIds      = new Set(normOrders.map(o => o.id));
+      // Keep existing orders that aren't in this fetch (other roles'
+      // rows / optimistic rows), de-duped by id.
+      const kept = state.orders.filter(o => !dbIds.has(o.id));
+      return { ...state, orders: [...normOrders, ...kept] };
+    }
+
+    case 'ORDER_CREATED': {
+      const order = normaliseOrder(action.payload.order);
+      if (!order) return state;
+      // Realtime echo of an order we already have (incl. optimistic) → merge.
+      if (state.orders.find(o => o.id === order.id)) {
+        return {
+          ...state,
+          orders: state.orders.map(o => (o.id === order.id ? { ...o, ...order } : o)),
+        };
+      }
+      return { ...state, orders: [order, ...state.orders] };
+    }
+
+    case 'UPDATE_ORDER_STATUS': {
+      const { orderId, updates } = action.payload;
+      const norm = normaliseOrder(updates);
+      if (!norm) return state;
+      const exists = state.orders.some(o => o.id === orderId);
+      return {
+        ...state,
+        orders: exists
+          ? state.orders.map(o => (o.id === orderId ? { ...o, ...norm } : o))
+          : [norm, ...state.orders],
+      };
+    }
+
+    case 'ORDER_REMOVED': {
+      const { orderId } = action.payload;
+      return { ...state, orders: state.orders.filter(o => o.id !== orderId) };
+    }
+
     case 'HYDRATE_NOTIFICATIONS': {
       const { notifications } = action.payload;
       const normNotifs = (notifications ?? []).map(normaliseNotification).filter(Boolean);
@@ -435,6 +485,16 @@ function setuReducer(state, action) {
           ],
         },
       };
+    }
+
+    // Set the wallet balance to an absolute value (e.g. after a
+    // server-confirmed wallet payment returns the new balance).
+    // Was previously dispatched by CustomerCheckout but had no
+    // matching case — a no-op that left the UI balance stale.
+    case 'UPDATE_WALLET_BALANCE': {
+      const { balance } = action.payload;
+      if (typeof balance !== 'number') return state;
+      return { ...state, wallet: { ...state.wallet, balance } };
     }
 
     case 'RIDER_TOGGLE_ONLINE':

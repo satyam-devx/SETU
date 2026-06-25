@@ -38,6 +38,7 @@ const menuItems = [
   // ── Catalogue ─────────────────────────────────────────
   { label: 'Categories',        icon: Tag,             path: '/admin/categories',           group: 'catalogue'},
   { label: 'Products',          icon: Package,         path: '/admin/products',             group: 'catalogue'},
+  { label: 'Coupons',           icon: Tag,             path: '/admin/coupons',              group: 'catalogue'},
 
   // ── Content & Comms ───────────────────────────────────
   { label: 'Banners',           icon: Megaphone,       path: '/admin/banners',              group: 'content'  },

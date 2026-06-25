@@ -74,17 +74,19 @@ export function useFcmToken() {
 
   const registerToken = useCallback(async () => {
     if (!user) return;
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+
+    // 2G / first-visit cost saver (Phase 5 bundle diet):
+    // ONLY load Firebase (~90KB) for users who have ALREADY granted
+    // notification permission. First-time users are NOT prompted on
+    // mount (bad UX + wasted bandwidth on a 2G connection) — they opt
+    // in explicitly via enablePush() behind a button. This keeps the
+    // Firebase chunk off the critical path for the common case.
+    if (Notification.permission !== 'granted') return;
 
     try {
       const messaging = await getFirebaseMessaging();
       if (!messaging) return;
-
-      // Request permission — resolves immediately if already granted/denied
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
-        console.debug('[FCM] Notification permission not granted:', permission);
-        return;
-      }
 
       // Register (or retrieve cached) SW, then get the token
       const swRegistration = await navigator.serviceWorker.register(
@@ -117,17 +119,31 @@ export function useFcmToken() {
     }
   }, [user, profile?.fcm_token]);
 
-  // Register on mount and whenever the tab regains focus
-  // (FCM tokens can be refreshed while the tab was in background)
+  // Explicit opt-in: call from a "Enable notifications" button. This is
+  // the ONLY path that prompts for permission / loads Firebase for a
+  // first-time user. Returns the resulting permission string.
+  const enablePush = useCallback(async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported';
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+      tokenSavedRef.current = false;
+      await registerToken();
+    }
+    return permission;
+  }, [registerToken]);
+
+  // Register on mount and whenever the tab regains focus (token may
+  // rotate). No-op for users who haven't already granted permission.
   useEffect(() => {
     registerToken();
 
     const handleFocus = () => {
-      // Reset saved flag so a rotated token gets re-saved
       tokenSavedRef.current = false;
       registerToken();
     };
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, [registerToken]);
+
+  return { enablePush };
 }

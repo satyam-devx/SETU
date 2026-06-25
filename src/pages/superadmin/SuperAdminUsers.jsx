@@ -205,7 +205,7 @@ export default function SuperAdminUsers() {
                 </div>
               ) : filtered.map(u => {
                 const RoleIcon = ROLES.find(r => r.value === u.role)?.icon ?? User;
-                const isBanned = u.is_verified === false;
+                const isBanned = u.is_banned === true;
 
                 return (
                   <div key={u.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">

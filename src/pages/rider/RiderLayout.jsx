@@ -6,10 +6,21 @@ import ErrorBoundary from '@/components/shared/ErrorBoundary';
 import OfflineBanner from '@/components/shared/OfflineBanner';
 import { useRealtimeOrders, useRealtimeNotifications } from '@/hooks/useRealtimeOrders';
 import { useStore } from '@/lib/store';
+import { useAuth } from '@/lib/AuthContext';
+import { useDataFetch } from '@/hooks/useDataFetch';
+import { getRiderByUserId } from '@/lib/api';
 
 function RiderContent() {
+  const { user }  = useAuth();
   const { state } = useStore();
-  useRealtimeOrders('rider');
+  // Orders are keyed by riders.id (NOT the auth uid) — resolve it so the
+  // realtime store populates this rider's assigned orders.
+  const { data: rider } = useDataFetch(
+    () => getRiderByUserId(user?.id),
+    [user?.id],
+    { cacheKey: `rider-profile-${user?.id}`, enabled: !!user?.id }
+  );
+  useRealtimeOrders('rider', rider?.id);
   useRealtimeNotifications();
 
   const available = state.orders.filter(o => o.status === 'ready' && !o.riderId && !o.rider_id).length;

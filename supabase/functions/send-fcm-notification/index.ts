@@ -211,7 +211,7 @@ serve(async (req) => {
     );
   }
 
-  const { user_ids, title, body: msgBody, data = {}, type = 'system' } = body;
+  const { user_ids, title, body: msgBody, data = {}, type = 'system', skip_inapp = false } = body;
 
   if (!Array.isArray(user_ids) || user_ids.length === 0 || !title || !msgBody) {
     return new Response(
@@ -266,18 +266,22 @@ serve(async (req) => {
     );
   }
 
-  // 3. Also insert a row into notifications table (for in-app bell)
-  const notifRows = user_ids.map(uid => ({
-    user_id: uid,
-    type:    type as 'order' | 'credit' | 'promo' | 'scheme' | 'system',
-    title,
-    body:    msgBody,
-    data:    Object.keys(data).length ? data : null,
-  }));
-  // Fire-and-forget; don't block FCM sends on DB
-  supabase.from('notifications').insert(notifRows).then(({ error }) => {
-    if (error) console.error('[send-fcm] notification insert failed:', error.message);
-  });
+  // 3. Also insert a row into notifications table (for in-app bell).
+  //    Skipped when the caller already created the in-app rows (e.g. the
+  //    Notification Center's dispatch_campaign RPC) to avoid duplicates.
+  if (!skip_inapp) {
+    const notifRows = user_ids.map(uid => ({
+      user_id: uid,
+      type:    type as 'order' | 'credit' | 'promo' | 'scheme' | 'system',
+      title,
+      body:    msgBody,
+      data:    Object.keys(data).length ? data : null,
+    }));
+    // Fire-and-forget; don't block FCM sends on DB
+    supabase.from('notifications').insert(notifRows).then(({ error }) => {
+      if (error) console.error('[send-fcm] notification insert failed:', error.message);
+    });
+  }
 
   // 4. Send FCM messages concurrently
   const results = await Promise.allSettled(

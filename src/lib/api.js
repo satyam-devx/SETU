@@ -12,7 +12,7 @@
 //  - Optimistic IDs: placeOrder accepts a localId for offline
 // ═══════════════════════════════════════════════════════════
 
-import { supabase, isSupabaseConfigured } from './supabase';
+import { supabase, supabaseRead, isSupabaseConfigured } from './supabase';
 import { PRODUCTS, VENDORS, ORDERS, NOTIFICATIONS, VILLAGES, CATEGORIES, SEVA_PROVIDERS, SCHEMES } from './mockData';
 
 // ── Helpers ───────────────────────────────────────────────
@@ -43,7 +43,7 @@ async function safeQuery(fn, fallback, ctx) {
 
 export async function getVillages({ activeOnly = true } = {}) {
   return safeQuery(
-    () => supabase
+    () => supabaseRead
       .from('villages')
       .select('*')
       .eq('is_active', activeOnly)
@@ -65,7 +65,7 @@ export async function getVillageById(id) {
 
 export async function getCategories() {
   return safeQuery(
-    () => supabase.from('categories').select('*').eq('is_active', true).order('sort_order'),
+    () => supabaseRead.from('categories').select('*').eq('is_active', true).order('sort_order'),
     CATEGORIES,
     'getCategories'
   );
@@ -75,7 +75,7 @@ export async function getCategories() {
 
 export async function getVendors({ villageId, category, page = 0, limit = 20 } = {}) {
   return safeQuery(() => {
-    let q = supabase
+    let q = supabaseRead
       .from('vendors')
       .select(`
         id, name, category, village_id, village, image_url, rating,
@@ -120,7 +120,7 @@ export async function upsertVendorProfile(vendorData) {
 
 export async function getProducts({ vendorId, category, search, page = 0, limit = 30 } = {}) {
   return safeQuery(() => {
-    let q = supabase
+    let q = supabaseRead
       .from('products')
       .select(`
         id, vendor_id, name, name_hindi, description, price, mrp,
@@ -230,7 +230,15 @@ export async function getOrderById(id) {
 }
 
 export async function placeOrder(orderPayload) {
-  // orderPayload: { customer_id, vendor_id, village_id, items, payment_method, delivery_address }
+  // orderPayload: { vendor_id, village_id, items:[{product_id, qty}],
+  //                 payment_method, delivery_address, delivery_notes, use_credit }
+  //
+  // SECURITY (audit CRITICAL-A): order creation is now a single
+  // server-authoritative RPC. The client no longer sends prices or
+  // totals — create_order() recomputes subtotal/fees/total from the
+  // products table, decrements stock atomically, and (CRITICAL-C)
+  // only grants the SETU Credit discount against a real, sufficient
+  // credit account. The customer is always auth.uid() server-side.
   if (!isSupabaseConfigured) {
     // Offline / mock: return a fake order
     const fakeOrder = {
@@ -244,45 +252,26 @@ export async function placeOrder(orderPayload) {
     return ok(fakeOrder);
   }
 
-  const orderNumber = `SETU-${Date.now().toString(36).toUpperCase()}`;
-  const { items, ...orderHead } = orderPayload;
-
-  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
-  const deliveryFee = subtotal >= 200 ? 0 : 20;
-  const platformFee = Math.round(subtotal * 0.01);
-  const total       = subtotal + deliveryFee + platformFee;
-
   try {
-    const { data: order, error: orderErr } = await supabase
-      .from('orders')
-      .insert({
-        ...orderHead,
-        order_number:   orderNumber,
-        subtotal,
-        delivery_fee:   deliveryFee,
-        platform_fee:   platformFee,
-        total,
-        is_cod:         orderPayload.payment_method === 'COD',
-        status:         'pending',
-        payment_status: 'pending',
-      })
-      .select()
-      .single();
+    const { data, error } = await supabase.rpc('create_order', {
+      p_vendor_id:        orderPayload.vendor_id,
+      p_items:            (orderPayload.items || []).map(i => ({
+        product_id: i.product_id,
+        qty:        i.qty,
+      })),
+      p_payment_method:   orderPayload.payment_method,
+      p_delivery_address: orderPayload.delivery_address ?? null,
+      p_village_id:       orderPayload.village_id ?? null,
+      p_delivery_notes:   orderPayload.delivery_notes ?? null,
+      p_use_credit:       !!orderPayload.use_credit,
+      p_coupon_code:      orderPayload.coupon_code ?? null,
+    });
 
-    if (orderErr) return err(orderErr, 'placeOrder/insert');
+    if (error) return err(error, 'placeOrder/create_order');
+    if (!data?.success) return err({ message: data?.error ?? 'Could not place order' }, 'placeOrder');
 
-    const orderItems = items.map(i => ({
-      order_id:   order.id,
-      product_id: i.product_id,
-      name:       i.name,
-      qty:        i.qty,
-      price:      i.price,
-    }));
-
-    const { error: itemsErr } = await supabase.from('order_items').insert(orderItems);
-    if (itemsErr) console.warn('[SETU API] placeOrder: items insert error', itemsErr);
-
-    return ok(order);
+    // Normalise to the shape callers expect (order row with id/total/...).
+    return ok(data);
   } catch (e) {
     return err(e, 'placeOrder');
   }
@@ -548,7 +537,7 @@ export async function createSupportTicket(payload) {
 
 export async function getSchemes({ category } = {}) {
   return safeQuery(() => {
-    let q = supabase.from('schemes').select('*').eq('is_active', true).order('name');
+    let q = supabaseRead.from('schemes').select('*').eq('is_active', true).order('name');
     if (category) q = q.eq('category', category);
     return q;
   }, SCHEMES, 'getSchemes');
@@ -575,24 +564,36 @@ export async function getSevaProviders({ villageId, category, page = 0, limit = 
 // ── Admin / Analytics ─────────────────────────────────────
 
 export async function getAdminStats() {
-  // Aggregate stats for admin dashboard
+  // Reads the cached admin_dashboard_stats materialized view via the
+  // admin-gated get_admin_stats() RPC — no full COUNT(*) scans on the
+  // request path (audit Phase-3 perf fix). MV refreshes every 5 min.
   if (!isSupabaseConfigured) return ok(null);
   try {
-    const [
-      { count: totalUsers },
-      { count: totalOrders },
-      { count: activeVendors },
-      { count: activeRiders },
-    ] = await Promise.all([
-      supabase.from('profiles').select('*', { count: 'exact', head: true }),
-      supabase.from('orders').select('*', { count: 'exact', head: true }),
-      supabase.from('vendors').select('*', { count: 'exact', head: true }).eq('is_active', true),
-      supabase.from('riders').select('*', { count: 'exact', head: true }).eq('is_active', true),
-    ]);
-    return ok({ totalUsers, totalOrders, activeVendors, activeRiders });
+    const { data, error } = await supabase.rpc('get_admin_stats');
+    if (error) return err(error, 'getAdminStats');
+    return ok({
+      totalUsers:    data?.total_users    ?? 0,
+      totalOrders:   data?.total_orders   ?? 0,
+      activeVendors: data?.active_vendors  ?? 0,
+      activeRiders:  data?.active_riders   ?? 0,
+      gmv:           data?.gmv             ?? 0,
+      orders24h:     data?.orders_24h      ?? 0,
+      refreshedAt:   data?.refreshed_at    ?? null,
+    });
   } catch (e) {
     return err(e, 'getAdminStats');
   }
+}
+
+// ── Fee config (single source of truth) ───────────────────
+// Mirrors the server-side get_fee_config() the order RPCs use, so the
+// checkout estimate matches the authoritative total.
+export async function getFeeConfig() {
+  return safeQuery(
+    () => supabase.rpc('get_fee_config'),
+    { commission_pct: 1, delivery_flat: 20, free_threshold: 200, rider_fee: 80, credit_discount_pct: 10, credit_discount_max: 500 },
+    'getFeeConfig'
+  );
 }
 
 // ── KYC ───────────────────────────────────────────────────
@@ -664,12 +665,59 @@ export const PaymentAPI = {
       return err(e, 'PaymentAPI.walletPay');
     }
   },
+
+  /**
+   * Pay for an order from wallet via pay_order_from_wallet() RPC.
+   * Charges the order's AUTHORITATIVE server-side total (not a
+   * client-supplied amount — audit fix #4), confirms the order, and
+   * credits vendor escrow atomically. Preferred over walletPay for
+   * the checkout flow.
+   */
+  payOrderFromWallet: async (orderId) => {
+    if (!isSupabaseConfigured) return ok({ new_balance: 0 });
+    try {
+      const { data, error } = await supabase.rpc('pay_order_from_wallet', {
+        p_order_id: orderId,
+      });
+      if (error) return err(error, 'PaymentAPI.payOrderFromWallet');
+      if (!data?.success) {
+        if (data?.insufficient_funds) {
+          return err(
+            {
+              message:            `Insufficient wallet balance. Available: ₹${(data.balance ?? 0).toFixed(2)}, Required: ₹${(data.required ?? 0).toFixed(2)}`,
+              insufficient_funds: true,
+              balance:            data.balance,
+            },
+            'PaymentAPI.payOrderFromWallet'
+          );
+        }
+        return err({ message: data?.error ?? 'Wallet payment failed' }, 'PaymentAPI.payOrderFromWallet');
+      }
+      return ok({ new_balance: data.new_balance, total: data.total });
+    } catch (e) {
+      return err(e, 'PaymentAPI.payOrderFromWallet');
+    }
+  },
 };
 
 export const AIAPI = {
-  voiceQuery: async (text) => {
-    // Stub — integrate AI backend in Phase 2
-    return ok({ response: `Searching for: ${text}` });
+  // Calls the real, authenticated ai-assistant Edge Function (Anthropic-
+  // backed, rate-limited + daily-capped server-side). Returns the
+  // assistant reply + any suggested actions. The user's JWT is attached
+  // automatically by supabase.functions.invoke.
+  voiceQuery: async (text, context = null) => {
+    if (!isSupabaseConfigured) {
+      return ok({ response: `Searching for: ${text}`, reply: `Searching for: ${text}`, suggestedActions: [] });
+    }
+    try {
+      const { data, error } = await supabase.functions.invoke('ai-assistant', {
+        body: { message: text, context },
+      });
+      if (error) return err(error, 'AIAPI.voiceQuery');
+      return ok({ ...data, response: data?.reply ?? '' });
+    } catch (e) {
+      return err(e, 'AIAPI.voiceQuery');
+    }
   },
 };
 
@@ -781,12 +829,34 @@ export async function getRiderEarnings(userId, { period = 'month' } = {}) {
   );
 }
 
+// ── Rider live location ───────────────────────────────────
+/**
+ * Insert a GPS ping for a rider. riderId is riders.id (PK), not auth uid.
+ * rider_locations.rider_id → riders.id (FK), so passing the auth uid here
+ * would violate the FK — callers must resolve riders.id first.
+ */
+export async function updateRiderLocation(riderId, lat, lng, isOnDelivery = false) {
+  return safeQuery(
+    () => supabase.from('rider_locations').insert({
+      rider_id:       riderId,
+      lat,
+      lng,
+      is_on_delivery: isOnDelivery,
+    }),
+    null,
+    'updateRiderLocation'
+  );
+}
+
 export const RiderAPI = {
   getProfile:         (userId)                        => getRiderByUserId(userId),
   updateStatus:       (riderId, online)               => updateRiderStatus(riderId, online),
+  toggleOnline:       (riderId, online)               => updateRiderStatus(riderId, online),
   getAvailableOrders: (villageId)                     => getAvailableOrders(villageId),
   acceptOrder:        (orderId, riderId, riderName)   => assignRider(orderId, riderId, riderName),
   updateOrder:        (orderId, status, extra)        => updateOrderStatus(orderId, status, extra),
+  markDelivered:      (orderId, meta)                 => updateOrderStatus(orderId, 'delivered', meta),
+  updateLocation:     (riderId, lat, lng)             => updateRiderLocation(riderId, lat, lng),
   getOrders:          (riderId, opts)                 => getOrdersByRider(riderId, opts),
   submitCODDeposit:   (riderId, amount, denomMap)     => submitCODDeposit(riderId, amount, denomMap),
   getEarnings:        (userId, opts)                  => getRiderEarnings(userId, opts),
@@ -882,45 +952,21 @@ export async function rejectKycRecord(kycId, reason = 'Rejected by anchor') {
 
 // ── Village stats ─────────────────────────────────────────
 
-/** Aggregate stats for the anchor's village dashboard. */
+/** Aggregate stats for the anchor's village dashboard.
+ *  Uses the get_village_dashboard_stats() RPC — server-side indexed
+ *  COUNT/SUM (also fixes the old broken kyc cross-table filter that
+ *  returned wrong counts). */
 export async function getVillageStats(villageId) {
-  const [ordersRes, vendorsRes, ridersRes, kycRes] = await Promise.all([
-    supabase
-      .from('orders')
-      .select('id, status, total', { count: 'exact' })
-      .eq('village_id', villageId),
-    supabase
-      .from('vendors')
-      .select('id, is_open', { count: 'exact' })
-      .eq('village_id', villageId),
-    supabase
-      .from('riders')
-      .select('id, is_online', { count: 'exact' })
-      .eq('village_id', villageId),
-    supabase
-      .from('kyc_records')
-      .select('id, status', { count: 'exact' })
-      .eq('profiles.village_id', villageId),
-  ]);
-
-  const orders  = ordersRes.data  ?? [];
-  const vendors = vendorsRes.data ?? [];
-  const riders  = ridersRes.data  ?? [];
-  const kyc     = kycRes.data     ?? [];
-
-  return {
-    data: {
-      totalOrders:    orders.length,
-      activeOrders:   orders.filter(o => !['delivered','cancelled'].includes(o.status)).length,
-      totalGMV:       orders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + (o.total || 0), 0),
-      totalVendors:   vendors.length,
-      activeVendors:  vendors.filter(v => v.is_open).length,
-      totalRiders:    riders.length,
-      onlineRiders:   riders.filter(r => r.is_online).length,
-      pendingKYC:     kyc.filter(k => k.status === 'pending' || k.status === 'submitted').length,
-    },
-    error: ordersRes.error || vendorsRes.error || ridersRes.error,
+  const EMPTY = {
+    totalOrders: 0, activeOrders: 0, totalGMV: 0, totalVendors: 0,
+    activeVendors: 0, totalRiders: 0, onlineRiders: 0, pendingKYC: 0,
   };
+  if (!isSupabaseConfigured) return { data: EMPTY, error: null };
+
+  const { data, error } = await supabase.rpc('get_village_dashboard_stats', {
+    p_village_id: villageId,
+  });
+  return { data: data ?? EMPTY, error };
 }
 
 // ── Noticeboard ──────────────────────────────────────────
@@ -2069,3 +2115,294 @@ export async function adminVerifyRider(riderId) {
 }
 
 // Extend AdminAPI with all new functions
+
+
+// ═══════════════════════════════════════════════════════════
+// RBAC API — dynamic permissions (migration 021)
+// Reads the permission/role catalog; writes go through the
+// super-admin-only, audited security-definer RPCs.
+// ═══════════════════════════════════════════════════════════
+export const RBACAPI = {
+  getPermissions: () => safeQuery(
+    () => supabase.from('permissions').select('*').order('module').order('action'),
+    [], 'RBACAPI.getPermissions'
+  ),
+  getRoles: () => safeQuery(
+    () => supabase.from('roles').select('*').order('key'),
+    [], 'RBACAPI.getRoles'
+  ),
+  getRolePermissions: () => safeQuery(
+    () => supabase.from('role_permissions').select('role_key, permission_key'),
+    [], 'RBACAPI.getRolePermissions'
+  ),
+  setRolePermission: (roleKey, permissionKey, granted) => safeQuery(
+    () => supabase.rpc('set_role_permission', {
+      p_role_key: roleKey, p_permission_key: permissionKey, p_granted: granted,
+    }),
+    null, 'RBACAPI.setRolePermission'
+  ),
+  createRole: (key, name, description) => safeQuery(
+    () => supabase.rpc('create_role', { p_key: key, p_name: name, p_description: description ?? null }),
+    null, 'RBACAPI.createRole'
+  ),
+  createPermission: (module, action, description) => safeQuery(
+    () => supabase.rpc('create_permission', { p_module: module, p_action: action, p_description: description ?? null }),
+    null, 'RBACAPI.createPermission'
+  ),
+};
+
+
+// ═══════════════════════════════════════════════════════════
+// Feature Flags API (migration 022)
+// my()  → caller's evaluated flag set (public, server-evaluated)
+// list/set/upsert → admin management (feature_flags.manage)
+// ═══════════════════════════════════════════════════════════
+export const FeatureFlagsAPI = {
+  // Evaluated [{key, enabled}] for the current user — used by the provider.
+  my: () => safeQuery(() => supabase.rpc('my_feature_flags'), [], 'FeatureFlagsAPI.my'),
+  // Full rows for the admin screen (RLS: admins only).
+  list: () => safeQuery(
+    () => supabase.from('feature_flags').select('*').order('name'),
+    [], 'FeatureFlagsAPI.list'
+  ),
+  set: (key, enabled) => safeQuery(
+    () => supabase.rpc('set_feature_flag', { p_key: key, p_enabled: enabled }),
+    null, 'FeatureFlagsAPI.set'
+  ),
+  upsert: ({ key, name, description, enabled = true, rollout = 100, audience = null }) => safeQuery(
+    () => supabase.rpc('upsert_feature_flag', {
+      p_key: key, p_name: name, p_description: description ?? null,
+      p_enabled: enabled, p_rollout: rollout, p_audience: audience,
+    }),
+    null, 'FeatureFlagsAPI.upsert'
+  ),
+};
+
+
+// ═══════════════════════════════════════════════════════════
+// Settings API (migration 023)
+// getAll  → typed/grouped settings rows (admin, RLS-gated)
+// set     → audited + validated single write (settings.update)
+// getPublic → non-sensitive settings for the app (branding, maintenance)
+// ═══════════════════════════════════════════════════════════
+export const SettingsAPI = {
+  getAll: () => safeQuery(
+    () => supabase.from('platform_config').select('*').order('group_name').order('sort_order').order('key'),
+    [], 'SettingsAPI.getAll'
+  ),
+  set: (key, value) => safeQuery(
+    () => supabase.rpc('set_setting', { p_key: key, p_value: String(value) }),
+    null, 'SettingsAPI.set'
+  ),
+  getPublic: () => safeQuery(() => supabase.rpc('get_public_settings'), {}, 'SettingsAPI.getPublic'),
+};
+
+
+// ═══════════════════════════════════════════════════════════
+// Notification Center API (migration 024)
+// Compose/target/schedule/send campaigns. Push delivery for a sent
+// campaign is completed by invoking send-fcm-notification with the
+// server-resolved recipients (skip_inapp — the RPC already wrote the
+// in-app rows).
+// ═══════════════════════════════════════════════════════════
+export const NotificationCenterAPI = {
+  listCampaigns: ({ limit = 50 } = {}) => safeQuery(
+    () => supabase.from('notification_campaigns').select('*').order('created_at', { ascending: false }).limit(limit),
+    [], 'NotificationCenterAPI.listCampaigns'
+  ),
+  audienceCount: (audience) => safeQuery(
+    () => supabase.rpc('campaign_audience_count', { p_audience: audience ?? {} }),
+    0, 'NotificationCenterAPI.audienceCount'
+  ),
+  create: ({ name, channel, title, body, notifType = 'system', audience = {}, scheduledAt = null }) => safeQuery(
+    () => supabase.rpc('create_campaign', {
+      p_name: name, p_channel: channel, p_title: title, p_body: body,
+      p_notif_type: notifType, p_audience: audience, p_scheduled_at: scheduledAt,
+    }),
+    null, 'NotificationCenterAPI.create'
+  ),
+  cancel: (id) => safeQuery(
+    () => supabase.rpc('cancel_campaign', { p_id: id }),
+    null, 'NotificationCenterAPI.cancel'
+  ),
+
+  // Multi-channel delivery (migration 034): queue stats + recent deliveries.
+  deliveryStats: () => safeQuery(() => supabase.rpc('get_delivery_stats'), null, 'NotificationCenterAPI.deliveryStats'),
+  deliveries: ({ limit = 100 } = {}) => safeQuery(
+    () => supabase.from('notification_deliveries').select('*').order('created_at', { ascending: false }).limit(limit),
+    [], 'NotificationCenterAPI.deliveries'
+  ),
+
+  /**
+   * Send a campaign now. Dispatches in-app rows server-side; for push
+   * channel, also fires FCM to the server-resolved recipients.
+   * Returns { data, error }.
+   */
+  dispatch: async (id) => {
+    if (!isSupabaseConfigured) return ok({ success: true, targeted: 0 });
+    try {
+      const { data, error } = await supabase.rpc('dispatch_campaign', { p_id: id });
+      if (error) return err(error, 'NotificationCenterAPI.dispatch');
+      if (!data?.success) return err({ message: data?.error ?? 'Dispatch failed' }, 'NotificationCenterAPI.dispatch');
+
+      // Push: complete delivery via the FCM Edge Function (in-app already done).
+      if (data.channel === 'push' && Array.isArray(data.recipients) && data.recipients.length) {
+        const { error: fcmErr } = await supabase.functions.invoke('send-fcm-notification', {
+          body: {
+            user_ids:  data.recipients,
+            title:     data.title,
+            body:      data.body,
+            type:      data.type,
+            skip_inapp: true,
+          },
+        });
+        if (fcmErr) {
+          // In-app delivered; push failed — surface a soft warning, not a hard error.
+          return ok({ ...data, pushWarning: fcmErr.message ?? 'Push delivery failed' });
+        }
+      }
+      return ok(data);
+    } catch (e) {
+      return err(e, 'NotificationCenterAPI.dispatch');
+    }
+  },
+};
+
+
+// ═══════════════════════════════════════════════════════════
+// Security Center API (migration 025)
+// ═══════════════════════════════════════════════════════════
+export const SecurityAPI = {
+  overview:     ()                 => safeQuery(() => supabase.rpc('get_security_overview'), null, 'SecurityAPI.overview'),
+  blockedUsers: ()                 => safeQuery(() => supabase.rpc('list_blocked_users'), [], 'SecurityAPI.blockedUsers'),
+  events:       (limit = 50)       => safeQuery(() => supabase.rpc('get_security_events', { p_limit: limit }), [], 'SecurityAPI.events'),
+  ban:          (userId, reason)   => banUser(userId, reason),
+  unban:        (userId)           => unbanUser(userId),
+
+  // ── Deep security ops (migration 030) ──────────────────
+  opsOverview:  ()                 => safeQuery(() => supabase.rpc('get_security_ops_overview'), null, 'SecurityAPI.opsOverview'),
+  blockedIps:   ()                 => safeQuery(() => supabase.rpc('list_blocked_ips'), [], 'SecurityAPI.blockedIps'),
+  blockIp:      (ip, reason)       => safeQuery(() => supabase.rpc('block_ip', { p_ip: ip, p_reason: reason ?? null }), null, 'SecurityAPI.blockIp'),
+  unblockIp:    (ip)               => safeQuery(() => supabase.rpc('unblock_ip', { p_ip: ip }), null, 'SecurityAPI.unblockIp'),
+  loginHistory: (userId = null, limit = 50) => safeQuery(() => supabase.rpc('get_login_history', { p_user_id: userId, p_limit: limit }), [], 'SecurityAPI.loginHistory'),
+  sessions:     (userId)           => safeQuery(() => supabase.rpc('get_user_sessions', { p_user_id: userId }), [], 'SecurityAPI.sessions'),
+  forceLogout:  (userId)           => safeQuery(() => supabase.rpc('force_logout', { p_user_id: userId }), null, 'SecurityAPI.forceLogout'),
+  mergeAccounts:(keep, remove)     => safeQuery(() => supabase.rpc('merge_user_accounts', { p_keep: keep, p_remove: remove }), null, 'SecurityAPI.mergeAccounts'),
+  impersonate:  (targetId, reason) => safeQuery(() => supabase.rpc('begin_impersonation', { p_target: targetId, p_reason: reason }), null, 'SecurityAPI.impersonate'),
+};
+
+
+// ═══════════════════════════════════════════════════════════
+// Finance Center API (migration 026)
+// ═══════════════════════════════════════════════════════════
+export const FinanceAPI = {
+  overview:    () => safeQuery(() => supabase.rpc('get_finance_overview'), null, 'FinanceAPI.overview'),
+  escrow:      () => safeQuery(
+    () => supabase.from('vendor_escrow').select('*, vendors(name)').order('balance', { ascending: false }).limit(100),
+    [], 'FinanceAPI.escrow'
+  ),
+  payouts:     () => safeQuery(
+    () => supabase.from('vendor_payouts').select('*').order('created_at', { ascending: false }).limit(50),
+    [], 'FinanceAPI.payouts'
+  ),
+  refunds:     () => safeQuery(
+    () => supabase.from('order_refunds').select('*').order('created_at', { ascending: false }).limit(50),
+    [], 'FinanceAPI.refunds'
+  ),
+  adjustments: () => safeQuery(
+    () => supabase.from('financial_adjustments').select('*').order('created_at', { ascending: false }).limit(50),
+    [], 'FinanceAPI.adjustments'
+  ),
+  recordAdjustment: ({ type, targetKind, targetId, amount, reason }) => safeQuery(
+    () => supabase.rpc('record_financial_adjustment', {
+      p_adj_type: type, p_target_kind: targetKind, p_target_id: targetId,
+      p_amount: Number(amount), p_reason: reason,
+    }),
+    null, 'FinanceAPI.recordAdjustment'
+  ),
+
+  // ── Finance depth (migration 031): GST invoices, settlements, chargebacks ──
+  depthOverview:    () => safeQuery(() => supabase.rpc('get_finance_depth_overview'), null, 'FinanceAPI.depthOverview'),
+  invoices:         () => safeQuery(
+    () => supabase.from('invoices').select('*').order('created_at', { ascending: false }).limit(100),
+    [], 'FinanceAPI.invoices'
+  ),
+  generateInvoice:  (orderId) => safeQuery(() => supabase.rpc('generate_invoice', { p_order_id: orderId }), null, 'FinanceAPI.generateInvoice'),
+  settlements:      () => safeQuery(
+    () => supabase.from('settlements').select('*, vendors(name)').order('created_at', { ascending: false }).limit(100),
+    [], 'FinanceAPI.settlements'
+  ),
+  createSettlement: (vendorId, notes) => safeQuery(() => supabase.rpc('create_settlement', { p_vendor_id: vendorId, p_notes: notes ?? null }), null, 'FinanceAPI.createSettlement'),
+  chargebacks:      () => safeQuery(
+    () => supabase.from('chargebacks').select('*').order('created_at', { ascending: false }).limit(100),
+    [], 'FinanceAPI.chargebacks'
+  ),
+  recordChargeback: ({ orderId, amount, reason, providerRef }) => safeQuery(
+    () => supabase.rpc('record_chargeback', { p_order_id: orderId ?? null, p_amount: Number(amount), p_reason: reason, p_provider_ref: providerRef ?? null }),
+    null, 'FinanceAPI.recordChargeback'
+  ),
+  resolveChargeback:(id, status) => safeQuery(() => supabase.rpc('resolve_chargeback', { p_id: id, p_status: status }), null, 'FinanceAPI.resolveChargeback'),
+};
+
+
+// ═══════════════════════════════════════════════════════════
+// Developer Center API (migration 027) — read-only ops observability
+// ═══════════════════════════════════════════════════════════
+export const DeveloperAPI = {
+  overview:    () => safeQuery(() => supabase.rpc('get_developer_overview'), null, 'DeveloperAPI.overview'),
+  dbHealth:    () => safeQuery(() => supabase.rpc('get_database_health'), null, 'DeveloperAPI.dbHealth'),
+  cronJobs:    () => safeQuery(() => supabase.rpc('get_cron_jobs'), [], 'DeveloperAPI.cronJobs'),
+  migrations:  () => safeQuery(() => supabase.rpc('get_migration_status'), null, 'DeveloperAPI.migrations'),
+  errors:      (limit = 50) => safeQuery(() => supabase.rpc('get_recent_errors', { p_limit: limit }), [], 'DeveloperAPI.errors'),
+  queueHealth: () => safeQuery(() => supabase.rpc('get_payment_queue_health'), null, 'DeveloperAPI.queueHealth'),
+
+  // ── Ops status (migration 032): storage / backups / deploys ──
+  storageHealth: () => safeQuery(() => supabase.rpc('get_storage_health'), null, 'DeveloperAPI.storageHealth'),
+  systemStatus:  () => safeQuery(() => supabase.rpc('get_system_status'), null, 'DeveloperAPI.systemStatus'),
+};
+
+
+// ═══════════════════════════════════════════════════════════
+// Coupons API (migration 028)
+// validate → customer preview; list/upsert/setActive → admin CRUD.
+// ═══════════════════════════════════════════════════════════
+export const CouponAPI = {
+  validate: (code, subtotal, vendorId = null) => safeQuery(
+    () => supabase.rpc('validate_coupon', { p_code: code, p_subtotal: subtotal, p_vendor_id: vendorId }),
+    { valid: false }, 'CouponAPI.validate'
+  ),
+  list: () => safeQuery(
+    () => supabase.from('coupons').select('*').order('created_at', { ascending: false }).limit(100),
+    [], 'CouponAPI.list'
+  ),
+  upsert: (c) => safeQuery(
+    () => supabase.rpc('upsert_coupon', {
+      p_id: c.id ?? null, p_code: c.code, p_description: c.description ?? null,
+      p_discount_type: c.discountType, p_discount_value: Number(c.discountValue),
+      p_max_discount: c.maxDiscount ? Number(c.maxDiscount) : null,
+      p_min_order: c.minOrder ? Number(c.minOrder) : 0,
+      p_applies_to: c.appliesTo ?? 'all', p_vendor_id: c.vendorId ?? null,
+      p_usage_limit: c.usageLimit ? Number(c.usageLimit) : null,
+      p_per_user_limit: c.perUserLimit ? Number(c.perUserLimit) : 1,
+      p_valid_from: c.validFrom ?? null, p_valid_to: c.validTo ?? null,
+      p_is_active: c.isActive ?? true,
+    }),
+    null, 'CouponAPI.upsert'
+  ),
+  setActive: (id, active) => safeQuery(
+    () => supabase.rpc('set_coupon_active', { p_id: id, p_active: active }),
+    null, 'CouponAPI.setActive'
+  ),
+};
+
+// ═══════════════════════════════════════════════════════════
+// Global Search API (migration 029) — powers the command palette.
+// admin_global_search() is security-definer + is_admin()-gated and
+// returns a unified [{kind, id, label, sublabel, path}] result set.
+// ═══════════════════════════════════════════════════════════
+export const SearchAPI = {
+  global: (q) => safeQuery(
+    () => supabase.rpc('admin_global_search', { p_query: q }),
+    [], 'SearchAPI.global'
+  ),
+};

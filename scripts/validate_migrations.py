@@ -2,17 +2,19 @@
 """
 validate_migrations.py
 
-Validates migration files in both:
+Validates migration files in:
   supabase/migrations/   — Supabase CLI format: YYYYMMDDHHMMSS_description.sql
-  database/migrations/   — Legacy format: NNN_description.sql
+
+(The legacy database/migrations/ tree was removed in the Phase-2
+migration-tree unification — supabase/migrations/ is now the single
+canonical, CI-deployed tree.)
 
 Rules:
   1. supabase/migrations/ must use 14-digit timestamp prefix (Supabase CLI standard)
-  2. database/migrations/ must use 3-4 digit prefix (legacy — kept for reference)
-  3. No duplicate version numbers within each directory
-  4. No empty files
-  5. All files must be UTF-8 readable
-  6. Gaps in sequence are warned (not errored) — intentional skips are allowed
+  2. No duplicate version numbers within the directory
+  3. No empty files
+  4. All files must be UTF-8 readable
+  5. Gaps in sequence are warned (not errored) — intentional skips are allowed
 """
 
 import os
@@ -22,12 +24,8 @@ import sys
 # Supabase CLI format: 20240101120000_description.sql
 SUPABASE_RE = re.compile(r'^(\d{14})_[a-z0-9_]+\.sql$')
 
-# Legacy format: 001_description.sql
-LEGACY_RE = re.compile(r'^(\d{3,4})_[a-z0-9_]+\.sql$')
-
 MIGRATION_DIRS = {
     "supabase/migrations":  SUPABASE_RE,
-    "database/migrations":  LEGACY_RE,
 }
 
 

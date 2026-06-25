@@ -39,17 +39,31 @@ import { useAuth } from '@/lib/AuthContext';
  *      before the first realtime event arrives), AND
  *   2. The Supabase channel confirms SUBSCRIBED.
  */
-export function useRealtimeOrders(role, entityId = null) {
+export function useRealtimeOrders(roleArg, entityId = null) {
   const { user }            = useAuth();
   const { state, dispatch } = useStore();
   const channelRef          = useRef(null);
-  const fetchedRef          = useRef(false);   // prevents double-fetch in StrictMode
+  const lastFetchKeyRef     = useRef(null);   // refetch when role/uid changes; dedupes StrictMode
+
+  // Accept BOTH call styles used across the app:
+  //   useRealtimeOrders('vendor', vendorsId)
+  //   useRealtimeOrders({ mode: 'vendor', vendorId })   ← VendorOrders/RiderDashboard
+  // Previously the object form set role={obj}, so every filter branch
+  // missed and the hook returned [] + subscribed to ALL orders.
+  let role, eid;
+  if (roleArg && typeof roleArg === 'object') {
+    role = roleArg.mode ?? roleArg.role ?? null;
+    eid  = roleArg.entityId ?? roleArg.vendorId ?? roleArg.riderId ?? roleArg.customerId ?? null;
+  } else {
+    role = roleArg;
+    eid  = entityId;
+  }
 
   const [fetchDone, setFetchDone] = useState(false);
   const [subReady,  setSubReady]  = useState(false);
   const isLoading = !fetchDone || !subReady;
 
-  const uid = entityId || user?.id;
+  const uid = eid || user?.id;
 
   // ── Derived: filter global store by role + id ────────────
   const orders = useMemo(() => {
@@ -80,35 +94,46 @@ export function useRealtimeOrders(role, entityId = null) {
 
   // ── 1. Initial DB fetch ───────────────────────────────────
   // Populates state.orders before any realtime events arrive,
-  // so the list never flashes empty on first render.
-  useEffect(() => {
-    if (!isSupabaseConfigured || !user || !uid || fetchedRef.current) return;
-    fetchedRef.current = true;
+  // so the list never flashes empty on first render. Extracted into a
+  // callback so it can also back the returned refetch().
+  const doFetch = useCallback(async () => {
+    if (!isSupabaseConfigured || !user || !uid) { setFetchDone(true); return; }
 
-    async function fetchInitial() {
-      let q = supabase
-        .from('orders')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50);
+    let q = supabase
+      .from('orders')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(50);
 
-      if (role === 'customer') q = q.eq('customer_id', uid);
-      else if (role === 'vendor')   q = q.eq('vendor_id',   uid);
-      else if (role === 'rider')    q = q.eq('rider_id',    uid);
-      // admin: no filter — all orders
+    if (role === 'customer')    q = q.eq('customer_id', uid);
+    else if (role === 'vendor') q = q.eq('vendor_id',   uid);
+    else if (role === 'rider')  q = q.eq('rider_id',    uid);
+    // admin: no filter — all orders
 
-      const { data, error } = await q;
-      if (error) {
-        console.warn('[useRealtimeOrders] Initial fetch error:', error.message);
-      } else if (data?.length) {
-        dispatch({ type: 'SET_ORDERS', payload: { orders: data } });
-      }
-      setFetchDone(true);
+    const { data, error } = await q;
+    if (error) {
+      console.warn('[useRealtimeOrders] Initial fetch error:', error.message);
+    } else if (data?.length) {
+      dispatch({ type: 'SET_ORDERS', payload: { orders: data } });
     }
+    setFetchDone(true);
+  }, [user, role, uid, dispatch]);
 
-    fetchInitial();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, role, uid]);
+  const refetch = useCallback(async () => {
+    setFetchDone(false);
+    await doFetch();
+  }, [doFetch]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !user || !uid) return;
+    // Refetch whenever the (role, entity id) changes — e.g. when a
+    // layout initially has only the auth uid and the real vendors.id /
+    // riders.id resolves a moment later. Same key = StrictMode no-op.
+    const key = `${role}:${uid}`;
+    if (lastFetchKeyRef.current === key) return;
+    lastFetchKeyRef.current = key;
+    doFetch();
+  }, [user, role, uid, doFetch]);
 
   // ── 2. Realtime subscription ──────────────────────────────
   // Deps: only [user, role, uid] — NOT handlePayload.
@@ -158,7 +183,7 @@ export function useRealtimeOrders(role, entityId = null) {
     };
   }, [user, role, uid]); // ← no handlePayload here — that's the fix
 
-  return { orders, isLoading };
+  return { orders, isLoading, refetch };
 }
 
 // ── useRealtimeNotifications ──────────────────────────────

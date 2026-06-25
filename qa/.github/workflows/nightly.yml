@@ -207,6 +207,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Assemble canonical RLS snapshot for audit
+        # The legacy database/rls.sql was removed in the Phase-2
+        # migration-tree unification. supabase/migrations/ is now the
+        # single canonical tree, so concatenate it into the path the
+        # audit checks below expect (ephemeral; not committed).
+        run: |
+          mkdir -p database
+          cat supabase/migrations/*.sql > database/rls.sql
+
       - name: Verify all tables have RLS enabled
         run: |
           python3 - <<'EOF'

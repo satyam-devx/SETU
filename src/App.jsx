@@ -21,9 +21,14 @@ import ScrollToTop from './components/ScrollToTop';
 import { CartProvider } from '@/lib/cartContext';
 import { SetuStoreProvider, useStore } from '@/lib/store';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { PermissionsProvider } from '@/lib/permissions';
+import { FeatureFlagsProvider } from '@/lib/featureFlags';
+import { SettingsProvider } from '@/lib/settings';
 import { VillageProvider } from '@/lib/village';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ErrorBoundary from '@/components/shared/ErrorBoundary';
+import MaintenanceBanner from '@/components/shared/MaintenanceBanner';
+import CommandPalette from '@/components/shared/CommandPalette';
 import { isSupabaseConfigured, isDemoModeEnabled } from '@/lib/supabase';
 
 // ── Eager: Auth & onboarding — tiny, always needed first ─
@@ -128,6 +133,7 @@ const AdminIncidents      = lazy(() => import('@/pages/admin/AdminIncidents'));
 const AdminMonitoring     = lazy(() => import('@/pages/admin/AdminMonitoring'));
 const AdminCategories     = lazy(() => import('@/pages/admin/AdminCategories'));
 const AdminProducts       = lazy(() => import('@/pages/admin/AdminProducts'));
+const AdminCoupons        = lazy(() => import('@/pages/admin/AdminCoupons'));
 const AdminBanners        = lazy(() => import('@/pages/admin/AdminBanners'));
 const AdminNotifications  = lazy(() => import('@/pages/admin/AdminNotifications'));
 const AdminImageModeration= lazy(() => import('@/pages/admin/AdminImageModeration'));
@@ -150,6 +156,10 @@ const SuperAdminCompliance = lazy(() => import('@/pages/superadmin/SuperAdminCom
 const SuperAdminHealth     = lazy(() => import('@/pages/superadmin/SuperAdminHealth'));
 const SuperAdminAI         = lazy(() => import('@/pages/superadmin/SuperAdminAI'));
 const SuperAdminUsers     = lazy(() => import('@/pages/superadmin/SuperAdminUsers'));
+const SuperAdminRoles     = lazy(() => import('@/pages/superadmin/SuperAdminRoles'));
+const SuperAdminFeatureFlags = lazy(() => import('@/pages/superadmin/SuperAdminFeatureFlags'));
+const SuperAdminFinance   = lazy(() => import('@/pages/superadmin/SuperAdminFinance'));
+const SuperAdminDeveloper = lazy(() => import('@/pages/superadmin/SuperAdminDeveloper'));
 
 // ── Portal loading fallback ───────────────────────────────
 function PortalFallback() {
@@ -245,11 +255,16 @@ function App() {
     <ErrorBoundary portal="SETU" fallbackRoute="/login">
     <Router basename={import.meta.env.BASE_URL}>
       <AuthProvider>
+        <PermissionsProvider>
+        <FeatureFlagsProvider>
+        <SettingsProvider>
         <SetuStoreProvider>
           <AuthStoreBridge />
           <CartProvider>
             <VillageProvider>
             <ScrollToTop />
+            <MaintenanceBanner />
+            <CommandPalette />
             <Routes>
 
               {/* ── Public / auth routes (eager) ── */}
@@ -398,6 +413,7 @@ function App() {
                 <Route path="monitoring"         element={<Suspense fallback={<PortalFallback />}><AdminMonitoring /></Suspense>} />
                 <Route path="categories"         element={<Suspense fallback={<PortalFallback />}><AdminCategories /></Suspense>} />
                 <Route path="products"           element={<Suspense fallback={<PortalFallback />}><AdminProducts /></Suspense>} />
+                <Route path="coupons"            element={<Suspense fallback={<PortalFallback />}><AdminCoupons /></Suspense>} />
                 <Route path="banners"            element={<Suspense fallback={<PortalFallback />}><AdminBanners /></Suspense>} />
                 <Route path="notifications"      element={<Suspense fallback={<PortalFallback />}><AdminNotifications /></Suspense>} />
                 <Route path="image-moderation"   element={<Suspense fallback={<PortalFallback />}><AdminImageModeration /></Suspense>} />
@@ -427,6 +443,10 @@ function App() {
                 <Route path="health"         element={<Suspense fallback={<PortalFallback />}><SuperAdminHealth /></Suspense>} />
                 <Route path="ai"             element={<Suspense fallback={<PortalFallback />}><SuperAdminAI /></Suspense>} />
                 <Route path="users"          element={<Suspense fallback={<PortalFallback />}><SuperAdminUsers /></Suspense>} />
+                <Route path="roles"          element={<Suspense fallback={<PortalFallback />}><SuperAdminRoles /></Suspense>} />
+                <Route path="feature-flags"  element={<Suspense fallback={<PortalFallback />}><SuperAdminFeatureFlags /></Suspense>} />
+                <Route path="finance"        element={<Suspense fallback={<PortalFallback />}><SuperAdminFinance /></Suspense>} />
+                <Route path="developer"      element={<Suspense fallback={<PortalFallback />}><SuperAdminDeveloper /></Suspense>} />
               </Route>
 
               {/* ── Fallbacks ── */}
@@ -437,6 +457,9 @@ function App() {
             <Toaster />
           </CartProvider>
         </SetuStoreProvider>
+        </SettingsProvider>
+        </FeatureFlagsProvider>
+        </PermissionsProvider>
       </AuthProvider>
     </Router>
     </ErrorBoundary>

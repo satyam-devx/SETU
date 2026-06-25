@@ -6,10 +6,21 @@ import ErrorBoundary from '@/components/shared/ErrorBoundary';
 import OfflineBanner from '@/components/shared/OfflineBanner';
 import { useRealtimeOrders, useRealtimeNotifications } from '@/hooks/useRealtimeOrders';
 import { useStore } from '@/lib/store';
+import { useAuth } from '@/lib/AuthContext';
+import { useDataFetch } from '@/hooks/useDataFetch';
+import { getVendorByOwnerId } from '@/lib/api';
 
 function VendorContent() {
+  const { user }  = useAuth();
   const { state } = useStore();
-  useRealtimeOrders('vendor');
+  // Orders are keyed by vendors.id (NOT the auth uid) — resolve it so the
+  // realtime store populates this vendor's real orders.
+  const { data: vendor } = useDataFetch(
+    () => getVendorByOwnerId(user?.id),
+    [user?.id],
+    { cacheKey: `vendor-profile-${user?.id}`, enabled: !!user?.id }
+  );
+  useRealtimeOrders('vendor', vendor?.id);
   useRealtimeNotifications();
 
   const pendingOrders = state.orders.filter(o =>

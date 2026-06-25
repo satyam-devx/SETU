@@ -25,7 +25,10 @@ const SUPERADMIN_MENU = [
   { label: 'SA Dashboard',     icon: SADashboard, path: '/superadmin'              },
   { label: 'Platform Analytics', icon: BarChart2, path: '/superadmin/analytics'   },
   { label: 'User Management',  icon: SAUsers,     path: '/superadmin/users'        },
+  { label: 'Roles & Permissions', icon: ShieldCheck, path: '/superadmin/roles'     },
+  { label: 'Feature Flags',    icon: Zap,         path: '/superadmin/feature-flags' },
   { label: 'SETU Credit',      icon: CreditCard,  path: '/superadmin/credit'       },
+  { label: 'Finance Center',   icon: IndianRupee, path: '/superadmin/finance'      },
   { label: 'Blocks & Geo',     icon: Map,         path: '/superadmin/blocks'       },
   { label: 'Fraud & Security', icon: ShieldAlert, path: '/superadmin/security'     },
   { label: 'SA Audit Log',     icon: FileText,    path: '/superadmin/audit'        },
@@ -33,6 +36,7 @@ const SUPERADMIN_MENU = [
   { label: 'Expansion',        icon: Zap,         path: '/superadmin/expansion'    },
   { label: 'Compliance',       icon: CheckSquare, path: '/superadmin/compliance'   },
   { label: 'Platform Health',  icon: Heart,       path: '/superadmin/health'       },
+  { label: 'Developer Center', icon: Cpu,         path: '/superadmin/developer'    },
   { label: 'AI Monitoring',    icon: Cpu,         path: '/superadmin/ai'           },
 ];
 
@@ -70,6 +74,7 @@ const ADMIN_MENU_GROUPS = [
     items: [
       { label: 'Categories', icon: Tag,     path: '/admin/categories' },
       { label: 'Products',   icon: Package, path: '/admin/products'   },
+      { label: 'Coupons',    icon: Tag,     path: '/admin/coupons'    },
     ],
   },
   {

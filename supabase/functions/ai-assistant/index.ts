@@ -63,6 +63,25 @@ serve(async (req) => {
     )
   }
 
+  // ── Global daily spend cap (Phase 4 cost control) ──────────
+  // A runaway client (or many clients) must not be able to rack up an
+  // unbounded Anthropic bill. Cap total assistant calls per UTC day
+  // across ALL users. Tune AI_DAILY_CAP to your budget.
+  const AI_DAILY_CAP = Number(Deno.env.get('AI_DAILY_CAP') ?? '5000')
+  const aiDay = new Date().toISOString().slice(0, 10)
+  const { data: underGlobalCap } = await supabase.rpc('check_rate_limit', {
+    p_key: `ai-assistant:global:${aiDay}`,
+    p_max_count: AI_DAILY_CAP,
+    p_window_seconds: 86400,
+  })
+  if (underGlobalCap === false) {
+    console.warn('[ai-assistant] Global daily cap reached — shedding load')
+    return new Response(
+      JSON.stringify({ error: "The assistant is at capacity right now. Please try again later." }),
+      { status: 503, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+    )
+  }
+
   let body: any
   try {
     body = await req.json()

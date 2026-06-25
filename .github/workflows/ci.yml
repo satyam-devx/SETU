@@ -33,10 +33,16 @@ jobs:
       - name: Install deps
         run: npm ci
 
-      - name: Audit for known vulnerabilities (high+critical only)
-        # --audit-level=high: don't fail on moderate/low during dev
-        run: npm audit --audit-level=high
-        continue-on-error: true   # warn, don't block — remove once issues resolved
+      - name: Audit production dependencies (blocking — high + critical)
+        # Runtime deps that SHIP to users must have no high/critical CVEs.
+        # --omit=dev excludes build-only tooling (vite/esbuild), whose
+        # dev-server advisories never reach production. This gate blocks.
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit all dependencies (non-blocking — visibility)
+        # Includes dev tooling; surfaces issues without blocking the build.
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
 
   # ── 2. Build verification ─────────────────────────────
   build:
@@ -117,7 +123,7 @@ jobs:
         run: |
           # Install pgFormatter for syntax checking
           pip install pgspecial 2>/dev/null || true
-          for f in supabase/migrations/*.sql database/migrations/*.sql; do
+          for f in supabase/migrations/*.sql; do
             [ -f "$f" ] || continue
             echo "Checking: $f"
             # Basic SQL syntax check: look for common mistakes
@@ -193,3 +199,128 @@ jobs:
 
       - name: Secret scan (detect accidental credential commits)
         run: python3 scripts/secret_scan.py
+
+  # ── 6. Database money-integrity proof (real RPCs + RLS) ─
+  db-integrity-tests:
+    name: DB Money-Integrity Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase (applies all migrations)
+        # Dummy values so config.toml's env() refs (Twilio) resolve — the
+        # auth/SMS service isn't exercised by these DB-level tests; we only
+        # need the Postgres instance with every migration applied.
+        env:
+          TWILIO_ACCOUNT_SID:         "dummy"
+          TWILIO_MESSAGE_SERVICE_SID: "dummy"
+          TWILIO_AUTH_TOKEN:          "dummy"
+        run: |
+          # Full local stack; the CLI applies every migration in
+          # supabase/migrations (including 017) during startup.
+          supabase start
+
+      - name: Install psql client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Run Phase-1 money-integrity proof
+        # ON_ERROR_STOP=1 → any failed assertion fails the job.
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f qa/sql/phase1_money_integrity_test.sql
+
+      - name: Run RLS & RPC permission-guard proof
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f qa/sql/rls_permission_guards_test.sql
+
+      - name: Run dynamic RBAC proof
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f qa/sql/rbac_test.sql
+
+      - name: Run feature-flags proof
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f qa/sql/feature_flags_test.sql
+
+      - name: Run application-settings proof
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f qa/sql/settings_test.sql
+
+      - name: Run notification-center proof
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f qa/sql/notifications_test.sql
+
+      - name: Run security-center & audit-immutability proof
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f qa/sql/security_test.sql
+
+      - name: Run finance-center proof
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f qa/sql/finance_test.sql
+
+      - name: Run developer-center proof
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f qa/sql/developer_test.sql
+
+      - name: Run coupons proof
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f qa/sql/coupons_test.sql
+
+      - name: Run admin search proof
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f qa/sql/search_test.sql
+
+      - name: Run security ops proof
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f qa/sql/security_ops_test.sql
+
+      - name: Run finance depth proof
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f qa/sql/finance_depth_test.sql
+
+      - name: Run developer ops proof
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f qa/sql/developer_ops_test.sql
+
+      - name: Run notification delivery proof
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f qa/sql/notification_delivery_test.sql
+
+      - name: Stop local Supabase
+        if: always()
+        run: supabase stop --no-backup || true

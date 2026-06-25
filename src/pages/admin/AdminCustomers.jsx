@@ -59,7 +59,7 @@ function UserDetailModal({ user, onClose, onBan, onUnban }) {
     { cacheKey: `user-orders-${user.id}`, staleTime: 30_000 }
   );
 
-  const isBanned    = user.is_verified === false;
+  const isBanned    = user.is_banned === true;
   const totalSpend  = (orders ?? []).filter(o => o.status === 'delivered').reduce((s, o) => s + Number(o.total ?? 0), 0);
 
   const handleBan = async () => {
@@ -222,8 +222,8 @@ export default function AdminCustomers() {
   const users = data ?? [];
 
   const totalCount  = users.length;
-  const activeCount = users.filter(u => u.is_verified !== false).length;
-  const bannedCount = users.filter(u => u.is_verified === false).length;
+  const activeCount = users.filter(u => u.is_banned !== true).length;
+  const bannedCount = users.filter(u => u.is_banned === true).length;
 
   const filtered = useMemo(() => {
     return users.filter(u => {
@@ -231,7 +231,7 @@ export default function AdminCustomers() {
         || (u.name ?? '').toLowerCase().includes(query.toLowerCase())
         || (u.phone ?? '').includes(query)
         || (u.villages?.name ?? '').toLowerCase().includes(query.toLowerCase());
-      const isBanned = u.is_verified === false;
+      const isBanned = u.is_banned === true;
       if (tab === 'active')  return matchQ && !isBanned;
       if (tab === 'banned')  return matchQ && isBanned;
       return matchQ;
@@ -335,7 +335,7 @@ export default function AdminCustomers() {
         {/* List */}
         <div className="space-y-2">
           {filtered.map(u => {
-            const isBanned = u.is_verified === false;
+            const isBanned = u.is_banned === true;
             return (
               <Card
                 key={u.id}

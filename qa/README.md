@@ -26,6 +26,8 @@ qa/
 │           └── accessibility.spec.js  # axe-core WCAG 2.1 AA audit
 ├── config/
 │   └── vitest-setup.js           # MSW mocks, global test fixtures
+├── sql/
+│   └── phase1_money_integrity_test.sql  # Real-RPC/RLS money-integrity proof (psql)
 ├── scripts/
 │   ├── run-security-suite.js     # Static security checks
 │   ├── run-perf-suite.js         # Bundle size + Core Web Vitals
@@ -79,6 +81,48 @@ qa/
 | No broken images | Login page |
 | Security headers | No X-Powered-By |
 | Error boundary | Deep-link to fake UUID |
+
+### Database Money-Integrity Proof (real RPCs + RLS, not mocks)
+
+Unlike the Vitest suites (which test re-implemented logic), `qa/sql/phase1_money_integrity_test.sql`
+runs the **actual** migration-017 RPCs and RLS policies against a real Postgres
+with Supabase's `auth.uid()` driven by JWT-claim GUCs. It is executable proof
+that the audit's three CRITICAL money-trust holes are closed.
+
+| Test | Proves |
+|------|--------|
+| A — CRITICAL-A | Direct `orders`/`order_items` INSERT denied; `create_order` recomputes totals from `products.price` (client prices ignored) |
+| B — CRITICAL-B | Outsiders can't change an order; non-assigned rider can't deliver/self-credit; `p_meta.rider_id` ignored for non-admins |
+| C — CRITICAL-C | SETU Credit discount rejected without a funded active account; recorded as a real drawdown when granted |
+| D — payment divergence | `pay_order_from_wallet` charges the authoritative server total and credits vendor escrow atomically |
+| E — fee single-source | changing `platform_config` commission makes `create_order` produce a different total (fees are config-driven via `get_fee_config()`, not hardcoded) |
+
+A second file, `qa/sql/rls_permission_guards_test.sql`, proves the migration
+013/014/016 hardening the same way: `topup_wallet` revoked from `authenticated`,
+`pay_from_wallet` ownership guard, role/`is_verified` self-escalation blocked by
+RLS, `upsert_platform_config` admin-only, and `set_default_address` ownership.
+
+Run them locally (needs Docker + the Supabase CLI):
+
+```bash
+# from repo root
+supabase start                         # applies all migrations, incl. 017/018
+cd qa
+npm run test:db-integrity              # runs BOTH proof scripts; each rolls back
+```
+
+Or directly:
+
+```bash
+psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+     -v ON_ERROR_STOP=1 -f qa/sql/phase1_money_integrity_test.sql
+```
+
+The whole script runs in one transaction and **ends with `ROLLBACK`**, so it
+leaves your database untouched. A passing run prints
+`✅ ALL PHASE-1 MONEY-INTEGRITY TESTS PASSED`; any failed assertion aborts the
+run (it's strictly pass/fail). In CI this is the `db-integrity-tests` job in
+`.github/workflows/ci.yml`, which spins up a local Supabase on every push/PR.
 
 ### Security Checks
 | Category | Checks |

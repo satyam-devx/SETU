@@ -104,6 +104,25 @@ serve(async (req) => {
     )
   }
 
+  // ── Global daily cap (Phase 4 cost control) ────────────────
+  // Each SurePass Aadhaar OTP call is billed. Cap total verification
+  // attempts per UTC day across ALL users so a distributed abuse run
+  // can't run up an unbounded SurePass bill. Tune KYC_DAILY_CAP.
+  const KYC_DAILY_CAP = Number(Deno.env.get('KYC_DAILY_CAP') ?? '2000')
+  const kycDay = new Date().toISOString().slice(0, 10)
+  const { data: underKycGlobalCap } = await supabase.rpc('check_rate_limit', {
+    p_key: `verify-aadhaar:global:${kycDay}`,
+    p_max_count: KYC_DAILY_CAP,
+    p_window_seconds: 86400,
+  })
+  if (underKycGlobalCap === false) {
+    console.warn('[verify-aadhaar] Global daily cap reached — shedding load')
+    return new Response(
+      JSON.stringify({ success: false, error: "KYC verification is at capacity right now. Please try again later." }),
+      { status: 503, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+    )
+  }
+
   let body: any
   try { body = await req.json() } catch {
     return new Response(

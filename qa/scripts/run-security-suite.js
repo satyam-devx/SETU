@@ -14,6 +14,21 @@ const REPORTS    = path.join(ROOT, 'reports');
 
 fs.mkdirSync(REPORTS, { recursive: true });
 
+// ── Canonical SQL reader ───────────────────────────────────────
+// Schema/RLS/functions live in supabase/migrations/ — the single
+// CI-deployed tree (the legacy database/ tree was removed in the
+// Phase-2 migration-tree unification). These checks read all
+// canonical migrations concatenated so they validate what actually
+// ships, not dead files.
+let _canonicalSqlCache = null;
+function canonicalSql() {
+  if (_canonicalSqlCache !== null) return _canonicalSqlCache;
+  const dir   = path.join(SETU_ROOT, 'supabase/migrations');
+  const files = fs.readdirSync(dir).filter(f => f.endsWith('.sql')).sort();
+  _canonicalSqlCache = files.map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n');
+  return _canonicalSqlCache;
+}
+
 const results = {
   timestamp:   new Date().toISOString(),
   checks:      [],
@@ -254,38 +269,55 @@ console.log('\n═══ SECURITY SUITE: Database Security ═══');
 
 const DB_CHECKS = [
   {
-    name:    'RLS enabled on all tables (rls.sql)',
+    name:    'RLS enabled on core tables (canonical migrations)',
     check:   () => {
-      const rlsContent = fs.readFileSync(path.join(SETU_ROOT, 'database/rls.sql'), 'utf8');
+      const sql = canonicalSql();
       const tables = ['villages', 'profiles', 'orders', 'wallets', 'audit_log'];
-      return tables.every(t => rlsContent.includes(`enable row level security`) &&
-                                rlsContent.includes(t));
+      return sql.includes('enable row level security') &&
+             tables.every(t => sql.includes(t));
     },
     critical: true,
   },
   {
     name:    'audit_log insert restricted to service_role',
     check:   () => {
-      const rlsContent = fs.readFileSync(path.join(SETU_ROOT, 'database/rls.sql'), 'utf8');
-      return rlsContent.includes('service_role') ||
-             rlsContent.includes('security definer');
+      const sql = canonicalSql();
+      return sql.includes('service_role') || sql.includes('security definer');
     },
     critical: true,
   },
   {
     name:    'profiles_own_insert uses WITH CHECK (auth.uid() = id)',
     check:   () => {
-      const rlsContent = fs.readFileSync(path.join(SETU_ROOT, 'database/rls.sql'), 'utf8');
-      return rlsContent.includes('profiles_own_insert') &&
-             rlsContent.includes('with check');
+      const sql = canonicalSql();
+      return sql.includes('profiles_own_insert') && sql.includes('with check');
+    },
+    critical: true,
+  },
+  {
+    name:    'profiles role self-escalation blocked (column-pinned WITH CHECK)',
+    check:   () => {
+      const sql = canonicalSql();
+      // migration 013/014: self-update WITH CHECK pins role to its current value
+      return sql.includes('role = (select role from profiles where id = auth.uid())');
+    },
+    critical: true,
+  },
+  {
+    name:    'Order creation is server-authoritative (create_order RPC)',
+    check:   () => {
+      const sql = canonicalSql();
+      // migration 017: client INSERT on orders removed; create_order recomputes totals
+      return sql.includes('function create_order') &&
+             sql.includes('drop policy if exists "orders_customer_insert"');
     },
     critical: true,
   },
   {
     name:    'Aadhaar data uses encryption (pgcrypto)',
     check:   () => {
-      const schema = fs.readFileSync(path.join(SETU_ROOT, 'database/schema.sql'), 'utf8');
-      return schema.includes('pgcrypto') || schema.includes('encrypt');
+      const sql = canonicalSql();
+      return sql.includes('pgcrypto') || sql.includes('encrypt');
     },
     critical: true,
   },
@@ -301,8 +333,8 @@ const DB_CHECKS = [
   {
     name:    'Order status transitions go through security-definer RPCs',
     check:   () => {
-      const fns = fs.readFileSync(path.join(SETU_ROOT, 'database/functions.sql'), 'utf8');
-      return fns.includes('security definer');
+      const sql = canonicalSql();
+      return sql.includes('function update_order_status') && sql.includes('security definer');
     },
     critical: true,
   },

@@ -26,7 +26,6 @@ import sys
 
 MIGRATION_DIRS = [
     "supabase/migrations",
-    "database/migrations",
 ]
 
 def check_file(fpath: str) -> list[str]:

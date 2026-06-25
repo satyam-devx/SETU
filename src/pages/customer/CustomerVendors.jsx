@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { getVendors } from '@/lib/api';
 import { useVillage } from '@/lib/village';
+import Img from '@/components/shared/Img';
 
 function VendorsSkeleton() {
   return (
@@ -81,7 +82,7 @@ export default function CustomerVendors() {
               <Link key={v.id} to={`/customer/vendor/${v.id}`}>
                 <Card className="overflow-hidden border-border flex">
                   <div className="w-20 h-20 shrink-0">
-                    <img src={image} alt={v.name} className="w-full h-full object-cover" />
+                    <Img src={image} alt={v.name} width={80} height={80} className="w-full h-full object-cover" />
                   </div>
                   <div className="p-3 flex-1 min-w-0">
                     <div className="flex items-start gap-2">
