@@ -21,6 +21,11 @@ create table if not exists noticeboard (
   updated_at  timestamptz not null default now()
 );
 
+-- Add columns that may be missing if noticeboard was created by an earlier migration
+-- with a different schema (migration 001 used author_id/category instead of created_by/type)
+alter table noticeboard add column if not exists created_by uuid references auth.users(id) on delete cascade;
+alter table noticeboard add column if not exists type text check (type in ('general','scheme','event','alert'));
+
 create index if not exists idx_noticeboard_village_id on noticeboard(village_id);
 create index if not exists idx_noticeboard_created_at on noticeboard(created_at desc);
 create index if not exists idx_noticeboard_is_pinned  on noticeboard(is_pinned) where is_pinned = true;
@@ -28,12 +33,6 @@ create index if not exists idx_noticeboard_is_pinned  on noticeboard(is_pinned) 
 drop trigger if exists trg_noticeboard_updated_at on noticeboard;
 create trigger trg_noticeboard_updated_at before update on noticeboard
   for each row execute function update_updated_at();
-
-
--- Add columns that may be missing if noticeboard was created by an earlier migration
--- with a different schema (migration 001 used author_id/category instead of created_by/type)
-alter table noticeboard add column if not exists created_by uuid references auth.users(id) on delete cascade;
-alter table noticeboard add column if not exists type text check (type in ('general','scheme','event','alert'));
 
 -- RLS
 alter table noticeboard enable row level security;
@@ -92,6 +91,13 @@ create table if not exists disputes (
   updated_at  timestamptz not null default now()
 );
 
+-- Add columns that may be missing if disputes was created by an earlier migration
+-- (migration 001 used raised_by instead of reporter_id, had no title/amount/resolved_by)
+alter table disputes add column if not exists reporter_id uuid references auth.users(id) on delete cascade;
+alter table disputes add column if not exists title text;
+alter table disputes add column if not exists amount numeric(10,2);
+alter table disputes add column if not exists resolved_by uuid references auth.users(id) on delete set null;
+
 create index if not exists idx_disputes_village_id  on disputes(village_id);
 create index if not exists idx_disputes_status      on disputes(status);
 create index if not exists idx_disputes_reporter_id on disputes(reporter_id);
@@ -114,13 +120,6 @@ create table if not exists dispute_parties (
 create index if not exists idx_dispute_parties_dispute_id on dispute_parties(dispute_id);
 create index if not exists idx_dispute_parties_user_id    on dispute_parties(user_id);
 
-
--- Add columns that may be missing if disputes was created by an earlier migration
--- (migration 001 used raised_by instead of reporter_id, had no title/amount/resolved_by)
-alter table disputes add column if not exists reporter_id uuid references auth.users(id) on delete cascade;
-alter table disputes add column if not exists title text;
-alter table disputes add column if not exists amount numeric(10,2);
-alter table disputes add column if not exists resolved_by uuid references auth.users(id) on delete set null;
 
 -- RLS for disputes
 alter table disputes enable row level security;
@@ -206,6 +205,12 @@ create table if not exists escalations (
   updated_at   timestamptz not null default now()
 );
 
+-- Add columns that may be missing if escalations was created by an earlier migration
+-- (migration 001 used assigned_to instead of escalated_to, had no title/description)
+alter table escalations add column if not exists escalated_to uuid references auth.users(id) on delete set null;
+alter table escalations add column if not exists title text;
+alter table escalations add column if not exists description text;
+
 create index if not exists idx_escalations_village_id   on escalations(village_id);
 create index if not exists idx_escalations_dispute_id   on escalations(dispute_id);
 create index if not exists idx_escalations_status       on escalations(status);
@@ -214,13 +219,6 @@ create index if not exists idx_escalations_escalated_by on escalations(escalated
 drop trigger if exists trg_escalations_updated_at on escalations;
 create trigger trg_escalations_updated_at before update on escalations
   for each row execute function update_updated_at();
-
-
--- Add columns that may be missing if escalations was created by an earlier migration
--- (migration 001 used assigned_to instead of escalated_to, had no title/description)
-alter table escalations add column if not exists escalated_to uuid references auth.users(id) on delete set null;
-alter table escalations add column if not exists title text;
-alter table escalations add column if not exists description text;
 
 -- RLS for escalations
 alter table escalations enable row level security;

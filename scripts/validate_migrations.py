@@ -51,10 +51,7 @@ def main():
             m = filename_re.match(fname)
             if not m:
                 # Explain the expected format for this directory
-                if migration_dir == "supabase/migrations":
-                    expected = "20240615120000_description.sql (14-digit timestamp)"
-                else:
-                    expected = "003_description.sql (3-digit number)"
+                expected = "20240615120000_description.sql (14-digit timestamp)"
                 errors.append(f"  ✗ {fname}: invalid name — expected format: {expected}")
                 continue
 
@@ -88,11 +85,6 @@ def main():
                 a = int(sorted_versions[i])
                 b = int(sorted_versions[i + 1])
                 # For timestamps, a gap > 1 second is normal — don't warn
-                # For legacy NNN format, warn on gaps
-                if migration_dir == "database/migrations" and b - a > 1:
-                    warnings.append(
-                        f"  ⚠ Gap between {sorted_versions[i]} and {sorted_versions[i+1]}"
-                    )
 
     if warnings:
         print("\nWarnings:")
