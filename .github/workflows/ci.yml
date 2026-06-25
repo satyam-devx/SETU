@@ -167,6 +167,9 @@ jobs:
           ERRORS=0
           for dir in supabase/functions/*/; do
             [ -d "$dir" ] || continue
+            # Skip _shared — it's a utility library, not a deployable function (no index.ts)
+            [[ "$(basename $dir)" == "_shared" ]] && continue
+            [ -f "${dir}index.ts" ] || { echo "Skipping $(basename $dir): no index.ts"; continue; }
             echo "Linting: $(basename $dir)"
             deno lint --config supabase/functions/deno.json "${dir}index.ts" 2>&1 || ERRORS=$((ERRORS + 1))
           done
