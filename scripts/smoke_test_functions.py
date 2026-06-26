@@ -43,8 +43,11 @@ TESTS = [
         'expect_header': 'access-control-allow-origin',
     },
     {
+        # ai-assistant requires a real authenticated user (requireUser).
+        # A smoke test can't mint a user JWT, so the anon key alone must be
+        # rejected with 401 — this verifies the CRITICAL-2 auth is in force.
         'function': 'ai-assistant',
-        'description': 'POST with valid body',
+        'description': 'POST without valid user JWT returns 401',
         'method': 'POST',
         'headers': {
             'Content-Type': 'application/json',
@@ -52,7 +55,7 @@ TESTS = [
             'apikey': ANON_KEY,
         },
         'body': {'message': 'hello', 'context': {}},
-        'expect_status': [200],
+        'expect_status': [401],
     },
     {
         'function': 'create-razorpay-order',
