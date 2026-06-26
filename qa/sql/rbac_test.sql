@@ -40,12 +40,17 @@ end $$;
 -- ── T2: super_admin implicitly holds everything ──
 set local request.jwt.claims = '{"sub":"99999999-9999-9999-9999-999999999999","role":"authenticated"}';
 do $$
-declare perms text[];
+declare perms text[]; v_total int;
 begin
   if not has_permission('roles.grant') then raise exception 'FAIL T2: super_admin missing implicit permission'; end if;
   perms := current_user_permissions();
-  if array_length(perms,1) < (select count(*) from permissions) then
-    raise exception 'FAIL T2: super_admin should hold all % permissions, got %', (select count(*) from permissions), array_length(perms,1);
+  -- Ground-truth catalog size read as postgres (clients reach the catalog
+  -- via current_user_permissions()/has_permission(), not direct table SELECT).
+  reset role;
+  select count(*) into v_total from permissions;
+  set local role authenticated;
+  if array_length(perms,1) < v_total then
+    raise exception 'FAIL T2: super_admin should hold all % permissions, got %', v_total, array_length(perms,1);
   end if;
   raise notice 'PASS T2: super_admin implicitly holds all % permissions', array_length(perms,1);
 end $$;
