@@ -39,7 +39,11 @@ begin
 end $$;
 
 -- ── T2: enable + dispatch enqueues deliveries (pending vs skipped) ──
+-- platform_config has no write RLS policy (writes go via RPC only), so the
+-- toggle must be done as postgres, not as the authenticated caller.
+reset role;
 update platform_config set value='true' where key='sms_enabled';
+set local role authenticated;
 do $$
 declare v jsonb; v_id uuid; v_pending int; v_skipped int;
 begin
