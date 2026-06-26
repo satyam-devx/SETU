@@ -41,10 +41,7 @@ declare
     'resolve_campaign_audience',
     '_dispatch_campaign_internal',
     'dispatch_due_campaigns',
-    'flag_stuck_payment_events',
-    'ban_user',
-    'unban_user',
-    'assign_role'
+    'flag_stuck_payment_events'
   ];
 begin
   for r in
