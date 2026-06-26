@@ -115,7 +115,9 @@ begin
     raise exception 'FAIL T5: non-admin rewrote platform_config';
   exception
     when others then
-      if position('admin' in lower(sqlerrm)) > 0 then raise notice 'PASS T5: platform_config write requires admin (%)', sqlerrm;
+      if position('unauthorized' in lower(sqlerrm)) > 0
+         or position('settings.update' in lower(sqlerrm)) > 0
+      then raise notice 'PASS T5: platform_config write requires elevated permission (%)', sqlerrm;
       else raise; end if;
   end;
 end $$;
