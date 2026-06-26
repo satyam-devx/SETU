@@ -18,6 +18,64 @@
 -- as vendor-payout), never from the browser.
 -- ═══════════════════════════════════════════════════════════════
 
+-- ── ensure rider_payments exists (self-healing) ─────────────────
+-- rider_payments is normally created by migration 008. On some remotes
+-- 008 is recorded as applied but the table is absent (it was created
+-- legacy/out-of-band), which makes the functions below fail to compile
+-- with 42P01 ("relation rider_payments does not exist") since
+-- %rowtype/INSERT targets are resolved at CREATE FUNCTION time. These
+-- guarded statements are a no-op where the table already exists (fresh
+-- CI) and repair it where it doesn't, so this migration is safe
+-- everywhere. Definition mirrors 008 exactly.
+create table if not exists rider_payments (
+  id                  uuid primary key default uuid_generate_v4(),
+  rider_id            uuid not null references riders(id) on delete cascade,
+  period_start        date not null,
+  period_end          date not null,
+  deliveries_count    integer not null default 0,
+  gross_earnings      numeric(10,2) not null default 0,
+  adjustments         numeric(10,2) not null default 0,
+  net_payout          numeric(10,2) not null default 0,
+  status              text not null default 'pending'
+                        check (status in ('pending','processing','paid','failed')),
+  payout_method       text not null default 'bank_transfer'
+                        check (payout_method in ('bank_transfer','upi','wallet','manual_cash')),
+  razorpay_payout_id  text,
+  failure_reason      text,
+  initiated_at        timestamptz,
+  paid_at             timestamptz,
+  notes               text,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now(),
+  unique (rider_id, period_start, period_end)
+);
+create index if not exists idx_rider_payments_rider_id    on rider_payments(rider_id);
+create index if not exists idx_rider_payments_status      on rider_payments(status);
+create index if not exists idx_rider_payments_period      on rider_payments(period_start, period_end);
+create index if not exists idx_rider_payments_created_at  on rider_payments(created_at desc);
+
+do $$ begin
+  if not exists (select 1 from pg_trigger where tgname = 'trg_rider_payments_updated_at') then
+    create trigger trg_rider_payments_updated_at before update on rider_payments
+      for each row execute function update_updated_at();
+  end if;
+end $$;
+
+alter table rider_payments enable row level security;
+do $$ begin
+  if not exists (
+    select 1 from pg_policies
+    where tablename = 'rider_payments' and policyname = 'rider_payments_own_read'
+  ) then
+    create policy "rider_payments_own_read"
+      on rider_payments for select
+      using (
+        rider_id in (select id from riders where user_id = auth.uid())
+        or is_admin()
+      );
+  end if;
+end $$;
+
 -- ── create_rider_payment_batch ──────────────────────────────────
 create or replace function create_rider_payment_batch(
   p_rider_id     uuid,
