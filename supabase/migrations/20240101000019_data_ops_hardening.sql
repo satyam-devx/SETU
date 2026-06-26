@@ -128,7 +128,7 @@ begin
     subtotal, delivery_fee, platform_fee, total,
     is_cod, delivery_address, delivery_notes
   ) values (
-    uuid_generate_v4(), v_order_number, v_uid, coalesce(v_customer_name, 'Customer'),
+    gen_random_uuid(), v_order_number, v_uid, coalesce(v_customer_name, 'Customer'),
     v_vendor.id, v_vendor.name, coalesce(p_village_id, v_vendor.village_id), v_vendor.village,
     'pending', p_payment_method, 'pending',
     0, 0, 0, 0,
