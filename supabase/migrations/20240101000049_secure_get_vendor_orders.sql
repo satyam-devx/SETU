@@ -44,7 +44,7 @@ begin
   -- Authorization: a logged-in caller must own this vendor or be an admin.
   -- Backend / service_role calls (auth.uid() is null) are unrestricted.
   if auth.uid() is not null
-     and not exists (select 1 from vendors where id = p_vendor_id and owner_id = auth.uid())
+     and not exists (select 1 from vendors where vendors.id = p_vendor_id and vendors.owner_id = auth.uid())
      and not is_admin()
   then
     raise exception 'Unauthorized: not your vendor';
