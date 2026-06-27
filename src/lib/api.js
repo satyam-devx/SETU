@@ -2097,7 +2097,7 @@ export async function getAdminDisputes({ status, page = 0, limit = 50 } = {}) {
       .from('disputes')
       .select(`
         *,
-        profiles!raised_by(name, phone, role),
+        profiles!disputes_reporter_id_fkey(name, phone, role),
         orders(order_number, total, vendor_name)
       `)
       .order('created_at', { ascending: false })
