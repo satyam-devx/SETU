@@ -3,11 +3,14 @@
 // ═══════════════════════════════════════════════════════════
 
 export const VILLAGES = [
-  { id: 'v1', name: 'Madhepur', block: 'Madhepur', district: 'Madhubani', population: 12000, lat: 26.35, lng: 86.07, isActive: true },
-  { id: 'v2', name: 'Laxmipur', block: 'Madhepur', district: 'Madhubani', population: 8000, lat: 26.37, lng: 86.09, isActive: true },
-  { id: 'v3', name: 'Parsad', block: 'Madhepur', district: 'Madhubani', population: 5500, lat: 26.33, lng: 86.05, isActive: true },
-  { id: 'v4', name: 'Jhanjharpur', block: 'Jhanjharpur', district: 'Madhubani', population: 25000, lat: 26.26, lng: 86.28, isActive: true },
-  { id: 'v5', name: 'Rajnagar', block: 'Rajnagar', district: 'Madhubani', population: 9000, lat: 26.42, lng: 86.15, isActive: false },
+  { id: 'prasad',          name: 'Prasad',          block: 'Madhepur', district: 'Madhubani', population: 0, isActive: true },
+  { id: 'banki',           name: 'Banki',           block: 'Madhepur', district: 'Madhubani', population: 0, isActive: true },
+  { id: 'khajura',         name: 'Khajura',         block: 'Madhepur', district: 'Madhubani', population: 0, isActive: true },
+  { id: 'madhepur',        name: 'Madhepur',        block: 'Madhepur', district: 'Madhubani', population: 0, isActive: true },
+  { id: 'pachahi',         name: 'Pachahi',         block: 'Madhepur', district: 'Madhubani', population: 0, isActive: true },
+  { id: 'laufa',           name: 'Laufa',           block: 'Madhepur', district: 'Madhubani', population: 0, isActive: true },
+  { id: 'umri',            name: 'Umri',            block: 'Madhepur', district: 'Madhubani', population: 0, isActive: true },
+  { id: 'bhit_bhagwanpur', name: 'Bhit Bhagwanpur', block: 'Madhepur', district: 'Madhubani', population: 0, isActive: true },
 ];
 
 export const CATEGORIES = [
