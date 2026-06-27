@@ -68,90 +68,15 @@ do $$ begin
 end $$;
 
 -- ─────────────────────────────────────────────────────────
--- 6. Add missing tables: disputes, escalations, noticeboard
+-- 6. disputes / escalations / noticeboard
+--    These are created by migration 006 (anchor_portal) with the app's
+--    canonical schema (disputes.reporter_id/title/amount/resolved_by,
+--    noticeboard.created_by, plus dispute_parties). The duplicate
+--    definitions that used to live here declared a divergent older
+--    schema (raised_by/author_id) and collided on a fresh apply, so they
+--    were removed. Migration 006 is the single owner; section 10 below
+--    still (idempotently) ensures realtime membership.
 -- ─────────────────────────────────────────────────────────
-create table if not exists disputes (
-  id          uuid primary key default uuid_generate_v4(),
-  order_id    uuid references orders(id) on delete set null,
-  raised_by   uuid not null references auth.users(id) on delete cascade,
-  against     uuid references auth.users(id) on delete set null,
-  village_id  text references villages(id) on delete set null,
-  type        text not null default 'order'
-                check (type in ('order','payment','quality','delivery','fraud','other')),
-  status      text not null default 'open'
-                check (status in ('open','under_review','resolved','escalated','closed')),
-  description text not null,
-  resolution  text,
-  anchor_id   uuid references auth.users(id) on delete set null,
-  resolved_at timestamptz,
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
-);
-create index if not exists idx_disputes_village_id on disputes(village_id);
-create index if not exists idx_disputes_raised_by  on disputes(raised_by);
-create index if not exists idx_disputes_status     on disputes(status);
-create index if not exists idx_disputes_order_id   on disputes(order_id);
-create index if not exists idx_disputes_created_at on disputes(created_at desc);
-
-drop trigger if exists trg_disputes_updated_at on disputes;
-create trigger trg_disputes_updated_at
-  before update on disputes
-  for each row execute function update_updated_at();
-
-alter table disputes enable row level security;
-
-create table if not exists escalations (
-  id           uuid primary key default uuid_generate_v4(),
-  dispute_id   uuid references disputes(id) on delete set null,
-  village_id   text references villages(id) on delete set null,
-  escalated_by uuid not null references auth.users(id) on delete cascade,
-  assigned_to  uuid references auth.users(id) on delete set null,
-  priority     text not null default 'medium'
-                 check (priority in ('low','medium','high','critical')),
-  status       text not null default 'open'
-                 check (status in ('open','in_review','resolved','closed')),
-  subject      text not null,
-  notes        text,
-  resolved_at  timestamptz,
-  created_at   timestamptz not null default now(),
-  updated_at   timestamptz not null default now()
-);
-create index if not exists idx_escalations_village_id   on escalations(village_id);
-create index if not exists idx_escalations_escalated_by on escalations(escalated_by);
-create index if not exists idx_escalations_status       on escalations(status);
-create index if not exists idx_escalations_created_at   on escalations(created_at desc);
-
-drop trigger if exists trg_escalations_updated_at on escalations;
-create trigger trg_escalations_updated_at
-  before update on escalations
-  for each row execute function update_updated_at();
-
-alter table escalations enable row level security;
-
-create table if not exists noticeboard (
-  id         uuid primary key default uuid_generate_v4(),
-  village_id text not null references villages(id) on delete cascade,
-  author_id  uuid not null references auth.users(id) on delete cascade,
-  title      text not null,
-  body       text not null,
-  category   text not null default 'general'
-               check (category in ('general','alert','scheme','market','health','weather','other')),
-  is_pinned  boolean not null default false,
-  expires_at timestamptz,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-create index if not exists idx_noticeboard_village_id on noticeboard(village_id);
-create index if not exists idx_noticeboard_author_id  on noticeboard(author_id);
-create index if not exists idx_noticeboard_created_at on noticeboard(created_at desc);
-create index if not exists idx_noticeboard_is_pinned  on noticeboard(is_pinned) where is_pinned = true;
-
-drop trigger if exists trg_noticeboard_updated_at on noticeboard;
-create trigger trg_noticeboard_updated_at
-  before update on noticeboard
-  for each row execute function update_updated_at();
-
-alter table noticeboard enable row level security;
 
 -- ─────────────────────────────────────────────────────────
 -- 7. Fix RLS: drop overly-permissive FOR ALL policies and
