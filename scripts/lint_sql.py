@@ -40,7 +40,7 @@ def check_file(fpath: str):
     issues = []
 
     try:
-        with open(fpath, 'r', encoding='utf-8') as f:
+        with open(fpath, 'r', encoding='utf-8-sig') as f:
             content = f.read()
     except UnicodeDecodeError as e:
         print(f"✗ {fpath}: encoding error — {e}")
@@ -73,6 +73,13 @@ def check_file(fpath: str):
         for lineno, line in enumerate(lines, 1):
             if re.search(pattern, line, re.IGNORECASE):
                 issues.append(f"  Line {lineno}: ⚠ DANGER — {msg}")
+
+    # 4. JS-style // comments — invalid SQL (psql: syntax error near "//")
+    for lineno, line in enumerate(lines, 1):
+        if re.match(r'^\s*//', line):
+            issues.append(
+                f"  Line {lineno}: ⚠ DANGER — JS-style '//' comment is invalid SQL; use '--'"
+            )
 
     return issues
 
