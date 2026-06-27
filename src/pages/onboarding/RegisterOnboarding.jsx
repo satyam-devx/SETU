@@ -111,18 +111,27 @@ export default function RegisterOnboarding() {
     setSaving(true);
     setError('');
 
+    // UPSERT (not update): after a DB reset, an existing auth.users
+    // account can have NO profiles row (the handle_new_user trigger only
+    // fires on NEW signups). A plain UPDATE would match 0 rows and
+    // silently do nothing, leaving the user with no profile and a blank
+    // /customer screen. Upsert creates the row if missing, updates it if
+    // present. `role` is intentionally omitted so it defaults to
+    // 'customer' on insert and is left untouched on update.
     const { error: dbError } = await supabase
       .from('profiles')
-      .update({
+      .upsert({
+        id:         user.id,
         name:       trimmedName,
         village_id: villageId,
         updated_at: new Date().toISOString(),
-      })
-      .eq('id', user.id);
+      }, { onConflict: 'id' });
 
     if (dbError) {
-      console.error('[SETU Onboarding] profile update error:', dbError);
-      // Non-fatal: log but continue. User can fix name in Settings.
+      console.error('[SETU Onboarding] profile upsert error:', dbError);
+      setError('Could not save your profile. Please try again.');
+      setSaving(false);
+      return;
     }
 
     // ── CRITICAL: reload profile in AuthContext BEFORE navigating ──
