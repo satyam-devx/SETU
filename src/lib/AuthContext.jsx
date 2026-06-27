@@ -29,7 +29,7 @@ const DEMO_PROFILE = {
   phone:       '+919876543200',
   name:        'Anita Devi',
   role:        'customer',
-  village_id:  'v1',
+  village_id:  'madhepur',
   is_verified: true,
   setu_score:  720,
 };
