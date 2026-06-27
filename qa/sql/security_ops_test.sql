@@ -18,11 +18,13 @@ values
   ('00000000-0000-0000-0000-000000000000','99999999-9999-9999-9999-999999999999','authenticated','authenticated','super@test.local','{}','{}', now(), now(), now()),
   ('00000000-0000-0000-0000-000000000000','11111111-1111-1111-1111-111111111111','authenticated','authenticated','c1@test.local','{}','{}', now(), now(), now()),
   ('00000000-0000-0000-0000-000000000000','22222222-2222-2222-2222-222222222222','authenticated','authenticated','c2@test.local','{}','{}', now(), now(), now()),
-  ('00000000-0000-0000-0000-000000000000','33333333-3333-3333-3333-333333333333','authenticated','authenticated','vo@test.local','{}','{}', now(), now(), now());
-update profiles set role='super_admin', name='Super' where id='99999999-9999-9999-9999-999999999999';
-update profiles set role='customer',    name='Keep'  where id='11111111-1111-1111-1111-111111111111';
-update profiles set role='customer',    name='Dup'   where id='22222222-2222-2222-2222-222222222222';
-update profiles set role='vendor',       name='Vend'  where id='33333333-3333-3333-3333-333333333333';
+  ('00000000-0000-0000-0000-000000000000','33333333-3333-3333-3333-333333333333','authenticated','authenticated','vo@test.local','{}','{}', now(), now(), now()),
+  ('00000000-0000-0000-0000-000000000000','88888888-8888-8888-8888-888888888888','authenticated','authenticated','admin2@test.local','{}','{}', now(), now(), now());
+update profiles set role='super_admin', name='Super'  where id='99999999-9999-9999-9999-999999999999';
+update profiles set role='customer',    name='Keep'   where id='11111111-1111-1111-1111-111111111111';
+update profiles set role='customer',    name='Dup'    where id='22222222-2222-2222-2222-222222222222';
+update profiles set role='vendor',       name='Vend'   where id='33333333-3333-3333-3333-333333333333';
+update profiles set role='admin',        name='Admin2' where id='88888888-8888-8888-8888-888888888888';
 
 insert into vendors (id, owner_id, name, category, is_active)
 values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','33333333-3333-3333-3333-333333333333','Vend Store','grocery', true);
@@ -92,9 +94,9 @@ end $$;
 do $$
 declare v jsonb;
 begin
-  -- cannot impersonate an admin
+  -- cannot impersonate an admin (a DIFFERENT admin, not the caller)
   begin
-    perform begin_impersonation('99999999-9999-9999-9999-999999999999', 'why');
+    perform begin_impersonation('88888888-8888-8888-8888-888888888888', 'why');
     raise exception 'FAIL T4: impersonated an admin';
   exception when others then
     if position('another admin' in sqlerrm) > 0 then raise notice 'PASS T4a: cannot impersonate admin';
