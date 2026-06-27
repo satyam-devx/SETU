@@ -410,7 +410,7 @@ declare v jsonb;
 begin
   v := create_order('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
        '[{"product_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","qty":1}]'::jsonb,
-       'COD','House 1','vtest',null,true);
+       'COD','House 1','vtest',null,false);
   if not (v->>'success')::boolean then raise exception 'FAIL G: create_order failed: %', v->>'error'; end if;
   insert into _t values ('G_order', v->>'id');
 end $$;
