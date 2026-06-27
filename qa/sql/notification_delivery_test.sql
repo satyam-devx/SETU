@@ -80,7 +80,10 @@ begin
 end $$;
 
 -- ── T4: worker claims, marks, stats reflect ──
+-- Simulate a service_role caller: claim_pending_deliveries/mark_delivery
+-- gate on auth.role() (the JWT role claim), not the DB role.
 reset role;
+set local request.jwt.claims = '{"role":"service_role"}';
 set local role service_role;
 do $$
 declare r record; v_marked int := 0;
