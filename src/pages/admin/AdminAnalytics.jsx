@@ -33,7 +33,7 @@ function fmtK(n) {
 export default function AdminAnalytics() {
   const [period,    setPeriod]    = useState('30');
   const [analytics, setAnalytics] = useState(null);
-  const [orders,    setOrders]    = useState([]);
+  const [rev,       setRev]       = useState(null);
   const [loading,   setLoading]   = useState(true);
   const [refreshing,setRefreshing]= useState(false);
 
@@ -41,13 +41,13 @@ export default function AdminAnalytics() {
     if (manual) setRefreshing(true);
     else setLoading(true);
 
-    const [analyticsRes, ordersRes] = await Promise.all([
+    const [analyticsRes, revRes] = await Promise.all([
       AdminAPI.getLiveAnalytics(),
       AdminAPI.getRevenueAnalytics({ days: Number(period) }),
     ]);
 
     if (analyticsRes.data) setAnalytics(analyticsRes.data);
-    if (ordersRes.data)    setOrders(ordersRes.data ?? []);
+    if (revRes.data)       setRev(revRes.data);
 
     setLoading(false);
     setRefreshing(false);
@@ -55,17 +55,13 @@ export default function AdminAnalytics() {
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Derived charts ─────────────────────────────────────
+  // ── Derived charts (pre-aggregated server-side; see migration 047) ──
   // Daily revenue + order count
-  const dailyMap = {};
-  orders.forEach(o => {
-    const day = o.created_at?.slice(0, 10) ?? '';
-    if (!day) return;
-    if (!dailyMap[day]) dailyMap[day] = { day: day.slice(5), revenue: 0, orders: 0 };
-    dailyMap[day].revenue += Number(o.total ?? 0);
-    dailyMap[day].orders  += 1;
-  });
-  const dailyData = Object.values(dailyMap).slice(-Number(period));
+  const dailyData = (rev?.daily ?? []).map(d => ({
+    day:     d.date?.slice(5) ?? '',
+    revenue: Number(d.revenue ?? 0),
+    orders:  d.orders,
+  }));
 
   // Payment mix pie
   const a = analytics ?? {};
@@ -76,17 +72,8 @@ export default function AdminAnalytics() {
     { name: 'Credit', value: a.credit_orders ?? 0 },
   ].filter(p => p.value > 0);
 
-  // Top vendors by order volume from raw orders
-  const vendorMap = {};
-  orders.forEach(o => {
-    const vn = o.vendor_name ?? 'Unknown';
-    if (!vendorMap[vn]) vendorMap[vn] = { name: vn, orders: 0, revenue: 0 };
-    vendorMap[vn].orders  += 1;
-    vendorMap[vn].revenue += Number(o.total ?? 0);
-  });
-  const topVendors = Object.values(vendorMap)
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 5);
+  // Top vendors by revenue (server-aggregated)
+  const topVendors = (rev?.top_vendors ?? []).slice(0, 5);
 
   return (
     <div className="flex-1 overflow-auto pb-10">

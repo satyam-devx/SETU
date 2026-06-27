@@ -148,19 +148,19 @@ security definer
 set search_path = public
 as $$
 declare
-  v_escrow_balance  numeric;
-  v_payout_id       uuid;
+  v_escrow    vendor_escrow%rowtype;
+  v_payout_id uuid;
 begin
-  select balance into v_escrow_balance from vendor_escrow where vendor_id = p_vendor_id;
+  select * into v_escrow from vendor_escrow where vendor_id = p_vendor_id;
   if not found then
     return jsonb_build_object('success', false, 'error', 'Vendor escrow account not found');
   end if;
 
-  if v_escrow_balance < p_amount then
+  if v_escrow.balance < p_amount then
     return jsonb_build_object(
       'success',          false,
       'error',            'Insufficient escrow balance',
-      'escrow_balance',   v_escrow_balance,
+      'escrow_balance',   v_escrow.balance,
       'requested_amount', p_amount
     );
   end if;
@@ -209,20 +209,16 @@ security definer
 set search_path = public
 as $$
 declare
-  v_payout_status    text;
-  v_payout_amount    numeric;
-  v_payout_vendor_id uuid;
+  v_payout vendor_payouts%rowtype;
 begin
-  select status, amount, vendor_id
-    into v_payout_status, v_payout_amount, v_payout_vendor_id
-    from vendor_payouts where id = p_payout_id;
+  select * into v_payout from vendor_payouts where id = p_payout_id;
   if not found then
     return jsonb_build_object('success', false, 'error', 'Payout not found');
   end if;
 
-  if v_payout_status not in ('pending', 'processing') then
+  if v_payout.status not in ('pending', 'processing') then
     -- Idempotency: a retried webhook for an already-finalised payout is a no-op.
-    return jsonb_build_object('success', true, 'skipped', true, 'status', v_payout_status);
+    return jsonb_build_object('success', true, 'skipped', true, 'status', v_payout.status);
   end if;
 
   update vendor_payouts set
@@ -236,22 +232,22 @@ begin
   if p_status = 'failed' then
     -- Return reserved funds to escrow.
     update vendor_escrow set
-      balance    = balance + v_payout_amount,
+      balance    = balance + v_payout.amount,
       updated_at = now()
-    where vendor_id = v_payout_vendor_id;
+    where vendor_id = v_payout.vendor_id;
   else
     update vendor_escrow set
-      total_paid_out = total_paid_out + v_payout_amount,
+      total_paid_out = total_paid_out + v_payout.amount,
       updated_at      = now()
-    where vendor_id = v_payout_vendor_id;
+    where vendor_id = v_payout.vendor_id;
   end if;
 
   insert into audit_log (actor_id, actor, action, target, detail)
   values (
     null, 'system',
     'vendor_payout_' || p_status,
-    v_payout_vendor_id::text,
-    format('Payout %s: ₹%s %s', p_payout_id, v_payout_amount, coalesce(p_failure_reason, ''))
+    v_payout.vendor_id::text,
+    format('Payout %s: ₹%s %s', p_payout_id, v_payout.amount, coalesce(p_failure_reason, ''))
   );
 
   return jsonb_build_object('success', true, 'payout_id', p_payout_id, 'status', p_status);

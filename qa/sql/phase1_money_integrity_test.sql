@@ -364,6 +364,133 @@ begin
 end $$;
 reset role;
 
+-- ═══════════════════════════════════════════════════════════════
+-- TEST F — get_vendor_orders authorization (migration 049)
+-- ═══════════════════════════════════════════════════════════════
+-- F1: an outsider (not the vendor owner, not an admin) cannot read a
+--     vendor's order book.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}';
+do $$
+begin
+  begin
+    perform * from get_vendor_orders('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    raise exception 'FAIL F1: outsider read another vendor''s orders';
+  exception when others then
+    if position('not your vendor' in sqlerrm) > 0 then raise notice 'PASS F1: get_vendor_orders denied to outsider';
+    else raise; end if;
+  end;
+end $$;
+reset role;
+
+-- F2: the vendor owner reads their own order book.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"33333333-3333-3333-3333-333333333333","role":"authenticated"}';
+do $$
+declare n int;
+begin
+  select count(*) into n from get_vendor_orders('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  if n < 1 then raise exception 'FAIL F2: owner got % rows, expected >= 1', n; end if;
+  raise notice 'PASS F2: vendor owner read own orders (% rows)', n;
+end $$;
+reset role;
+
+-- ═══════════════════════════════════════════════════════════════
+-- TEST G — order write-path lockdown (migration 050)
+-- ═══════════════════════════════════════════════════════════════
+-- Build a fresh order and drive it to 'ready' through the proper RPC
+-- chain (customer create → vendor confirm/prepare/ready), then prove the
+-- rider claim/assign RPCs work and that direct client UPDATE is blocked.
+
+-- Customer C1 places a COD order.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}';
+do $$
+declare v jsonb;
+begin
+  v := create_order('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+       '[{"product_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","qty":1}]'::jsonb,
+       'COD','House 1','vtest',null,true);
+  if not (v->>'success')::boolean then raise exception 'FAIL G: create_order failed: %', v->>'error'; end if;
+  insert into _t values ('G_order', v->>'id');
+end $$;
+reset role;
+
+-- Vendor advances pending → confirmed → preparing → ready.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"33333333-3333-3333-3333-333333333333","role":"authenticated"}';
+do $$
+declare oid uuid; v jsonb;
+begin
+  select t.v::uuid into oid from _t t where t.k='G_order';
+  v := update_order_status(oid,'confirmed',null,'{}'::jsonb); if (v->>'error') is not null then raise exception 'FAIL G: confirm: %', v->>'error'; end if;
+  v := update_order_status(oid,'preparing',null,'{}'::jsonb); if (v->>'error') is not null then raise exception 'FAIL G: preparing: %', v->>'error'; end if;
+  v := update_order_status(oid,'ready',null,'{}'::jsonb);     if (v->>'error') is not null then raise exception 'FAIL G: ready: %', v->>'error'; end if;
+end $$;
+reset role;
+
+-- G1: a rider claims the unassigned, ready order.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"44444444-4444-4444-4444-444444444444","role":"authenticated"}';
+do $$
+declare oid uuid; v jsonb;
+begin
+  select t.v::uuid into oid from _t t where t.k='G_order';
+  v := claim_order(oid);
+  if not (v->>'success')::boolean then raise exception 'FAIL G1: claim failed: %', v::text; end if;
+  raise notice 'PASS G1: rider claimed ready order';
+end $$;
+reset role;
+
+do $$
+declare st text; rid uuid; oid uuid;
+begin
+  select t.v::uuid into oid from _t t where t.k='G_order';
+  select status, rider_id into st, rid from orders where id=oid;
+  if st <> 'picked_up' then raise exception 'FAIL G1b: status % expected picked_up', st; end if;
+  if rid <> 'cccccccc-cccc-cccc-cccc-cccccccccccc' then raise exception 'FAIL G1b: rider_id % expected R1', rid; end if;
+  raise notice 'PASS G1b: order picked_up and assigned to the claiming rider';
+end $$;
+
+-- G2: a second rider cannot claim an already-assigned order.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"55555555-5555-5555-5555-555555555555","role":"authenticated"}';
+do $$
+declare oid uuid;
+begin
+  select t.v::uuid into oid from _t t where t.k='G_order';
+  begin
+    perform claim_order(oid);
+    raise exception 'FAIL G2: second rider claimed an assigned order';
+  exception when others then
+    if position('already assigned' in sqlerrm) > 0 then raise notice 'PASS G2: double-claim rejected';
+    else raise; end if;
+  end;
+end $$;
+reset role;
+
+-- G3: the assigned rider can NO LONGER bypass the state machine with a
+--     direct UPDATE (the column-unrestricted policy is gone → RLS denies,
+--     0 rows). This is the COD-evasion hole, closed.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"44444444-4444-4444-4444-444444444444","role":"authenticated"}';
+do $$
+declare oid uuid;
+begin
+  select t.v::uuid into oid from _t t where t.k='G_order';
+  update orders set status='delivered' where id=oid;
+end $$;
+reset role;
+
+do $$
+declare st text; oid uuid;
+begin
+  select t.v::uuid into oid from _t t where t.k='G_order';
+  select status into st from orders where id=oid;
+  if st = 'delivered' then raise exception 'FAIL G3: rider bypassed the state machine via direct UPDATE'; end if;
+  raise notice 'PASS G3: direct rider UPDATE blocked (status still %)', st;
+end $$;
+
 do $$
 begin
   raise notice '═══════════════════════════════════════════';

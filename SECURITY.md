@@ -21,6 +21,15 @@ violations, no service degradation, no data destruction) will not be pursued.
   gateway except the HMAC-verified Razorpay webhook.
 - Row-Level Security on every table; security-definer RPCs with explicit
   ownership/role checks for all money and config paths (migrations 013–020).
+- `EXECUTE` on money/escrow/internal RPCs revoked from `PUBLIC` and granted
+  only to the roles that need them (migration 035); self-guarding admin RPCs
+  (`ban_user`, `assign_role`, …) keep their `authenticated` grant and enforce
+  `has_permission()` internally.
+- Cross-user admin reads (dashboard, village stats, revenue analytics, hourly
+  orders) are server-side `SECURITY DEFINER` aggregates gated by `is_admin()` —
+  no raw table downloads to the browser (migrations 044, 046, 047, 048).
+- Private Storage buckets with owner/role policies; `kyc-documents` is not
+  publicly readable (migration 045).
 - Server-authoritative order pricing (`create_order`) — clients cannot set
   totals or item prices.
 - CSP + HSTS + security headers (`public/_headers`) on Cloudflare; CORS
@@ -68,7 +77,10 @@ launch, commission one and scope it to at least:
 
 - Supabase JWTs live in `localStorage` — mitigated by CSP, not eliminated.
   Moving to an `HttpOnly` cookie via an auth proxy is the durable fix (deferred).
-- `update_order_status` / `assignRider` direct-table paths: status RPC is now
-  role-gated (migration 017/019), but confirm the rider self-assignment flow.
+- `update_order_status` is role-gated (migrations 017/019); the rider
+  self-assignment and rating paths now also go through SECURITY DEFINER RPCs
+  (`claim_order`, `admin_assign_rider`, `rate_order`) and all column-unrestricted
+  client UPDATE policies on `orders` were dropped (migration 050), so order
+  writes can no longer bypass the state machine.
 - Full declarative partitioning and a dedicated async payment worker are
   deferred (see `SCALING.md`).

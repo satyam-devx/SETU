@@ -25,9 +25,14 @@ function fmtK(n) {
   return `₹${n}`;
 }
 
+function fmtDay(iso) {
+  if (!iso) return '';
+  return new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
 export default function SuperAdminAnalytics() {
   const [period,    setPeriod]    = useState('30');
-  const [orders,    setOrders]    = useState([]);
+  const [rev,       setRev]       = useState(null);
   const [stats,     setStats]     = useState(null);
   const [loading,   setLoading]   = useState(true);
   const [refreshing,setRefreshing]= useState(false);
@@ -36,13 +41,13 @@ export default function SuperAdminAnalytics() {
     if (manual) setRefreshing(true);
     else setLoading(true);
 
-    const [ordersRes, statsRes] = await Promise.all([
+    const [revRes, statsRes] = await Promise.all([
       AdminAPI.getRevenueAnalytics({ days: Number(period) }),
       AdminAPI.getLiveAnalytics(),
     ]);
 
-    if (ordersRes.data) setOrders(ordersRes.data ?? []);
-    if (statsRes.data)  setStats(statsRes.data);
+    if (revRes.data)   setRev(revRes.data);
+    if (statsRes.data) setStats(statsRes.data);
 
     setLoading(false);
     setRefreshing(false);
@@ -50,50 +55,17 @@ export default function SuperAdminAnalytics() {
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Derived charts ──────────────────────────────────────
-  const dailyData = useMemo(() => {
-    const map = {};
-    orders.forEach(o => {
-      const day = new Date(o.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-      map[day] = map[day] ?? { date: day, orders: 0, revenue: 0, cancelled: 0 };
-      map[day].orders++;
-      map[day].revenue += Number(o.total ?? 0);
-      if (o.status === 'cancelled') map[day].cancelled++;
-    });
-    return Object.values(map);
-  }, [orders]);
+  // ── Derived charts (pre-aggregated server-side; see migration 047) ──
+  const dailyData = useMemo(
+    () => (rev?.daily ?? []).map(d => ({ date: fmtDay(d.date), orders: d.orders, revenue: Number(d.revenue ?? 0) })),
+    [rev]
+  );
+  const paymentMix        = useMemo(() => rev?.payment_mix ?? [], [rev]);
+  const vendorPerformance = useMemo(() => (rev?.top_vendors ?? []).slice(0, 8), [rev]);
+  const villageData       = useMemo(() => (rev?.villages ?? []).slice(0, 6), [rev]);
 
-  const paymentMix = useMemo(() => {
-    const map = {};
-    orders.forEach(o => {
-      const method = o.payment_method ?? 'unknown';
-      map[method] = (map[method] ?? 0) + 1;
-    });
-    return Object.entries(map).map(([name, value]) => ({ name, value }));
-  }, [orders]);
-
-  const vendorPerformance = useMemo(() => {
-    const map = {};
-    orders.forEach(o => {
-      if (!o.vendor_name) return;
-      map[o.vendor_name] = map[o.vendor_name] ?? { name: o.vendor_name, orders: 0, revenue: 0 };
-      map[o.vendor_name].orders++;
-      map[o.vendor_name].revenue += Number(o.total ?? 0);
-    });
-    return Object.values(map).sort((a, b) => b.orders - a.orders).slice(0, 8);
-  }, [orders]);
-
-  const villageData = useMemo(() => {
-    const map = {};
-    orders.forEach(o => {
-      if (!o.village) return;
-      map[o.village] = (map[o.village] ?? 0) + 1;
-    });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 6)
-      .map(([name, orders]) => ({ name, orders }));
-  }, [orders]);
-
-  const totalRevenue = orders.reduce((s, o) => s + Number(o.total ?? 0), 0);
+  const totalRevenue = Number(rev?.total_revenue ?? 0);
+  const totalOrders  = Number(rev?.total_orders ?? 0);
   const s = stats ?? {};
 
   return (
@@ -121,7 +93,7 @@ export default function SuperAdminAnalytics() {
         {/* Summary stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
           <StatCard title="Total Revenue"  value={loading ? '…' : fmtK(totalRevenue)} icon={IndianRupee} />
-          <StatCard title="Total Orders"   value={loading ? '…' : String(orders.length)} icon={ShoppingBag} />
+          <StatCard title="Total Orders"   value={loading ? '…' : String(totalOrders)} icon={ShoppingBag} />
           <StatCard title="Active Vendors" value={loading ? '…' : String(s.totalVendors ?? 0)} icon={Store} />
           <StatCard title="Online Riders"  value={loading ? '…' : String(s.onlineRiders ?? 0)} icon={Store} />
         </div>

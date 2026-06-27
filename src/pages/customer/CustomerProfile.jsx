@@ -127,7 +127,7 @@ export default function CustomerProfile() {
           <div className="flex items-center gap-4">
             {/* Avatar with camera button */}
             <div className="relative shrink-0">
-              <div className="w-16 h-16 rounded-2xl bg-primary/5 flex items-center justify-center text-2xl font-bold text-primary">
+              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary">
                 {displayInitials}
               </div>
               <button
@@ -149,7 +149,7 @@ export default function CustomerProfile() {
               )}
 
               <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <span className="text-xs bg-primary/5 text-primary px-2 py-0.5 rounded-full font-bold">
+                <span className="text-xs bg-primary/15 text-primary px-2 py-0.5 rounded-full font-bold">
                   SETU Score: {setuScore}
                 </span>
                 {selectedVillage && (

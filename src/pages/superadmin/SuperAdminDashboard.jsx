@@ -36,7 +36,7 @@ function relTime(iso) {
 
 export default function SuperAdminDashboard() {
   const [stats,      setStats]      = useState(null);
-  const [revenue,    setRevenue]    = useState([]);
+  const [revenue,    setRevenue]    = useState(null);
   const [auditLog,   setAuditLog]   = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -52,7 +52,7 @@ export default function SuperAdminDashboard() {
     ]);
 
     if (liveRes.data)    setStats(liveRes.data);
-    if (revenueRes.data) setRevenue(revenueRes.data ?? []);
+    if (revenueRes.data) setRevenue(revenueRes.data);
     if (auditRes.data)   setAuditLog(auditRes.data ?? []);
 
     setLoading(false);
@@ -61,17 +61,15 @@ export default function SuperAdminDashboard() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Build daily GMV trend from raw orders
+  // Daily GMV trend (pre-aggregated server-side; see migration 047)
   const gmvByDay = React.useMemo(() => {
-    const map = {};
-    (revenue ?? []).forEach(o => {
-      const day = new Date(o.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-      map[day] = (map[day] ?? 0) + Number(o.total ?? 0);
-    });
-    return Object.entries(map).slice(-14).map(([date, gmv]) => ({ date, gmv }));
+    return (revenue?.daily ?? []).slice(-14).map(d => ({
+      date: new Date(d.date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
+      gmv:  Number(d.revenue ?? 0),
+    }));
   }, [revenue]);
 
-  const totalGMV   = revenue.reduce((s, o) => s + Number(o.total ?? 0), 0);
+  const totalGMV = Number(revenue?.total_revenue ?? 0);
   const s = stats ?? {};
 
   return (

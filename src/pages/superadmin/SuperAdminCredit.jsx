@@ -6,7 +6,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import {
   CreditCard, TrendingUp, AlertTriangle, Search,
-  CheckCircle, RefreshCw, User, MapPin,
+  CheckCircle, RefreshCw, User, Clock, XCircle, IndianRupee,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,7 @@ import StatCard from '@/components/shared/StatCard';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { supabase } from '@/lib/supabase';
+import { useToast } from '@/components/ui/use-toast';
 
 function fmtK(n) {
   n = Number(n ?? 0);
@@ -27,7 +28,7 @@ function fmtK(n) {
 }
 
 async function fetchCreditData() {
-  const [accountsRes, txnsRes] = await Promise.all([
+  const [accountsRes, txnsRes, pendingRes] = await Promise.all([
     supabase
       .from('credit_accounts')
       .select('*, profiles!user_id(name, role, phone, villages(name))')
@@ -38,8 +39,18 @@ async function fetchCreditData() {
       .select('type, amount, created_at, status')
       .order('created_at', { ascending: true })
       .limit(500),
+    supabase
+      .from('credit_disbursements')
+      .select('*, profiles!user_id(name, phone)')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(50),
   ]);
-  return { data: { accounts: accountsRes.data ?? [], txns: txnsRes.data ?? [] } };
+  return { data: {
+    accounts: accountsRes.data ?? [],
+    txns:     txnsRes.data ?? [],
+    pending:  pendingRes.data ?? [],
+  } };
 }
 
 const STATUS_STYLE = {
@@ -51,6 +62,8 @@ const STATUS_STYLE = {
 export default function SuperAdminCredit() {
   const [tab,   setTab]   = useState('all');
   const [query, setQuery] = useState('');
+  const [reviewingId, setReviewingId] = useState(null);
+  const { toast } = useToast();
 
   const { data, isLoading, error, refetch } = useDataFetch(
     fetchCreditData,
@@ -60,6 +73,21 @@ export default function SuperAdminCredit() {
 
   const accounts = data?.accounts ?? [];
   const txns     = data?.txns     ?? [];
+  const pending  = data?.pending  ?? [];
+
+  const handleReview = async (id, approve) => {
+    setReviewingId(id);
+    const { data: res, error: e } = await supabase.rpc('review_credit_request', {
+      p_id: id, p_approve: approve, p_note: null,
+    });
+    setReviewingId(null);
+    if (e || !res?.success) {
+      toast({ title: 'Action failed', description: e?.message || 'Try again.', variant: 'destructive' });
+      return;
+    }
+    toast({ title: approve ? 'Credit approved & disbursed' : 'Request rejected' });
+    refetch();
+  };
 
   // Disbursement vs repayment trend by month
   const trendData = useMemo(() => {
@@ -116,6 +144,39 @@ export default function SuperAdminCredit() {
             icon={CheckCircle}
           />
         </div>
+
+        {/* Pending credit requests — approve/reject */}
+        {!isLoading && pending.length > 0 && (
+          <Card className="p-4 border-amber-300 bg-amber-50/40">
+            <div className="flex items-center gap-2 mb-3">
+              <Clock className="w-4 h-4 text-amber-600" />
+              <h3 className="font-semibold text-sm">Pending Credit Requests ({pending.length})</h3>
+            </div>
+            <div className="space-y-2">
+              {pending.map(req => (
+                <div key={req.id} className="flex items-center gap-2 bg-card rounded-xl border border-border p-3">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                    <IndianRupee className="w-4 h-4 text-primary" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold">₹{Number(req.amount).toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {req.profiles?.name ?? 'Applicant'}{req.purpose ? ` · ${req.purpose}` : ''}
+                    </p>
+                  </div>
+                  <Button size="sm" className="h-8 gap-1 text-xs" disabled={reviewingId === req.id}
+                    onClick={() => handleReview(req.id, true)}>
+                    <CheckCircle className="w-3.5 h-3.5" /> Approve
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" disabled={reviewingId === req.id}
+                    onClick={() => handleReview(req.id, false)}>
+                    <XCircle className="w-3.5 h-3.5" /> Reject
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
 
         {/* Trend chart */}
         {!isLoading && trendData.length > 0 && (

@@ -317,13 +317,16 @@ export async function cancelOrderWithRefund(orderId, actorId, actorRole = 'custo
 }
 
 export async function rateOrder({ orderId, vendorRating, riderRating, comment }) {
+  // Routed through the rate_order RPC (security definer, self-guarded to
+  // customer_id = auth.uid()). Direct client UPDATE on orders is locked
+  // down — see migration 050.
   return safeQuery(
-    () => supabase.from('orders').update({
-      vendor_rating:   vendorRating,
-      rider_rating:    riderRating,
-      rating_comment:  comment,
-      is_rated:        true,
-    }).eq('id', orderId).select().single(),
+    () => supabase.rpc('rate_order', {
+      p_order_id:      orderId,
+      p_vendor_rating: vendorRating,
+      p_rider_rating:  riderRating,
+      p_comment:       comment,
+    }),
     null,
     'rateOrder'
   );
@@ -362,14 +365,14 @@ export async function getAvailableOrders(villageId) {
   );
 }
 
-export async function assignRider(orderId, riderId, riderName) {
+export async function assignRider(orderId, _riderId, _riderName) {
+  // Rider self-claim of an unassigned 'ready' order. Routed through the
+  // claim_order RPC (security definer): the rider is derived server-side
+  // from auth.uid() and the order is row-locked, so a client can neither
+  // claim on another rider's behalf nor double-claim. The riderId/riderName
+  // args are ignored (kept for call-site compatibility). See migration 050.
   return safeQuery(
-    () => supabase.from('orders').update({
-      rider_id:   riderId,
-      rider_name: riderName,
-      status:     'picked_up',
-      picked_up_at: new Date().toISOString(),
-    }).eq('id', orderId).select().single(),
+    () => supabase.rpc('claim_order', { p_order_id: orderId }),
     null,
     'assignRider'
   );
@@ -740,23 +743,17 @@ export const CreditAPI = {
   ),
   getTransactions: (userId)  => getWalletTransactions(userId),
   applyCredit: async (userId, amount, purpose) => {
-    // Stub — credit approval logic is server-side in Phase 2
-    // For now: check limit, update outstanding
-    if (!isSupabaseConfigured) return ok({ approved: false, message: 'Demo mode' });
-    const { data: acct } = await CreditAPI.getAccount(userId);
-    if (!acct) return err({ message: 'No credit account found' }, 'CreditAPI.applyCredit');
-    const available = (acct.credit_limit || 0) - (acct.outstanding || 0);
-    if (amount > available) {
-      return err({ message: `Insufficient credit. Available: ₹${available}` }, 'CreditAPI.applyCredit');
-    }
-    return safeQuery(
-      () => supabase.from('credit_accounts')
-        .update({ outstanding: (acct.outstanding || 0) + amount })
-        .eq('user_id', userId)
-        .select().single(),
-      null,
-      'CreditAPI.applyCredit'
-    );
+    // SERVER-SIDE only: routes through the request_credit() RPC which
+    // validates the limit and records a PENDING credit_disbursements
+    // application (audited). The old client-side check + direct
+    // outstanding UPDATE was a privilege-escalation hole.
+    if (!isSupabaseConfigured) return ok({ success: false, message: 'Demo mode' });
+    const { data, error: e } = await supabase.rpc('request_credit', {
+      p_amount:  amount,
+      p_purpose: purpose ?? null,
+    });
+    if (e) return err(e, 'CreditAPI.applyCredit');
+    return ok(data);
   },
 };
 
@@ -864,6 +861,102 @@ export const RiderAPI = {
 
 export const SevaAPI = {
   getProviders:    (opts)           => getSevaProviders(opts),
+
+  // Resolve the seva_providers row for the logged-in user (own-read RLS).
+  getMyProvider:   async (userId)   => safeQuery(
+    () => supabase.from('seva_providers').select('*').eq('user_id', userId).maybeSingle(),
+    null,
+    'SevaAPI.getMyProvider'
+  ),
+
+  // Open jobs available to claim (RLS: status='open' visible to seva_providers).
+  getOpenJobs:     async ({ category } = {}) => safeQuery(
+    () => {
+      let q = supabase.from('seva_jobs').select('*').eq('status', 'open');
+      if (category && category !== 'All') q = q.eq('category', category);
+      return q.order('created_at', { ascending: false });
+    },
+    [],
+    'SevaAPI.getOpenJobs'
+  ),
+
+  // Claim an open job (SECURITY DEFINER RPC — direct update is RLS-blocked).
+  acceptJob:       async (jobId)    => {
+    if (!isSupabaseConfigured) return ok({ success: true });
+    const { data, error } = await supabase.rpc('accept_seva_job', { p_job_id: jobId });
+    if (error) return err(error, 'SevaAPI.acceptJob');
+    return ok(data);
+  },
+
+  // Mark an accepted job complete (credits provider stats).
+  completeJob:     async (jobId, { notes } = {}) => {
+    if (!isSupabaseConfigured) return ok({ success: true });
+    const { data, error } = await supabase.rpc('complete_seva_job', { p_job_id: jobId, p_notes: notes ?? null });
+    if (error) return err(error, 'SevaAPI.completeJob');
+    return ok(data);
+  },
+
+  // A single job by id (for the detail screen).
+  getJobById:      async (jobId)    => safeQuery(
+    () => supabase.from('seva_jobs').select('*').eq('id', jobId).single(),
+    null,
+    'SevaAPI.getJobById'
+  ),
+
+  // Provider toggles their own availability (own_update RLS).
+  setAvailable:    async (providerId, isAvailable) => safeQuery(
+    () => supabase.from('seva_providers')
+      .update({ is_available: isAvailable, updated_at: new Date().toISOString() })
+      .eq('id', providerId).select().single(),
+    null,
+    'SevaAPI.setAvailable'
+  ),
+
+  // Provider marks an accepted job as started (own-job update RLS).
+  startJob:        async (jobId)    => safeQuery(
+    () => supabase.from('seva_jobs')
+      .update({ status: 'in_progress', updated_at: new Date().toISOString() })
+      .eq('id', jobId).select().single(),
+    null,
+    'SevaAPI.startJob'
+  ),
+
+  // Create or update the caller's seva_providers row (own_insert/own_update RLS).
+  // New providers start unverified + offline with kyc_status='pending' — an
+  // admin verifies and assigns the seva_provider role before they go live.
+  saveProvider:    async (userId, data) => {
+    if (!isSupabaseConfigured) return ok({ id: 'demo', ...data });
+    const { data: existing } = await supabase
+      .from('seva_providers').select('id').eq('user_id', userId).maybeSingle();
+    if (existing) {
+      return safeQuery(
+        () => supabase.from('seva_providers')
+          .update({ ...data, updated_at: new Date().toISOString() })
+          .eq('id', existing.id).select().single(),
+        null, 'SevaAPI.saveProvider',
+      );
+    }
+    return safeQuery(
+      () => supabase.from('seva_providers')
+        .insert({ user_id: userId, is_available: false, is_verified: false, kyc_status: 'pending', ...data })
+        .select().single(),
+      null, 'SevaAPI.saveProvider',
+    );
+  },
+
+  // Earnings summary for the provider: live totals + completed-job history.
+  getEarnings:     async (userId)   => {
+    if (!isSupabaseConfigured) return ok({ provider: null, completed: [] });
+    const { data: provider } = await supabase
+      .from('seva_providers').select('*').eq('user_id', userId).maybeSingle();
+    if (!provider) return ok({ provider: null, completed: [] });
+    const { data: completed } = await supabase
+      .from('seva_jobs').select('*')
+      .eq('provider_id', provider.id).eq('status', 'completed')
+      .order('completed_at', { ascending: false });
+    return ok({ provider, completed: completed ?? [] });
+  },
+
   getJobs:         async (userId)   => {
     // seva_jobs.provider_id references seva_providers.id (not auth.uid directly).
     // Step 1: resolve the seva_providers row for this user.
@@ -1147,49 +1240,12 @@ export const AnchorAPI = {
 export async function getAdminDashboardStats() {
   if (!isSupabaseConfigured) return ok(null);
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const [
-      ordersRes,
-      todayOrdersRes,
-      vendorsRes,
-      ridersRes,
-      supportRes,
-      depositsRes,
-    ] = await Promise.all([
-      supabase.from('orders').select('id, status, total, rider_id, payment_method'),
-      supabase.from('orders').select('id, status, total').gte('created_at', today.toISOString()),
-      supabase.from('vendors').select('id, is_open, is_verified, kyc_status'),
-      supabase.from('riders').select('id, is_online, is_active, cod_balance'),
-      supabase.from('support_tickets').select('id, status'),
-      supabase.from('cod_deposits').select('id, amount, status'),
-    ]);
-
-    const orders      = ordersRes.data      ?? [];
-    const todayOrders = todayOrdersRes.data ?? [];
-    const vendors     = vendorsRes.data     ?? [];
-    const ridersList  = ridersRes.data      ?? [];
-    const tickets     = supportRes.data     ?? [];
-    const deposits    = depositsRes.data    ?? [];
-
-    return ok({
-      totalOrders:     orders.length,
-      activeOrders:    orders.filter(o => !['delivered','cancelled'].includes(o.status)).length,
-      pendingAssign:   orders.filter(o => !o.rider_id && !['delivered','cancelled'].includes(o.status)).length,
-      todayOrders:     todayOrders.length,
-      todayRevenue:    todayOrders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + (Number(o.total) || 0), 0),
-      totalRevenue:    orders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + (Number(o.total) || 0), 0),
-      activeVendors:   vendors.filter(v => v.is_open).length,
-      totalVendors:    vendors.length,
-      pendingVendors:  vendors.filter(v => !v.is_verified && v.kyc_status !== 'rejected').length,
-      onlineRiders:    ridersList.filter(r => r.is_online).length,
-      totalRiders:     ridersList.length,
-      openTickets:     tickets.filter(t => t.status === 'open').length,
-      totalCOD:        orders.filter(o => o.payment_method === 'COD' && o.status === 'delivered').reduce((s, o) => s + (Number(o.total) || 0), 0),
-      pendingDeposits: deposits.filter(d => d.status === 'pending_confirmation').reduce((s, d) => s + (Number(d.amount) || 0), 0),
-      riderCODBalance: ridersList.reduce((s, r) => s + (Number(r.cod_balance) || 0), 0),
-    });
+    // Server-side aggregation (one RPC) — see migration 046. Previously
+    // this downloaded the entire orders/vendors/riders/tickets/deposits
+    // tables to the browser and aggregated client-side.
+    const { data, error } = await supabase.rpc('get_admin_dashboard_live');
+    if (error) return err(error, 'getAdminDashboardStats');
+    return ok(data ?? {});
   } catch (e) {
     return err(e, 'getAdminDashboardStats');
   }
@@ -1197,31 +1253,30 @@ export async function getAdminDashboardStats() {
 
 /** Hourly order distribution for today (for the bar chart). */
 export async function getTodayHourlyOrders() {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const { data } = await supabase
-    .from('orders')
-    .select('created_at')
-    .gte('created_at', today.toISOString());
+  if (!isSupabaseConfigured) return ok([]);
+  // Server-side per-hour counts (one RPC) instead of downloading every
+  // order placed today and bucketing in the browser. See migration 048.
+  const { data, error } = await supabase.rpc('get_today_hourly_orders');
+  if (error) return err(error, 'getTodayHourlyOrders');
+
+  const counts = {};
+  (data ?? []).forEach(r => { counts[r.hour] = Number(r.orders ?? 0); });
 
   const buckets = Array.from({ length: 24 }, (_, i) => ({
     hr: `${i === 0 ? 12 : i > 12 ? i - 12 : i}${i < 12 ? 'AM' : 'PM'}`,
-    orders: 0,
+    orders: counts[i] ?? 0,
   }));
-  (data ?? []).forEach(o => {
-    const h = new Date(o.created_at).getHours();
-    buckets[h].orders++;
-  });
   // Return only 6AM–10PM for display
-  return { data: buckets.filter((_, i) => i >= 6 && i <= 22), error: null };
+  return ok(buckets.filter((_, i) => i >= 6 && i <= 22));
 }
 
-/** Admin: get ALL support tickets with reporter profile joined. */
-export async function getAdminSupportTickets({ status } = {}) {
+/** Admin: get support tickets with reporter profile joined (most recent first). */
+export async function getAdminSupportTickets({ status, limit = 300 } = {}) {
   let q = supabase
     .from('support_tickets')
     .select('*, profiles!support_tickets_user_id_fkey(id, name, role, phone)')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(limit);
   if (status) q = q.eq('status', status);
   return safeQuery(() => q, [], 'getAdminSupportTickets');
 }
@@ -1333,31 +1388,25 @@ export async function setSevaAvailable(providerId, isAvailable) {
 
 /** Admin: get all villages with per-village order/vendor aggregates. */
 export async function getAdminVillages() {
-  const [villagesRes, ordersRes, vendorsRes] = await Promise.all([
-    supabase.from('villages').select('*').order('name'),
-    supabase.from('orders').select('id, village_id, status'),
-    supabase.from('vendors').select('id, village_id, is_open, is_verified'),
-  ]);
+  // Server-side aggregation (one RPC) instead of downloading all orders +
+  // vendors and joining in the browser. See migration 044.
+  const { data, error } = await supabase.rpc('get_admin_village_stats');
+  if (error) {
+    console.error('[getAdminVillages] rpc failed:', error.message);
+    return { data: [], error };
+  }
 
-  const orders  = ordersRes.data  ?? [];
-  const vendors = vendorsRes.data ?? [];
-
-  const villages = (villagesRes.data ?? []).map(v => {
-    const vOrders  = orders.filter(o => o.village_id === v.id);
-    const vVendors = vendors.filter(vn => vn.village_id === v.id);
-    const health   = v.is_active
-      ? Math.min(100, 30 + vVendors.filter(vn => vn.is_open).length * 10 + Math.min(vOrders.length, 20) * 2)
+  const villages = (data ?? []).map(v => {
+    const totalOrders   = Number(v.total_orders);
+    const totalVendors  = Number(v.total_vendors);
+    const activeVendors = Number(v.active_vendors);
+    const health = v.is_active
+      ? Math.min(100, 30 + activeVendors * 10 + Math.min(totalOrders, 20) * 2)
       : 0;
-    return {
-      ...v,
-      totalOrders:   vOrders.length,
-      activeVendors: vVendors.filter(vn => vn.is_open).length,
-      totalVendors:  vVendors.length,
-      health,
-    };
+    return { ...v, totalOrders, totalVendors, activeVendors, health };
   });
 
-  return { data: villages, error: villagesRes.error };
+  return { data: villages, error: null };
 }
 
 /** Admin: get all orders with rider info. */
@@ -1374,14 +1423,14 @@ export async function getAdminOrders({ limit = 100 } = {}) {
 }
 
 /** Admin: assign a rider to an order. */
-export async function adminAssignRider(orderId, riderId, riderName) {
+export async function adminAssignRider(orderId, riderId, _riderName) {
+  // Routed through admin_assign_rider RPC (security definer, is_admin
+  // gated). Direct client UPDATE on orders is locked down — see migration 050.
   return safeQuery(
-    () => supabase
-      .from('orders')
-      .update({ rider_id: riderId, rider_name: riderName, status: 'confirmed' })
-      .eq('id', orderId)
-      .select()
-      .single(),
+    () => supabase.rpc('admin_assign_rider', {
+      p_order_id: orderId,
+      p_rider_id: riderId,
+    }),
     null,
     'adminAssignRider'
   );
@@ -2010,17 +2059,15 @@ export async function getAuditLog({ page = 0, limit = 50, action, actorId } = {}
 // ── Analytics (revenue trend, per-vendor) ────────────────
 
 export async function getRevenueAnalytics({ days = 30 } = {}) {
-  const since = new Date(Date.now() - days * 86400000).toISOString();
-  return safeQuery(
-    () => supabase
-      .from('orders')
-      .select('created_at, total, platform_fee, status, payment_method, vendor_name, village')
-      .gte('created_at', since)
-      .not('status', 'eq', 'cancelled')
-      .order('created_at', { ascending: true }),
-    [],
-    'getRevenueAnalytics'
-  );
+  if (!isSupabaseConfigured) {
+    return ok({ total_revenue: 0, total_orders: 0, daily: [], payment_mix: [], top_vendors: [], villages: [] });
+  }
+  // Server-side aggregation (one RPC) instead of downloading every
+  // non-cancelled order for the window and aggregating in the browser.
+  // See migration 047.
+  const { data, error } = await supabase.rpc('get_revenue_analytics', { p_days: days });
+  if (error) return err(error, 'getRevenueAnalytics');
+  return ok(data ?? { total_revenue: 0, total_orders: 0, daily: [], payment_mix: [], top_vendors: [], villages: [] });
 }
 
 export async function getVendorAnalytics(vendorId) {

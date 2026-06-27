@@ -13,6 +13,12 @@
 import { createContext, useContext, useReducer, useEffect } from 'react';
 import React from 'react';
 import { ORDERS, RIDERS, VENDORS, PRODUCTS, NOTIFICATIONS, WALLET } from './mockData';
+import { isSupabaseConfigured } from './supabase';
+
+// Mock seed data must ONLY appear in demo mode (no Supabase configured).
+// In production it would otherwise flash fake riders/notifications and a
+// fake ₹1250 wallet balance before DB hydration. Gate it explicitly.
+const DEMO = !isSupabaseConfigured;
 
 // ── ORDER STATUS MACHINE ──────────────────────────────────
 export const ORDER_STATUS = {
@@ -49,9 +55,9 @@ const initialState = {
   // Start with empty orders — hydrated from DB after auth.
   // Mock seed data only shown in demo mode (no Supabase configured).
   orders:          [],
-  riders:          RIDERS,
-  notifications:   NOTIFICATIONS,
-  wallet:          WALLET,
+  riders:          DEMO ? RIDERS : [],
+  notifications:   DEMO ? NOTIFICATIONS : [],
+  wallet:          DEMO ? WALLET : { balance: 0, setuCredits: 0 },
   currentUser:     null,
   riderOnline:     true,
   vendorOnline:    true,

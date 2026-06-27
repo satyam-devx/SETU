@@ -53,6 +53,25 @@ lists). **Migrate incrementally:** `CustomerHome`, `CustomerProductDetail`,
   ≤ 500 KB, FCP ≤ 1800 ms, LCP ≤ 2500 ms.
 - **Load testing:** see `SCALING.md` (k6 catalog + smoke tests).
 
+## Data-path payloads — server-side aggregates
+
+Bytes-over-the-wire isn't only about the JS bundle. Several admin/analytics
+screens used to download whole tables and aggregate in the browser. These are
+now single `SECURITY DEFINER`, `is_admin()`-gated RPCs that return one small
+JSON object computed with indexed `COUNT`/`SUM`/`GROUP BY`:
+
+| Screen / call | Was | Now |
+|---|---|---|
+| Admin dashboard (`getStats`) | full orders + vendors + riders + tickets + deposits | `get_admin_dashboard_live()` (migration 046) |
+| Analytics × 3 (`getRevenueAnalytics`) | every non-cancelled order, up to 90 days | `get_revenue_analytics(days)` (migration 047) |
+| Admin villages | full orders + vendors join | `get_admin_village_stats()` (migration 044) |
+| Dashboard hourly chart | every order placed today | `get_today_hourly_orders()` (migration 048) |
+
+This bounds the payload regardless of table growth and keeps cross-user raw
+rows server-side. Other admin lists are already bounded (`getAdminOrders`
+`limit 100`; `getAllUsers`/`getAdminDisputes` paginated; `getAdminSupportTickets`
+capped at 300 most-recent).
+
 ## Still worth doing (incremental)
 
 - Finish migrating remaining `<img>` usages to `<Img>`.

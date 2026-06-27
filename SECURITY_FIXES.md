@@ -172,41 +172,131 @@ These were found during the same sweep but were **not** changed,
 because a quick fix risks breaking real, currently-working multi-role
 flows without proper testing against the actual UI:
 
-- **`update_order_status`** (the one in `initial_schema.sql`, actively
-  called from `src/lib/api.js`) has no check that the caller is the
-  order's vendor/rider/customer or an admin — any authenticated user
-  can advance any order's status, and a `delivered` transition credits
-  *some other rider's* `today_earnings`/`cod_balance` if `p_meta.rider_id`
-  is supplied. Needs a role-aware rewrite (vendor can confirm/prepare,
-  rider can pick-up/deliver, admin can override) — that requires
-  knowing the exact intended permission matrix per role, which should
-  come from you, not be guessed.
-- **`get_vendor_orders(p_vendor_id)`** — needs verifying whether it's
-  `security definer` and whether it returns full order detail (customer
-  name, payment info) for *any* vendor_id regardless of caller.
-- Several other `security definer` functions weren't individually
-  audited in this pass (e.g. anything in `database/functions_phase0_payments.sql`
-  not ported: `cancel_order_with_refund`, `create_rider_payment_batch`,
-  `confirm_rider_payment`). **Treat the entire legacy `database/` tree
-  as unverified** until each function is either ported with a
-  same-scrutiny pass like this one, or confirmed dead and dropped.
-- **Dual migration trees**: `database/` vs `supabase/migrations/` is
-  still not unified — only specific functions needed by this round of
-  fixes were ported. Recommend picking ONE canonical tree and deleting
-  the other, rather than continuing to port piecemeal.
+- **`update_order_status`** — ✅ **RESOLVED in migration 017 (CRITICAL-B),
+  refined in 019.** This flag was written when migrations only went up to
+  `016`; `017` landed immediately after and rewrote the function to derive the
+  caller from `auth.uid()`, enforce a per-role transition matrix
+  (vendor: confirm/prepare/ready/cancel · rider: pick-up/on-the-way/deliver ·
+  customer: cancel · admin: any), validate the state machine, and honour
+  `p_meta.rider_id/rider_name` **only** for admin/backend callers — so a rider
+  can no longer credit a different rider's earnings, and `delivered` credits
+  the order's already-assigned rider. Proven end-to-end by
+  `qa/sql/phase1_money_integrity_test.sql` TEST B (B1 outsider rejected,
+  B2/B2b no cross-rider credit, B3/B3c assigned-rider delivery + correct
+  crediting).
+- **`get_vendor_orders(p_vendor_id)`** — ✅ **RESOLVED in migration 049.** It
+  was `SECURITY DEFINER`, `language sql`, with no caller check and no
+  `set search_path` — any authenticated user could read any vendor's full
+  order book (customer names, payment info, line items) by passing an
+  arbitrary `p_vendor_id`. Nothing in `src/` calls it (the vendor portal uses
+  a direct, RLS-governed `from('orders')` query), so it was dead-but-dangerous
+  code. Rewritten with an owner-or-admin guard (backend/`service_role`
+  unrestricted) and `set search_path = public`. Proven by
+  `qa/sql/phase1_money_integrity_test.sql` TEST F (F1 outsider denied, F2 owner
+  reads own orders).
+- **Legacy `database/` tree** — ✅ **RESOLVED.** The three functions this flag
+  named (`cancel_order_with_refund`, `create_rider_payment_batch`,
+  `confirm_rider_payment`) were ported with a same-scrutiny pass in migrations
+  017 and 018, along with `credit_wallet`, `record_delivery_split`,
+  `compute_fee_split`, `initiate_vendor_payout`, `confirm_vendor_payout` (015)
+  — each with explicit `revoke execute … from authenticated, anon` (money
+  movement is service_role-only). Migration 018's note records that the legacy
+  tree then "carries nothing the deployed schema lacks." The directory itself
+  no longer exists in the repo.
+- **Dual migration trees** — ✅ **RESOLVED (Phase-2 unification).**
+  `supabase/migrations/` is now the single canonical, CI-deployed tree; the
+  legacy `database/` tree was removed (see `scripts/validate_migrations.py`,
+  `qa/scripts/run-security-suite.js`, and the nightly workflow, which now
+  *assembles* `database/rls.sql` at runtime from `supabase/migrations/*.sql`
+  purely as an audit snapshot — it is an output artifact, not a source tree).
 - **Full distributed rate limiting / WAF**: the Postgres-backed
   `check_rate_limit()` added here is real but per-database, not
   per-edge — a sufaciently distributed attacker can still exceed it.
   GitHub Pages has no WAF/rate-limit layer in front of it; this needs
   an infra change (e.g. Cloudflare in front, or move off Pages).
-- **Test suite still tests reimplemented logic, not the real code**
-  (per the original audit) — none of the fixes above are exercised by
-  the existing Vitest/Playwright suite. Worth a follow-up pass to wire
-  real integration tests against a local Supabase instance.
-- Everything in the original audit's P3–P5 roadmap (hosting/CDN/WAF
-  migration off GitHub Pages, observability, bundle diet, partitioning,
-  load testing, mock-data page replacement, migration-tree unification)
-  is unchanged.
+- **Test suite — partially addressed.** Two complementary layers now exercise
+  the *real* implementation: (1) executable SQL proofs run the actual RPCs/RLS
+  against a real Postgres in CI (`qa/sql/phase1_money_integrity_test.sql`
+  TEST A–G, `seva_credit_test.sql` T1–T18); (2) `qa/tests/unit/api-rpc-contracts.test.js`
+  imports the real `src/lib/api.js` and asserts the frontend↔RPC contract
+  (claim_order / admin_assign_rider / rate_order / request_credit /
+  accept_seva_job / get_revenue_analytics / get_admin_dashboard_live /
+  get_today_hourly_orders) with the supabase client mocked. Remaining gap:
+  broader component/e2e coverage of the de-mocked Seva and admin screens
+  (Playwright) — still mostly mock-based.
+- Remaining items from the original audit's P3–P5 roadmap (hosting/CDN/WAF
+  migration off GitHub Pages, observability, bundle diet, partitioning, load
+  testing) are tracked separately. Note: **migration-tree unification is done**
+  (above), and **mock-data replacement** has since been carried out across the
+  Seva portal and admin analytics (see Part 4 and the Round-3 frontend work).
+
+---
+
+## Part 4 — Round 3 (full-project audit follow-up: migrations 035–048)
+
+A later full-project audit pass hardened the RPC surface generically and
+de-mocked / de-downloaded several admin and Seva paths. Each change ships
+as a new timestamped migration (the remote DB already has 001–034 applied,
+so in-place edits would not reach it) and is covered by an executable proof
+in `qa/sql/seva_credit_test.sql`, wired into the CI `db-integrity-tests` job.
+
+- **035 — RPC `EXECUTE` lockdown.** Revoked `EXECUTE` from `PUBLIC` on the
+  money/escrow/internal RPCs (generalising the case-by-case revokes in
+  Part 2). Self-guarding admin RPCs (`ban_user`, `unban_user`, `assign_role`)
+  keep their `authenticated` grant — they enforce `has_permission()`
+  internally (migration 025 grants them deliberately).
+- **036 — `audit_log.target_type`** column added (referenced by admin ops
+  that record immutable audit entries; was missing on the deployed schema).
+- **037 — escrow over-debit guard.** Replaced a dead post-check (unreachable
+  behind a CHECK constraint) with a real pre-check so an over-debit is
+  rejected with a clear error instead of a constraint violation.
+- **038 — `list_blocked_ips`** now returns `host(ip)` (bare address) so the
+  admin Security screen renders the IP without the CIDR suffix.
+- **039 — explicit table read grants** to `anon`/`authenticated` (CI strict
+  grant checks; RLS still governs row visibility).
+- **041 — Seva job lifecycle RPCs** (`accept_seva_job`, `complete_seva_job`)
+  + `seva_providers_own_read` policy. The Seva portal was UI-only; accept /
+  complete now move state server-side with provider-ownership checks.
+- **042 — `request_credit` RPC.** Replaced an insecure client-side
+  `applyCredit` that moved credit balances from the browser. Requests now
+  create a *pending* application server-side (no money moves), bounded by the
+  user's available credit, one pending request at a time.
+- **043 — `review_credit_request` RPC.** Finance-gated
+  (`finance.manage`) approval/disbursement; disbursing increases
+  `outstanding` and records an immutable `credit_transactions` row.
+- **044 / 046 / 047 / 048 — admin read aggregates.** `get_admin_village_stats`,
+  `get_admin_dashboard_live`, `get_revenue_analytics`, `get_today_hourly_orders`
+  — `SECURITY DEFINER`, `is_admin()`-gated server-side aggregates that replaced
+  full-table downloads (orders/vendors/riders/tickets/deposits) to the browser.
+  Performance fix with a security benefit: no cross-user raw rows leave the DB.
+- **045 — Storage bucket policies.** `kyc-documents` made private with
+  owner/role read policies (was relying on bucket defaults).
+- **049 — `get_vendor_orders` IDOR fix.** See "Updates to Part 3 flags" below.
+- **050 — order write-path lockdown.** The `orders` table had three
+  column-unrestricted client UPDATE policies (rider/vendor/customer). RLS gates
+  rows, not columns, so a qualifying client could `.update()` any column and
+  bypass the role-aware state machine in `update_order_status` — worst case, an
+  assigned rider directly setting `status='delivered'` to skip the `cod_balance`
+  debit (COD cash theft). The same rider policy also couldn't match
+  `rider_id IS NULL`, so the rider "accept order" flow was silently broken by
+  RLS. Fixed: added `claim_order` (rider self-claim, row-locked, derives the
+  rider from `auth.uid()`) and `admin_assign_rider` (admin) RPCs, hardened the
+  existing `rate_order` with `set search_path`, repointed `assignRider` /
+  `adminAssignRider` / `rateOrder` in `api.js` to these RPCs, and **dropped**
+  `orders_rider_update` / `orders_vendor_update` / `orders_customer_cancel`.
+  All order writes now flow through SECURITY DEFINER RPCs. Proven by
+  `qa/sql/phase1_money_integrity_test.sql` TEST G (G1 rider claim, G2 double-claim
+  rejected, G3 direct rider UPDATE blocked).
+
+### Updates to Part 3 flags
+- The **`request_credit`** path closes the client-side credit-application
+  concern: balances are no longer mutable from the browser.
+- **`update_order_status`** is confirmed **already resolved** (migration 017,
+  refined 019; proven by `phase1_money_integrity_test.sql` TEST B) — the Part 3
+  flag predated migration 017 and has been corrected above.
+- `get_vendor_orders` is closed in migration 049 (owner-or-admin guard +
+  `set search_path`; proof TEST F). The legacy `database/` tree and WAF/edge
+  rate-limiting **remain as flagged in Part 3** — not addressed in this round.
 
 ---
 

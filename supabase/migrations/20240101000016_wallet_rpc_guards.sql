@@ -99,21 +99,7 @@ end;
 $$;
 
 -- ── 2. topup_wallet: restrict to service_role only ──────────
--- Wrapped in DO block: if topup_wallet was created with a different
--- signature on an older remote, the REVOKE is skipped rather than failing.
-do $$
-begin
-  if exists (
-    select 1 from pg_proc p
-    join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname = 'public' and p.proname = 'topup_wallet'
-  ) then
-    revoke execute on function topup_wallet(uuid, numeric, text) from authenticated, anon;
-  end if;
-exception when undefined_function then
-  null; -- function exists but signature differs; skip
-end;
-$$;
+revoke execute on function topup_wallet(uuid, numeric, text) from authenticated, anon;
 
 -- ── 3. upsert_platform_config(_bulk): missing admin check ───
 --
@@ -184,15 +170,9 @@ $$ language plpgsql security definer;
 -- could call it directly and receive a fully "paid" order for
 -- free. Since nothing legitimate depends on it, revoke it outright
 -- rather than risk a partial fix on code nothing exercises.
-do $$
-begin
-  revoke execute on function place_order(
-    uuid, text, uuid, text, text, text, text, numeric, numeric, numeric, numeric, jsonb, text, boolean
-  ) from authenticated, anon;
-exception when undefined_function then
-  null; -- function may not exist or signature may differ; skip
-end;
-$$;
+revoke execute on function place_order(
+  uuid, text, uuid, text, text, text, text, numeric, numeric, numeric, numeric, jsonb, text, boolean
+) from authenticated, anon;
 
 -- ── 5. review_image: missing admin check ────────────────────
 --
