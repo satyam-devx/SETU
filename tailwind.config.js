@@ -51,6 +51,14 @@ export default {
           success: 'hsl(var(--setu-success))',
           warning: 'hsl(var(--setu-warning))',
         },
+        // Admin/Super-Admin sidebar chrome
+        sidebar: {
+          DEFAULT:    'hsl(var(--sidebar))',
+          foreground: 'hsl(var(--sidebar-foreground))',
+          border:     'hsl(var(--sidebar-border))',
+          accent:     'hsl(var(--sidebar-accent))',
+          primary:    'hsl(var(--sidebar-primary))',
+        },
       },
       borderRadius: {
         lg:   'var(--radius)',
