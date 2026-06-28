@@ -8,11 +8,12 @@
 // makes it appear here automatically.
 // ═══════════════════════════════════════════════════════════
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Settings as SettingsIcon, Loader2, AlertCircle, RefreshCw, Check, Lock } from 'lucide-react';
+import { Loader2, AlertCircle, RefreshCw, Check, Lock } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
+import AppHeader from '@/components/shared/AppHeader';
 import { SettingsAPI } from '@/lib/api';
 import { usePermissions } from '@/lib/permissions';
 import { usePublicSettings } from '@/lib/settings';
@@ -89,7 +90,7 @@ export default function SuperAdminConfig() {
     return (
       <div className="flex items-center gap-2">
         <Input
-          type={row.data_type === 'number' ? 'number' : row.data_type === 'color' ? 'text' : 'text'}
+          type={row.data_type === 'number' ? 'number' : 'text'}
           value={value}
           disabled={saving === row.key}
           onChange={e => setDraft(d => ({ ...d, [row.key]: e.target.value }))}
@@ -108,17 +109,18 @@ export default function SuperAdminConfig() {
   };
 
   return (
-    <div className="pb-24 max-w-2xl mx-auto" role="main">
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2">
-          <SettingsIcon className="w-5 h-5 text-primary" />
-          <h1 className="font-semibold">Configuration</h1>
-        </div>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Platform settings. Changes apply without a redeploy and are audit-logged.
-        </p>
-      </div>
+    <div className="flex-1 overflow-auto pb-24" role="main">
+      <AppHeader
+        title="Configuration"
+        subtitle="Platform settings · applied without redeploy, audit-logged"
+        rightAction={
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={load} aria-label="Refresh settings">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
+        }
+      />
 
+      <div className="max-w-2xl mx-auto">
       {!allowed ? (
         <div className="flex flex-col items-center gap-3 py-20 px-6 text-center" role="alert">
           <Lock className="w-8 h-8 text-muted-foreground" />
@@ -168,6 +170,7 @@ export default function SuperAdminConfig() {
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 }

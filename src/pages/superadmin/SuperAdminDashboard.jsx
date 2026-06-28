@@ -46,7 +46,7 @@ export default function SuperAdminDashboard() {
     else setLoading(true);
 
     const [liveRes, revenueRes, auditRes] = await Promise.all([
-      AdminAPI.getLiveAnalytics(),
+      AdminAPI.getStats(),
       AdminAPI.getRevenueAnalytics({ days: 30 }),
       AdminAPI.getAuditLog({ limit: 5 }),
     ]);
@@ -87,7 +87,7 @@ export default function SuperAdminDashboard() {
               {(s.pendingVendors ?? 0) + (s.pendingAssign ?? 0)} alerts
             </Badge>
           )}
-          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => load(true)}>
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => load(true)} aria-label="Refresh dashboard">
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
           </Button>
         </div>

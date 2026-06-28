@@ -12,6 +12,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { FinanceAPI } from '@/lib/api';
@@ -72,16 +73,18 @@ export default function SuperAdminFinance() {
   };
 
   return (
-    <div className="pb-24 max-w-2xl mx-auto" role="main">
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2">
-          <IndianRupee className="w-5 h-5 text-primary" />
-          <h1 className="font-semibold">Finance Center</h1>
-        </div>
-        <p className="text-xs text-muted-foreground mt-0.5">Live platform finances. Adjustments move real money and are audit-logged.</p>
-      </div>
+    <div className="flex-1 overflow-auto pb-24" role="main">
+      <AppHeader
+        title="Finance Center"
+        subtitle="Live platform finances · adjustments move real money, audit-logged"
+        rightAction={
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={load} aria-label="Refresh finance data">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
+        }
+      />
 
-      <div className="px-4 py-4 space-y-4">
+      <div className="px-4 py-4 space-y-4 max-w-2xl mx-auto">
         {/* Overview */}
         <div className="grid grid-cols-2 gap-2">
           <StatCard title="GMV (30d)"          value={loading ? '…' : rupee(overview?.gmv_30d)}            icon={IndianRupee} accent />
@@ -153,7 +156,8 @@ export default function SuperAdminFinance() {
                 <div className="flex gap-2">
                   {['credit','debit'].map(t => (
                     <button key={t} onClick={() => setForm(f => ({ ...f, type: t }))}
-                      className={`flex-1 h-9 rounded-lg text-xs border ${form.type===t ? 'border-primary bg-primary/10 font-medium' : 'border-border text-muted-foreground'}`}>
+                      aria-pressed={form.type === t}
+                      className={`flex-1 h-9 rounded-lg text-xs border capitalize ${form.type===t ? 'border-primary bg-primary/10 font-medium' : 'border-border text-muted-foreground'}`}>
                       {t}
                     </button>
                   ))}
@@ -161,6 +165,7 @@ export default function SuperAdminFinance() {
                 <select
                   value={form.targetKind}
                   onChange={e => setForm(f => ({ ...f, targetKind: e.target.value }))}
+                  aria-label="Adjustment target type"
                   className="w-full h-9 rounded-lg border border-input bg-background px-2 text-sm"
                 >
                   <option value="wallet">Customer Wallet (user id)</option>

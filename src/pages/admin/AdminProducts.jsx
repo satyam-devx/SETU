@@ -33,7 +33,7 @@ import { AdminAPI } from '@/lib/api';
 
 // ── Create Product Dialog ─────────────────────────────────
 const EMPTY_PRODUCT = {
-  vendor_id: '', category_id: '', name: '', name_hindi: '',
+  vendor_id: '', category_id: 'none', name: '', name_hindi: '',
   description: '', price: '', mrp: '', unit: 'piece',
   stock: '0', image_url: '', is_available: true,
 };
@@ -54,7 +54,7 @@ function CreateProductDialog({ open, onClose, vendors, categories, onCreated }) 
     setSaving(true);
     const payload = {
       vendor_id:   form.vendor_id,
-      category_id: form.category_id || null,
+      category_id: form.category_id && form.category_id !== 'none' ? form.category_id : null,
       name:        form.name.trim(),
       name_hindi:  form.name_hindi?.trim() || null,
       description: form.description?.trim() || null,
@@ -101,7 +101,7 @@ function CreateProductDialog({ open, onClose, vendors, categories, onCreated }) 
             <Select value={form.category_id} onValueChange={v => setF('category_id', v)}>
               <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Select category…" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">No category</SelectItem>
+                <SelectItem value="none">No category</SelectItem>
                 {(categories ?? []).map(c => (
                   <SelectItem key={c.id} value={c.id}>{c.icon} {c.name}</SelectItem>
                 ))}
@@ -232,7 +232,7 @@ export default function AdminProducts() {
   const [bulkAct,     setBulkAct]     = useState(false);
   const [createOpen,  setCreateOpen]  = useState(false);
 
-  const { data: products, isLoading, refetch } = useDataFetch(
+  const { data: products, isLoading, error, refetch } = useDataFetch(
     () => AdminAPI.getProducts({ limit: 200 }),
     [],
     { cacheKey: 'admin-products', staleTime: 20_000 }
@@ -393,6 +393,12 @@ export default function AdminProducts() {
         )}
 
         {/* ── Table ─────────────────────────────────────── */}
+        {error && (
+          <Card className="p-3 border-destructive/20 bg-destructive/5">
+            <p className="text-xs text-destructive">{error.message ?? 'Failed to load products.'}</p>
+            <Button size="sm" variant="outline" className="mt-2" onClick={refetch}>Retry</Button>
+          </Card>
+        )}
         {isLoading ? (
           <div className="space-y-2">
             {[1,2,3,4,5,6].map(i => <div key={i} className="h-12 bg-muted rounded-xl animate-pulse" />)}

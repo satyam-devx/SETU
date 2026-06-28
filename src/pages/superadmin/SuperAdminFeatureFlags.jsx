@@ -6,11 +6,12 @@
 // (feature_flags.manage, audited server-side). Real data only.
 // ═══════════════════════════════════════════════════════════
 import React, { useState, useEffect, useCallback } from 'react';
-import { Flag, Loader2, AlertCircle, RefreshCw, Lock } from 'lucide-react';
+import { Loader2, AlertCircle, RefreshCw, Lock } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import AppHeader from '@/components/shared/AppHeader';
 import { FeatureFlagsAPI } from '@/lib/api';
 import { usePermissions } from '@/lib/permissions';
 import { useFeatureFlags } from '@/lib/featureFlags';
@@ -67,17 +68,18 @@ export default function SuperAdminFeatureFlags() {
   };
 
   return (
-    <div className="pb-24 max-w-2xl mx-auto" role="main">
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Flag className="w-5 h-5 text-primary" />
-          <h1 className="font-semibold">Feature Flags</h1>
-        </div>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Turn modules on/off instantly and stage rollouts. Changes apply platform-wide and are audit-logged.
-        </p>
-      </div>
+    <div className="flex-1 overflow-auto pb-24" role="main">
+      <AppHeader
+        title="Feature Flags"
+        subtitle="Toggle modules & stage rollouts · applied platform-wide, audit-logged"
+        rightAction={
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={load} aria-label="Refresh feature flags">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
+        }
+      />
 
+      <div className="max-w-2xl mx-auto">
       {!allowed ? (
         <div className="flex flex-col items-center gap-3 py-20 px-6 text-center" role="alert">
           <Lock className="w-8 h-8 text-muted-foreground" />
@@ -158,6 +160,7 @@ export default function SuperAdminFeatureFlags() {
           })}
         </div>
       )}
+      </div>
     </div>
   );
 }

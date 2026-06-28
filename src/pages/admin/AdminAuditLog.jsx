@@ -6,8 +6,8 @@
 // ═══════════════════════════════════════════════════════════
 import React, { useState } from 'react';
 import {
-  ClipboardList, Search, RefreshCw, ChevronDown,
-  User, Shield, ShoppingBag, UserX, UserCheck,
+  ClipboardList, Search, RefreshCw,
+  Shield, ShoppingBag, UserX, UserCheck,
   Key, Megaphone, FileCheck,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -49,7 +49,7 @@ const ACTION_COLORS = {
 };
 
 const ACTION_OPTIONS = [
-  { value: '', label: 'All actions' },
+  { value: 'all', label: 'All actions' },
   { value: 'ban_user',         label: 'Ban user' },
   { value: 'unban_user',       label: 'Unban user' },
   { value: 'assign_role',      label: 'Role change' },
@@ -69,11 +69,11 @@ function fmtTime(iso) {
 export default function AdminAuditLog() {
   const [page,       setPage]       = useState(0);
   const [query,      setQuery]      = useState('');
-  const [actionFil,  setActionFil]  = useState('');
+  const [actionFil,  setActionFil]  = useState('all');
   const LIMIT = 50;
 
   const { data, isLoading, error, refetch } = useDataFetch(
-    () => AdminAPI.getAuditLog({ page, limit: LIMIT, action: actionFil || undefined }),
+    () => AdminAPI.getAuditLog({ page, limit: LIMIT, action: actionFil === 'all' ? undefined : actionFil }),
     [page, actionFil],
     { cacheKey: `audit-log-p${page}-a${actionFil}`, staleTime: 30_000 }
   );
@@ -95,7 +95,7 @@ export default function AdminAuditLog() {
         title="Audit Log"
         subtitle="Every admin action, permanently recorded"
         rightAction={
-          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={refetch}>
+          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={refetch} aria-label="Refresh audit log">
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           </Button>
         }

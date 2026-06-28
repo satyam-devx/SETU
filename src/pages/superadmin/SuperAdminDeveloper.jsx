@@ -9,10 +9,11 @@
 // API, not the SQL layer.
 // ═══════════════════════════════════════════════════════════
 import React, { useState, useEffect, useCallback } from 'react';
-import { Cpu, Database, Clock, GitCommit, AlertTriangle, Loader2, AlertCircle, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
+import { Database, Clock, GitCommit, AlertTriangle, Loader2, AlertCircle, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
 import { DeveloperAPI } from '@/lib/api';
 import { timeAgo } from '@/lib/utils';
@@ -48,16 +49,18 @@ export default function SuperAdminDeveloper() {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="pb-24 max-w-2xl mx-auto" role="main">
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Cpu className="w-5 h-5 text-primary" />
-          <h1 className="font-semibold">Developer Center</h1>
-        </div>
-        <p className="text-xs text-muted-foreground mt-0.5">Live database, cron, migration & error observability.</p>
-      </div>
+    <div className="flex-1 overflow-auto pb-24" role="main">
+      <AppHeader
+        title="Developer Center"
+        subtitle="Live database, cron, migration & error observability"
+        rightAction={
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={load} aria-label="Refresh developer data">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
+        }
+      />
 
-      <div className="px-4 py-4 space-y-4">
+      <div className="px-4 py-4 space-y-4 max-w-2xl mx-auto">
         <div className="grid grid-cols-2 gap-2">
           <StatCard title="DB Size"         value={loading ? '…' : (overview?.db_size ?? '—')}                   icon={Database} />
           <StatCard title="Migrations"      value={loading ? '…' : String(overview?.migrations_applied ?? '—')}  icon={GitCommit} />

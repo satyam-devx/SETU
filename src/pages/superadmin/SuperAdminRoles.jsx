@@ -10,11 +10,12 @@
 // all come from the database. No mock data, no hardcoded permission list.
 // ═══════════════════════════════════════════════════════════
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Shield, Search, Loader2, AlertCircle, RefreshCw, Check } from 'lucide-react';
+import { Search, Loader2, AlertCircle, RefreshCw, Check } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
+import AppHeader from '@/components/shared/AppHeader';
 import { RBACAPI } from '@/lib/api';
 
 const grantKey = (role, perm) => `${role}|${perm}`;
@@ -101,17 +102,18 @@ export default function SuperAdminRoles() {
 
   // ── Render ───────────────────────────────────────────────
   return (
-    <div className="pb-24 max-w-3xl mx-auto" role="main">
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Shield className="w-5 h-5 text-primary" />
-          <h1 className="font-semibold">Roles &amp; Permissions</h1>
-        </div>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Configure what each role can do. Changes apply instantly and are audit-logged.
-        </p>
-      </div>
+    <div className="flex-1 overflow-auto pb-24" role="main">
+      <AppHeader
+        title="Roles & Permissions"
+        subtitle="Configure what each role can do · changes apply instantly, audit-logged"
+        rightAction={
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={load} aria-label="Refresh roles and permissions">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
+        }
+      />
 
+      <div className="max-w-3xl mx-auto">
       {/* Loading */}
       {loading ? (
         <div className="flex items-center justify-center py-20" role="status" aria-live="polite">
@@ -218,6 +220,7 @@ export default function SuperAdminRoles() {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }

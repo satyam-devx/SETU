@@ -6,8 +6,8 @@
 // ═══════════════════════════════════════════════════════════
 import React, { useState, useCallback } from 'react';
 import {
-  Plus, Pencil, Trash2, GripVertical, Check, X,
-  RefreshCw, Loader2, ToggleLeft, ToggleRight, Tag
+  Plus, Pencil, Trash2, GripVertical,
+  RefreshCw, Loader2, Tag
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -42,7 +42,7 @@ export default function AdminCategories() {
   const [saveErr,  setSaveErr]  = useState(null);
   const [showEmoji, setShowEmoji] = useState(false);
 
-  const { data: cats, isLoading, refetch } = useDataFetch(
+  const { data: cats, isLoading, error, refetch } = useDataFetch(
     () => AdminAPI.getAllCategories(),
     [],
     { cacheKey: 'admin-categories' }
@@ -165,6 +165,12 @@ export default function AdminCategories() {
           <span className="font-medium text-foreground">{categories.filter(c => !c.is_active).length}</span> inactive
         </div>
 
+        {error && (
+          <Card className="p-3 border-destructive/20 bg-destructive/5">
+            <p className="text-xs text-destructive">{error.message ?? 'Failed to load categories.'}</p>
+            <Button size="sm" variant="outline" className="mt-2" onClick={refetch}>Retry</Button>
+          </Card>
+        )}
         {isLoading ? (
           <div className="space-y-2">
             {[1,2,3,4,5].map(i => (

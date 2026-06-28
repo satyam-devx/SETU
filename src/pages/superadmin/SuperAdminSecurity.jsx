@@ -14,6 +14,7 @@ import { Shield, Ban, AlertTriangle, KeyRound, Loader2, RefreshCw, AlertCircle }
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
 import { SecurityAPI } from '@/lib/api';
 import { timeAgo } from '@/lib/utils';
@@ -67,16 +68,18 @@ export default function SuperAdminSecurity() {
   };
 
   return (
-    <div className="pb-24 max-w-2xl mx-auto" role="main">
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Shield className="w-5 h-5 text-primary" />
-          <h1 className="font-semibold">Security Center</h1>
-        </div>
-        <p className="text-xs text-muted-foreground mt-0.5">Blocked users and the immutable security event log.</p>
-      </div>
+    <div className="flex-1 overflow-auto pb-24" role="main">
+      <AppHeader
+        title="Security Center"
+        subtitle="Blocked users and the immutable security event log"
+        rightAction={
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={load} aria-label="Refresh security data">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
+        }
+      />
 
-      <div className="px-4 py-4 space-y-4">
+      <div className="px-4 py-4 space-y-4 max-w-2xl mx-auto">
         {/* Overview */}
         <div className="grid grid-cols-2 gap-2">
           <StatCard title="Blocked Users"    value={loading ? '…' : String(overview?.blocked_users ?? 0)}          icon={Ban} />

@@ -11,8 +11,8 @@
 import React, { useState, useCallback } from 'react';
 import {
   Search, Star, MapPin, CheckCircle, Phone, RefreshCw,
-  Loader2, X, ChevronRight, Store, ShieldOff, ShieldCheck,
-  BarChart2, Package, TrendingUp, IndianRupee,
+  Loader2, ChevronRight, Store, ShieldOff, ShieldCheck,
+  Package,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -348,8 +348,7 @@ export default function AdminVendors() {
     return matchQ;
   });
 
-  const handleToggleOpen = async (vendorId, current, e) => {
-    e.stopPropagation();
+  const handleToggleOpen = async (vendorId, current) => {
     setToggling(vendorId);
     const { error } = await AdminAPI.setVendorOpen(vendorId, !current);
     if (!error) refetch();
@@ -481,11 +480,19 @@ export default function AdminVendors() {
                       <Switch
                         checked={v.is_open}
                         disabled={isSuspended}
-                        onCheckedChange={() => {}}
-                        onClick={(e) => handleToggleOpen(v.id, v.is_open, e)}
+                        onCheckedChange={() => handleToggleOpen(v.id, v.is_open)}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`Toggle ${v.name ?? 'vendor'} open status`}
                       />
                     )}
-                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                    <button
+                      type="button"
+                      aria-label={`View ${v.name ?? 'vendor'} details`}
+                      onClick={(e) => { e.stopPropagation(); setSelected(v); }}
+                      className="text-muted-foreground hover:text-foreground rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               </Card>

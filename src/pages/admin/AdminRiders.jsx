@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Phone, MapPin, Package, Star, RefreshCw, Loader2, ShieldCheck, ShieldX } from 'lucide-react';
+import { Search, Phone, MapPin, Package, Star, RefreshCw, Loader2, ShieldCheck } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -77,7 +77,7 @@ export default function AdminRiders() {
   // ── Derived ────────────────────────────────────────────
   const filtered = riders.filter(r => {
     const matchQ = !query
-      || r.name.toLowerCase().includes(query.toLowerCase())
+      || (r.name ?? '').toLowerCase().includes(query.toLowerCase())
       || (r.phone ?? '').includes(query);
     if (tab === 'online')   return matchQ && r.is_online;
     if (tab === 'offline')  return matchQ && !r.is_online;
@@ -156,7 +156,7 @@ export default function AdminRiders() {
                     <div className="flex items-center gap-3">
                       <div className="relative">
                         <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm">
-                          {rider.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                          {(rider.name ?? '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                         </div>
                         <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background
                           ${rider.is_online ? 'bg-green-500' : 'bg-gray-400'}`} />
@@ -215,13 +215,23 @@ export default function AdminRiders() {
                     </div>
                     <div className="flex gap-1">
                       {rider.phone && (
-                        <a href={`tel:${rider.phone}`}>
-                          <Button size="sm" variant="outline" className="h-7 w-7 p-0">
+                        <a href={`tel:${rider.phone}`} aria-label={`Call ${rider.name ?? 'rider'}`}>
+                          <Button size="sm" variant="outline" className="h-7 w-7 p-0" aria-label={`Call ${rider.name ?? 'rider'}`}>
                             <Phone className="w-3 h-3" />
                           </Button>
                         </a>
                       )}
-                      <Button size="sm" variant="outline" className="h-7 text-xs">View</Button>
+                      {rider.kyc_status !== 'approved' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs gap-1"
+                          disabled={isToggling}
+                          onClick={() => handleVerify(rider.id)}
+                        >
+                          <ShieldCheck className="w-3 h-3" /> Verify
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </Card>

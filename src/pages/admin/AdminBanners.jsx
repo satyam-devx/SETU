@@ -8,7 +8,7 @@
 import React, { useState } from 'react';
 import {
   Plus, Pencil, Trash2, Loader2, Image,
-  RefreshCw, ToggleLeft, Link2, MapPin, Calendar
+  RefreshCw, Link2, MapPin, Calendar
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -57,7 +57,7 @@ export default function AdminBanners() {
   const [saveErr,  setSaveErr]  = useState(null);
   const [colorMode, setColorMode] = useState('preset'); // 'preset' | 'custom'
 
-  const { data: banners, isLoading, refetch } = useDataFetch(
+  const { data: banners, isLoading, error, refetch } = useDataFetch(
     () => AdminAPI.getBanners(),
     [],
     { cacheKey: 'admin-banners' }
@@ -160,6 +160,12 @@ export default function AdminBanners() {
 
       <div className="p-5 space-y-3 max-w-3xl">
 
+        {error && (
+          <Card className="p-3 border-destructive/20 bg-destructive/5">
+            <p className="text-xs text-destructive">{error.message ?? 'Failed to load banners.'}</p>
+            <Button size="sm" variant="outline" className="mt-2" onClick={refetch}>Retry</Button>
+          </Card>
+        )}
         {isLoading ? (
           <div className="space-y-2">
             {[1,2,3].map(i => <div key={i} className="h-24 bg-muted rounded-xl animate-pulse" />)}

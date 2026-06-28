@@ -130,7 +130,7 @@ export default function AdminNotifications() {
           : `Sent to ${sent?.targeted ?? 0} recipients.`
       );
     } else {
-      setNotice(`Scheduled for ${new Date(scheduledAt).toLocaleString()} · ${created.targeted} recipients.`);
+      setNotice(`Scheduled for ${new Date(scheduledAt).toLocaleString()} · ${created.targeted_count ?? audienceCount ?? 0} recipients.`);
     }
     resetForm();
     setBusy(false);

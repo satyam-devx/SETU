@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { MapPin, Users, Store, TrendingUp, RefreshCw, Search } from 'lucide-react';
+import { MapPin, RefreshCw, Search } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

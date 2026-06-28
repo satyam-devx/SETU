@@ -3,7 +3,7 @@
 // Fixed: reads from real audit_log table via AdminAPI.getAuditLog
 // ═══════════════════════════════════════════════════════════
 import React, { useState } from 'react';
-import { Search, Download, RefreshCw, Filter } from 'lucide-react';
+import { Search, Download, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -39,12 +39,12 @@ function relTime(iso) {
 
 export default function SuperAdminAuditLog() {
   const [query,     setQuery]     = useState('');
-  const [actionFil, setActionFil] = useState('');
+  const [actionFil, setActionFil] = useState('all');
   const [page,      setPage]      = useState(0);
   const LIMIT = 50;
 
   const { data, isLoading, error, refetch } = useDataFetch(
-    () => AdminAPI.getAuditLog({ page, limit: LIMIT, action: actionFil || undefined }),
+    () => AdminAPI.getAuditLog({ page, limit: LIMIT, action: actionFil === 'all' ? undefined : actionFil }),
     [page, actionFil],
     { cacheKey: `superadmin-audit-${page}-${actionFil}`, staleTime: 15_000 }
   );
@@ -85,7 +85,7 @@ export default function SuperAdminAuditLog() {
         title="Audit Log"
         subtitle={isLoading ? 'Loading…' : `${filtered.length} events`}
         rightAction={
-          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={refetch}>
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={refetch} aria-label="Refresh audit log">
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           </Button>
         }
@@ -108,7 +108,7 @@ export default function SuperAdminAuditLog() {
               <SelectValue placeholder="All actions" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All actions</SelectItem>
+              <SelectItem value="all">All actions</SelectItem>
               {uniqueActions.map(a => (
                 <SelectItem key={a} value={a} className="text-xs capitalize">
                   {a.replace(/_/g, ' ')}
@@ -116,7 +116,7 @@ export default function SuperAdminAuditLog() {
               ))}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="icon" onClick={handleExport} title="Export CSV">
+          <Button variant="outline" size="icon" onClick={handleExport} title="Export CSV" aria-label="Export audit log as CSV">
             <Download className="w-4 h-4" />
           </Button>
         </div>

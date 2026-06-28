@@ -3,12 +3,13 @@
 // Fixed: reads real villages table grouped by block.
 // ═══════════════════════════════════════════════════════════
 import React, { useMemo } from 'react';
-import { MapPin, Store, Users, Bike, RefreshCw } from 'lucide-react';
+import { MapPin, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import AppHeader from '@/components/shared/AppHeader';
+import BlocksMap from '@/components/maps/BlocksMap';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { supabase } from '@/lib/supabase';
 
@@ -77,7 +78,7 @@ export default function SuperAdminBlocks() {
         title="Blocks & Geography"
         subtitle={`${blocks.length} blocks · ${villages.length} villages`}
         rightAction={
-          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={refetch}>
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={refetch} aria-label="Refresh blocks">
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           </Button>
         }
@@ -85,14 +86,8 @@ export default function SuperAdminBlocks() {
 
       <div className="p-4 space-y-4 max-w-3xl">
 
-        {/* Map placeholder — real map integration is a future phase */}
-        <Card className="h-36 bg-muted border-border flex items-center justify-center">
-          <div className="text-center">
-            <MapPin className="w-8 h-8 text-primary mx-auto mb-1" />
-            <p className="font-semibold text-sm">Madhubani District</p>
-            <p className="text-xs text-muted-foreground">{blocks.length} blocks · map integration planned</p>
-          </div>
-        </Card>
+        {/* Real interactive map (OpenStreetMap, no API key) */}
+        {!isLoading && blocks.length > 0 && <BlocksMap blocks={blocks} />}
 
         {error && (
           <Card className="p-3 border-destructive/20 bg-destructive/5">

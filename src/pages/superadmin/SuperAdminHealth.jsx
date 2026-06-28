@@ -1,70 +1,82 @@
 // ═══════════════════════════════════════════════════════════
-// SETU — SuperAdminHealth  (v2 — Live DB)
-// Fixed: real stats from getLiveAnalytics + Supabase health.
-// Static service list kept as Supabase doesn't expose internal
-// service metrics via client SDK — clearly marked as such.
+// SETU — SuperAdminHealth  (v3 — Live DB, honest status)
+// Real platform stats from getLiveAnalytics + measured DB round-trip
+// and real connectivity checks for Auth & Database. Services whose
+// health the client SDK genuinely cannot probe (Edge Functions,
+// Storage, Realtime) are shown as "n/a" rather than a fake "up".
 // ═══════════════════════════════════════════════════════════
 import React, { useState, useCallback } from 'react';
-import { Activity, Server, Cpu, Database, RefreshCw, Loader2 } from 'lucide-react';
+import { Activity, Server, Database, RefreshCw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import AppHeader from '@/components/shared/AppHeader';
-import StatCard from '@/components/shared/StatCard';
 import { AdminAPI } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 
-// Services list — Supabase client SDK does not expose internal
-// per-service latency. These are labelled clearly as platform
-// components (not live metrics).
+// Platform components. `key` identifies the ones we can actually
+// probe from the browser SDK; the rest are shown as "n/a".
 const SERVICES = [
-  { name: 'Supabase Auth',       key: 'auth'     },
-  { name: 'Supabase Database',   key: 'db'       },
-  { name: 'Edge Functions',      key: 'functions'},
-  { name: 'Supabase Storage',    key: 'storage'  },
-  { name: 'Realtime',            key: 'realtime' },
+  { name: 'Supabase Auth',     key: 'auth' },
+  { name: 'Supabase Database', key: 'db'   },
+  { name: 'Edge Functions',    key: null   },
+  { name: 'Supabase Storage',  key: null   },
+  { name: 'Realtime',          key: null   },
 ];
+
+const STATUS_DOT = { up: 'bg-green-500', down: 'bg-red-500', na: 'bg-muted-foreground/40' };
+const STATUS_BADGE = {
+  up:   'bg-green-100 text-green-700',
+  down: 'bg-red-100 text-red-700',
+  na:   'bg-muted text-muted-foreground',
+};
+const STATUS_LABEL = { up: 'up', down: 'down', na: 'n/a' };
 
 export default function SuperAdminHealth() {
   const [stats,      setStats]      = useState(null);
   const [dbHealth,   setDbHealth]   = useState(null); // ms for a simple DB round-trip
+  const [services,   setServices]   = useState({ auth: 'na', db: 'na' });
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [dbChecking, setDbChecking] = useState(false);
+  const [error,      setError]      = useState(null);
 
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
     else setLoading(true);
 
-    // Ping DB and get platform stats in parallel
     const t0 = Date.now();
-    const [statsRes] = await Promise.all([
-      AdminAPI.getLiveAnalytics(),
+    const [statsRes, pingRes, sessionRes] = await Promise.all([
+      AdminAPI.getStats(),
       supabase.from('profiles').select('id', { count: 'exact', head: true }),
+      supabase.auth.getSession(),
     ]);
     const pingMs = Date.now() - t0;
 
     if (statsRes.data) setStats(statsRes.data);
-    setDbHealth(pingMs);
+    setError(statsRes.error ?? pingRes.error ?? null);
+    setDbHealth(pingRes.error ? null : pingMs);
+    setServices({
+      db:   pingRes.error    ? 'down' : 'up',
+      auth: sessionRes.error ? 'down' : 'up',
+    });
 
     setLoading(false);
     setRefreshing(false);
   }, []);
 
-  // Run on mount
   React.useEffect(() => { load(); }, [load]);
 
   const s = stats ?? {};
 
-  // Derived health score from real data
+  // Derived health score from real signals
   const healthScore = (() => {
     let score = 100;
+    if (services.db === 'down')       score -= 50;
+    if (services.auth === 'down')     score -= 20;
     if ((s.pendingAssign ?? 0) > 10)  score -= 10;
     if ((s.pendingVendors ?? 0) > 20) score -= 10;
     if ((dbHealth ?? 0) > 500)        score -= 15;
-    if ((dbHealth ?? 0) > 200)        score -= 5;
+    else if ((dbHealth ?? 0) > 200)   score -= 5;
     return Math.max(0, score);
   })();
 
@@ -74,13 +86,21 @@ export default function SuperAdminHealth() {
         title="Platform Health"
         subtitle="Live infrastructure status"
         rightAction={
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => load(true)}>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => load(true)} aria-label="Refresh platform health">
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
           </Button>
         }
       />
 
       <div className="p-4 space-y-4 max-w-lg">
+
+        {/* Error */}
+        {error && (
+          <Card className="p-3 border-destructive/20 bg-destructive/5">
+            <p className="text-xs text-destructive">{error.message ?? 'Failed to load platform metrics.'}</p>
+            <Button size="sm" variant="outline" className="mt-2" onClick={() => load(true)}>Retry</Button>
+          </Card>
+        )}
 
         {/* Top stats */}
         <div className="grid grid-cols-2 gap-2">
@@ -130,24 +150,28 @@ export default function SuperAdminHealth() {
           )}
         </Card>
 
-        {/* Services — Supabase components */}
+        {/* Services — real connectivity where probeable */}
         <Card className="p-4 border-border">
           <h3 className="font-semibold text-sm mb-1 flex items-center gap-2">
             <Server className="w-4 h-4 text-primary" /> Supabase Services
           </h3>
           <p className="text-[10px] text-muted-foreground mb-3">
-            Status reflects connectivity, not per-service metrics (Supabase client SDK limitation).
+            Auth & Database reflect live connectivity. Edge Functions, Storage and
+            Realtime can't be probed from the browser SDK and are shown as n/a.
           </p>
           <div className="space-y-2">
-            {SERVICES.map(svc => (
-              <div key={svc.name} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50">
-                <div className={`w-2 h-2 rounded-full shrink-0 ${loading ? 'bg-muted animate-pulse' : 'bg-green-500'}`} />
-                <span className="text-sm flex-1">{svc.name}</span>
-                {!loading && (
-                  <Badge className="text-[9px] border-0 bg-green-100 text-green-700">up</Badge>
-                )}
-              </div>
-            ))}
+            {SERVICES.map(svc => {
+              const status = loading ? 'na' : (svc.key ? services[svc.key] : 'na');
+              return (
+                <div key={svc.name} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50">
+                  <div className={`w-2 h-2 rounded-full shrink-0 ${loading ? 'bg-muted animate-pulse' : STATUS_DOT[status]}`} />
+                  <span className="text-sm flex-1">{svc.name}</span>
+                  {!loading && (
+                    <Badge className={`text-[9px] border-0 ${STATUS_BADGE[status]}`}>{STATUS_LABEL[status]}</Badge>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </Card>
 
@@ -163,11 +187,13 @@ export default function SuperAdminHealth() {
             </div>
             <div className="p-2.5 bg-muted/40 rounded-lg">
               <p className="text-muted-foreground text-[10px]">Status</p>
-              <p className="font-semibold text-sm text-green-600">{loading ? '…' : 'Connected'}</p>
+              <p className={`font-semibold text-sm ${services.db === 'down' ? 'text-red-600' : 'text-green-600'}`}>
+                {loading ? '…' : services.db === 'down' ? 'Disconnected' : 'Connected'}
+              </p>
             </div>
-            <div className="p-2.5 bg-muted/40 col-span-2">
+            <div className="p-2.5 bg-muted/40 rounded-lg col-span-2">
               <p className="text-muted-foreground text-[10px] mb-1">
-                DB Latency — {loading ? 'measuring…' : `${dbHealth}ms round-trip`}
+                DB Latency — {loading ? 'measuring…' : dbHealth != null ? `${dbHealth}ms round-trip` : 'unavailable'}
               </p>
               <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                 <div

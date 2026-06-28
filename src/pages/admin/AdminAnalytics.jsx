@@ -7,14 +7,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   TrendingUp, IndianRupee, ShoppingBag, Users,
-  Store, RefreshCw, Calendar,
+  Store, RefreshCw,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
+  XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';

@@ -105,8 +105,9 @@ export default function AdminShell({ title, renderSidebar, banner = null, childr
 
       {/* Main content */}
       <main className="flex-1 overflow-auto min-w-0 max-w-full">
-        {/* Mobile top bar */}
-        <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b border-border bg-background sticky top-0 z-20">
+        {/* Mobile top bar — non-sticky so it never overlaps each page's
+            own sticky header (which would otherwise cover the hamburger). */}
+        <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b border-border bg-background">
           <Button
             ref={triggerRef}
             variant="ghost"

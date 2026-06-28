@@ -1243,9 +1243,14 @@ export async function getAdminDashboardStats() {
     // Server-side aggregation (one RPC) — see migration 046. Previously
     // this downloaded the entire orders/vendors/riders/tickets/deposits
     // tables to the browser and aggregated client-side.
-    const { data, error } = await supabase.rpc('get_admin_dashboard_live');
-    if (error) return err(error, 'getAdminDashboardStats');
-    return ok(data ?? {});
+    // `kycPending` isn't part of the RPC, so we fetch it in parallel (a
+    // cheap head-count) and merge it in — additive, no extra latency.
+    const [rpcRes, kycRes] = await Promise.all([
+      supabase.rpc('get_admin_dashboard_live'),
+      supabase.from('kyc_records').select('id', { count: 'exact', head: true }).eq('status', 'submitted'),
+    ]);
+    if (rpcRes.error) return err(rpcRes.error, 'getAdminDashboardStats');
+    return ok({ ...(rpcRes.data ?? {}), kycPending: kycRes.count ?? 0 });
   } catch (e) {
     return err(e, 'getAdminDashboardStats');
   }
@@ -1842,6 +1847,7 @@ export const AdminAPI = {
   disputeCODDeposit:    (depositId)                => disputeCODDeposit(depositId),
 
   // ── Categories ────────────────────────────────────────
+  getCategories:        ()                         => getCategories(),
   getAllCategories:     ()                         => getAllCategories(),
   upsertCategory:      (data)                     => upsertCategory(data),
   deleteCategory:      (id)                       => deleteCategory(id),

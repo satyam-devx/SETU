@@ -75,7 +75,7 @@ export default function SuperAdminAI() {
         title="AI Monitoring"
         subtitle="Edge function usage and AI activity"
         rightAction={
-          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={refetch}>
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={refetch} aria-label="Refresh AI monitoring">
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           </Button>
         }
@@ -83,39 +83,20 @@ export default function SuperAdminAI() {
 
       <div className="p-4 space-y-4 max-w-lg">
 
+        {/* Error */}
+        {error && (
+          <Card className="p-3 border-destructive/20 bg-destructive/5">
+            <p className="text-xs text-destructive">{error.message ?? 'Failed to load AI activity.'}</p>
+            <Button size="sm" variant="outline" className="mt-2" onClick={refetch}>Retry</Button>
+          </Card>
+        )}
+
         {/* Stats */}
         <div className="grid grid-cols-3 gap-2">
           <StatCard title="AI Calls"    value={isLoading ? '…' : String(stats.totalAiCalls  ?? 0)} icon={Brain}        />
           <StatCard title="Voice Queries" value={isLoading ? '…' : String(stats.voiceCalls  ?? 0)} icon={Mic}          />
           <StatCard title="Transcriptions" value={isLoading ? '…' : String(stats.whisperCalls ?? 0)} icon={MessageSquare} />
         </div>
-
-        {/* Active Edge Functions */}
-        <Card className="p-4 border-border">
-          <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-            <Brain className="w-4 h-4 text-primary" /> Deployed AI Edge Functions
-          </h3>
-          <div className="space-y-2">
-            {[
-              { name: 'ai-assistant',         description: 'Claude Haiku — chat + product search',       status: 'deployed' },
-              { name: 'whisper-transcription', description: 'OpenAI Whisper — voice to text',             status: 'deployed' },
-              { name: 'kyc-verify',           description: 'Aadhaar format check (SurePass pending)',     status: 'partial'  },
-              { name: 'send-fcm-notification',description: 'Firebase Cloud Messaging push',              status: 'deployed' },
-              { name: 'vendor-payout',        description: 'Razorpay payout to vendor bank',             status: 'deployed' },
-            ].map(fn => (
-              <div key={fn.name} className="flex items-center gap-3 p-2.5 bg-muted/30 rounded-lg">
-                <div className={`w-2 h-2 rounded-full shrink-0 ${fn.status === 'deployed' ? 'bg-green-500' : 'bg-amber-500'}`} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-mono font-medium">{fn.name}</p>
-                  <p className="text-[10px] text-muted-foreground">{fn.description}</p>
-                </div>
-                <Badge className={`text-[9px] border-0 shrink-0 ${fn.status === 'deployed' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                  {fn.status}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        </Card>
 
         {/* Recent AI events from audit log */}
         <Card className="p-4 border-border">

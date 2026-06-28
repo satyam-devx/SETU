@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Settings, Save, RefreshCw, Loader2,
+  Save, RefreshCw, Loader2,
   AlertTriangle, CheckCircle, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';

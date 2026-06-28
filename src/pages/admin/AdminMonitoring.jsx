@@ -8,7 +8,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Activity, CheckCircle, AlertCircle, RefreshCw,
-  Bike, ShoppingBag, HeadphonesIcon, ShieldAlert,
   TrendingUp, Users, IndianRupee, MapPin,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -34,6 +33,7 @@ export default function AdminMonitoring() {
   const [analytics,   setAnalytics]   = useState(null);
   const [villages,    setVillages]    = useState([]);
   const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
   const [refreshing,  setRefreshing]  = useState(false);
 
@@ -48,6 +48,7 @@ export default function AdminMonitoring() {
 
     if (analyticsRes.data)  setAnalytics(analyticsRes.data);
     if (villagesRes.data)   setVillages(villagesRes.data ?? []);
+    setError(analyticsRes.error ?? null);
     setLastRefresh(new Date());
     setLoading(false);
     setRefreshing(false);
@@ -82,13 +83,13 @@ export default function AdminMonitoring() {
     active:   v.is_active,
   }));
 
-  // Simulated service health (can be wired to a health_checks table later)
+  // Service health derived from REAL signals (no fabricated "up"):
+  //  • Database & API — the live-analytics RPC actually returned
+  //  • Order assignment / Support queue — real operational backlog
   const services = [
-    { name: 'Order API',            status: 'healthy'  },
-    { name: 'Realtime / Websocket', status: 'healthy'  },
-    { name: 'Notification Service', status: a.open_tickets > 10 ? 'degraded' : 'healthy' },
-    { name: 'KYC Document Store',   status: 'healthy'  },
-    { name: 'Payment Gateway',      status: 'healthy'  },
+    { name: 'Database & API',   status: analytics ? 'healthy' : 'degraded' },
+    { name: 'Order assignment', status: (a.pending_assign ?? 0) > 20 ? 'degraded' : 'healthy' },
+    { name: 'Support queue',    status: (a.open_tickets ?? 0)   > 10 ? 'degraded' : 'healthy' },
   ];
 
   return (
@@ -99,13 +100,20 @@ export default function AdminMonitoring() {
           ? `Last updated ${lastRefresh.toLocaleTimeString('en-IN', { timeStyle: 'short' })}`
           : 'Loading…'}
         rightAction={
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => load(true)}>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => load(true)} aria-label="Refresh monitoring">
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
           </Button>
         }
       />
 
       <div className="p-4 space-y-4 max-w-3xl">
+
+        {error && (
+          <Card className="p-3 border-destructive/20 bg-destructive/5">
+            <p className="text-xs text-destructive">{error.message ?? 'Failed to load live data.'}</p>
+            <Button size="sm" variant="outline" className="mt-2" onClick={() => load(true)}>Retry</Button>
+          </Card>
+        )}
 
         {/* ── Live stats ─────────────────────────────── */}
         <div className="grid grid-cols-2 gap-2">

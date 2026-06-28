@@ -123,7 +123,7 @@ export default function SuperAdminCredit() {
         title="Credit Management"
         subtitle="SETU credit accounts"
         rightAction={
-          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={refetch}>
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={refetch} aria-label="Refresh credit data">
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           </Button>
         }

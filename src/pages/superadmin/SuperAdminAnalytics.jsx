@@ -5,7 +5,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip,
-  LineChart, Line, PieChart, Pie, Cell, AreaChart, Area,
+  PieChart, Pie, Cell, AreaChart, Area,
 } from 'recharts';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ import { RefreshCw } from 'lucide-react';
 import StatCard from '@/components/shared/StatCard';
 import AppHeader from '@/components/shared/AppHeader';
 import { AdminAPI } from '@/lib/api';
-import { IndianRupee, ShoppingBag, Store } from 'lucide-react';
+import { IndianRupee, ShoppingBag, Store, Bike } from 'lucide-react';
 
 const COLORS = ['hsl(24, 80%, 50%)', 'hsl(150, 40%, 40%)', 'hsl(220, 60%, 50%)', 'hsl(280, 60%, 50%)'];
 
@@ -36,6 +36,7 @@ export default function SuperAdminAnalytics() {
   const [stats,     setStats]     = useState(null);
   const [loading,   setLoading]   = useState(true);
   const [refreshing,setRefreshing]= useState(false);
+  const [error,     setError]     = useState(null);
 
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
@@ -43,11 +44,12 @@ export default function SuperAdminAnalytics() {
 
     const [revRes, statsRes] = await Promise.all([
       AdminAPI.getRevenueAnalytics({ days: Number(period) }),
-      AdminAPI.getLiveAnalytics(),
+      AdminAPI.getStats(),
     ]);
 
     if (revRes.data)   setRev(revRes.data);
     if (statsRes.data) setStats(statsRes.data);
+    setError(revRes.error || statsRes.error || null);
 
     setLoading(false);
     setRefreshing(false);
@@ -74,13 +76,21 @@ export default function SuperAdminAnalytics() {
         title="Analytics"
         subtitle="Platform-wide business intelligence"
         rightAction={
-          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => load(true)}>
+          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => load(true)} aria-label="Refresh analytics">
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
           </Button>
         }
       />
 
       <div className="p-4 space-y-4">
+        {/* Error */}
+        {error && (
+          <Card className="p-3 border-destructive/20 bg-destructive/5">
+            <p className="text-xs text-destructive">{error.message ?? 'Failed to load analytics.'}</p>
+            <Button size="sm" variant="outline" className="mt-2" onClick={() => load(true)}>Retry</Button>
+          </Card>
+        )}
+
         {/* Period selector */}
         <Tabs value={period} onValueChange={setPeriod}>
           <TabsList>
@@ -94,8 +104,8 @@ export default function SuperAdminAnalytics() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
           <StatCard title="Total Revenue"  value={loading ? '…' : fmtK(totalRevenue)} icon={IndianRupee} />
           <StatCard title="Total Orders"   value={loading ? '…' : String(totalOrders)} icon={ShoppingBag} />
-          <StatCard title="Active Vendors" value={loading ? '…' : String(s.totalVendors ?? 0)} icon={Store} />
-          <StatCard title="Online Riders"  value={loading ? '…' : String(s.onlineRiders ?? 0)} icon={Store} />
+          <StatCard title="Total Vendors"  value={loading ? '…' : String(s.totalVendors ?? 0)} icon={Store} />
+          <StatCard title="Online Riders"  value={loading ? '…' : String(s.onlineRiders ?? 0)} icon={Bike} />
         </div>
 
         {/* Revenue trend */}

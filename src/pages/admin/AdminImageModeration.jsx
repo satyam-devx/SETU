@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import {
   CheckCircle, XCircle, Eye, RefreshCw, Loader2,
-  Image as ImageIcon, Store, Package, FileText, Layers
+  Image as ImageIcon, Store, Package, FileText
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -50,7 +50,7 @@ export default function AdminImageModeration() {
   const [rejectFor, setRejectFor] = useState(null);   // imageId awaiting rejection note
   const [dismissed, setDismissed] = useState(new Set());
 
-  const { data, isLoading, refetch } = useDataFetch(
+  const { data, isLoading, error, refetch } = useDataFetch(
     () => AdminAPI.getImageQueue({ status: tab }),
     [tab],
     { cacheKey: `image-mod-${tab}`, staleTime: 15_000 }
@@ -97,6 +97,12 @@ export default function AdminImageModeration() {
           </TabsList>
         </Tabs>
 
+        {error && (
+          <Card className="p-3 border-destructive/20 bg-destructive/5">
+            <p className="text-xs text-destructive">{error.message ?? 'Failed to load moderation queue.'}</p>
+            <Button size="sm" variant="outline" className="mt-2" onClick={refetch}>Retry</Button>
+          </Card>
+        )}
         {isLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {[1,2,3,4,5,6].map(i => (
@@ -118,8 +124,14 @@ export default function AdminImageModeration() {
                 <Card key={img.id} className="border-border overflow-hidden flex flex-col">
                   {/* Image */}
                   <div
-                    className="relative h-36 bg-muted cursor-pointer group"
+                    className="relative h-36 bg-muted cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Preview uploaded image"
                     onClick={() => setPreview(img)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPreview(img); }
+                    }}
                   >
                     <img
                       src={img.public_url}

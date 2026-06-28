@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import {
   Scale, Search, RefreshCw, Loader2,
-  User, Phone, AlertTriangle, CheckCircle, Clock,
+  User, Phone, CheckCircle,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';

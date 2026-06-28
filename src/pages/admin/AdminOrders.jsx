@@ -10,8 +10,8 @@
 // ═══════════════════════════════════════════════════════════
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Search, UserCheck, RefreshCw, Loader2, X,
-  ShoppingBag, Bike, MapPin, Phone, Package,
+  Search, RefreshCw, Loader2,
+  ShoppingBag, Bike, MapPin,
   ChevronRight, XCircle, CheckCircle,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -387,8 +387,12 @@ export default function AdminOrders() {
             return (
               <Card
                 key={o.id}
-                className={`p-3 border-border cursor-pointer hover:bg-muted/30 transition-colors ${needsRider ? 'border-amber-300' : ''}`}
+                className={`p-3 border-border cursor-pointer hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${needsRider ? 'border-amber-300' : ''}`}
+                role="button"
+                tabIndex={0}
+                aria-label={`View order ${o.order_number}`}
                 onClick={() => setSelectedId(o.id)}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedId(o.id); } }}
               >
                 <div className="flex items-center gap-3">
                   <div className="flex-1 min-w-0">

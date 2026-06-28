@@ -11,7 +11,7 @@ import React, { useState, useMemo } from 'react';
 import {
   Search, Users, Phone, ShieldOff, ShieldCheck,
   RefreshCw, Loader2, MapPin, Calendar, ChevronRight,
-  ShoppingBag, User, Star,
+  User,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -207,14 +207,14 @@ function UserDetailModal({ user, onClose, onBan, onUnban }) {
 export default function AdminCustomers() {
   const [query,   setQuery]   = useState('');
   const [tab,     setTab]     = useState('all');
-  const [roleFil, setRoleFil] = useState('');
+  const [roleFil, setRoleFil] = useState('all');
   const [page,    setPage]    = useState(0);
   const [selected,setSelected]= useState(null);
   const [acting,  setActing]  = useState(null);
   const LIMIT = 50;
 
   const { data, isLoading, error, refetch } = useDataFetch(
-    () => AdminAPI.getUsers({ role: roleFil || undefined, page, limit: LIMIT }),
+    () => AdminAPI.getUsers({ role: roleFil === 'all' ? undefined : roleFil, page, limit: LIMIT }),
     [page, roleFil],
     { cacheKey: `admin-users-p${page}-r${roleFil}`, staleTime: 20_000 }
   );
@@ -289,7 +289,7 @@ export default function AdminCustomers() {
               <SelectValue placeholder="All roles" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All roles</SelectItem>
+              <SelectItem value="all">All roles</SelectItem>
               <SelectItem value="customer">Customers</SelectItem>
               <SelectItem value="vendor">Vendors</SelectItem>
               <SelectItem value="rider">Riders</SelectItem>
@@ -339,8 +339,12 @@ export default function AdminCustomers() {
             return (
               <Card
                 key={u.id}
-                className="p-4 border-border cursor-pointer hover:bg-muted/30 transition-colors"
+                className="p-4 border-border cursor-pointer hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                role="button"
+                tabIndex={0}
+                aria-label={`View ${u.name ?? 'user'} details`}
                 onClick={() => setSelected(u)}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(u); } }}
               >
                 <div className="flex items-start justify-between mb-1">
                   <div className="flex-1 min-w-0">
