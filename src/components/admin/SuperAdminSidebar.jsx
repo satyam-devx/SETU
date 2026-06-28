@@ -193,7 +193,7 @@ export default function SuperAdminSidebar({ onClose }) {
       </div>
 
       {/* Scrollable nav */}
-      <nav className="flex-1 py-2 px-2 space-y-3 overflow-y-auto">
+      <nav className="flex-1 py-2 px-2 space-y-3 overflow-y-auto nav-scroll">
 
         {/* ── SuperAdmin-only section ── */}
         <div>
