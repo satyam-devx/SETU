@@ -470,15 +470,25 @@ end $$;
 reset role;
 
 -- G3: the assigned rider can NO LONGER bypass the state machine with a
---     direct UPDATE (the column-unrestricted policy is gone → RLS denies,
---     0 rows). This is the COD-evasion hole, closed.
+--     direct UPDATE. Migration 050 drops the orders_rider_update policy
+--     entirely, so Postgres now raises "permission denied" instead of
+--     silently returning 0 rows. Both outcomes (0 rows OR permission
+--     denied) prove the COD-evasion hole is closed — accept either.
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"44444444-4444-4444-4444-444444444444","role":"authenticated"}';
 do $$
 declare oid uuid;
 begin
   select t.v::uuid into oid from _t t where t.k='G_order';
-  update orders set status='delivered' where id=oid;
+  begin
+    update orders set status='delivered' where id=oid;
+    -- If we get here with 0 rows affected that is also fine (old RLS path).
+  exception
+    when insufficient_privilege then
+      -- "permission denied for table orders" — expected after migration 050
+      -- dropped the column-unrestricted rider UPDATE policy.
+      null;
+  end;
 end $$;
 reset role;
 
