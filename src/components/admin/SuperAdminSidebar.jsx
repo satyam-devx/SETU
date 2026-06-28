@@ -4,7 +4,7 @@
 //   • All SuperAdmin-only pages (/superadmin/*)
 //   • All Admin pages (/admin/*) — same components, no duplication
 // ═══════════════════════════════════════════════════════════
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   // SuperAdmin icons
@@ -18,7 +18,7 @@ import {
   ClipboardList, Scale, ShieldCheck, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/AuthContext';
 
 // ── SuperAdmin-only menu ─────────────────────────────────
 const SUPERADMIN_MENU = [
@@ -154,19 +154,7 @@ function CollapsibleSection({ label, items, onClose, defaultOpen = false }) {
 }
 
 export default function SuperAdminSidebar({ onClose }) {
-  const [profile, setProfile] = useState(null);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(async ({ data }) => {
-      if (!data.user) return;
-      const { data: prof } = await supabase
-        .from('profiles')
-        .select('name, role, phone')
-        .eq('id', data.user.id)
-        .single();
-      setProfile(prof);
-    });
-  }, []);
+  const { profile } = useAuth();
 
   const initials = profile?.name
     ? profile.name.trim().split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()

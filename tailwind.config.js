@@ -5,8 +5,11 @@ export default {
   theme: {
     container: {
       center: true,
-      padding: '1rem',
-      screens: { '2xl': '480px' }, // Mobile-first: constrain to phone width
+      padding: { DEFAULT: '1rem', sm: '1.5rem', lg: '2rem' },
+      // Standard responsive max-widths. The mobile-first customer/vendor/
+      // rider/anchor portals constrain themselves with the custom
+      // `.page-container` utility (max-w-lg), so the global container is
+      // free to behave normally for wide admin/desktop layouts.
     },
     extend: {
       colors: {

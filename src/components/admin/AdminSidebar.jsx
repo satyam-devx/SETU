@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/AuthContext';
 import { Badge } from '@/components/ui/badge';
 
 const menuItems = [
@@ -67,8 +68,8 @@ const GROUP_LABELS = {
 
 export default function AdminSidebar({ onClose }) {
   const location = useLocation();
+  const { profile } = useAuth();
   const [badges,  setBadges]  = useState({});
-  const [profile, setProfile] = useState(null);
 
   // Load badge counts (pending vendors, KYC queue, open disputes)
   useEffect(() => {
@@ -91,19 +92,6 @@ export default function AdminSidebar({ onClose }) {
     loadBadges();
     const interval = setInterval(loadBadges, 60_000);
     return () => clearInterval(interval);
-  }, []);
-
-  // Load current admin profile
-  useEffect(() => {
-    supabase.auth.getUser().then(async ({ data }) => {
-      if (!data.user) return;
-      const { data: prof } = await supabase
-        .from('profiles')
-        .select('name, role')
-        .eq('id', data.user.id)
-        .single();
-      setProfile(prof);
-    });
   }, []);
 
   // Group items
