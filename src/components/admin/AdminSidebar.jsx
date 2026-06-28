@@ -135,7 +135,7 @@ export default function AdminSidebar({ onClose }) {
         <p className="text-xs text-sidebar-foreground/60 mt-0.5">Operations Control Center</p>
       </div>
 
-      <nav className="flex-1 py-3 px-3 overflow-y-auto space-y-4">
+      <nav className="flex-1 py-3 px-3 overflow-y-auto space-y-4 nav-scroll">
         {Object.entries(groups).map(([groupKey, items]) => (
           <div key={groupKey}>
             <p className="text-[9px] font-semibold uppercase tracking-widest text-sidebar-foreground/30 px-3 mb-1">
