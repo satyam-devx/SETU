@@ -1252,7 +1252,7 @@ export async function getAdminDashboardStats() {
 
     const [rpcRes, kycRes] = await Promise.all([
       supabase.rpc('get_admin_dashboard_live'),
-      Promise.resolve(kyQuery).catch(() => ({ count: 0 }))
+      Promise.resolve(kycQuery).catch(() => ({ count: 0 })) // ❌ Changed kyQuery to kycQuery here
     ]);
 
     if (rpcRes.error) return err(rpcRes.error, 'getAdminDashboardStats');
