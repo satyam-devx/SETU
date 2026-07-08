@@ -38,7 +38,7 @@
     "axe-core":                     "^4.9.1",
     "@axe-core/playwright":          "^4.9.1",
     "axe-playwright":               "^2.0.1",
-    "jsdom":                        "^24.1.0",
+    "jsdom":                        "^29.1.1",
     "msw":                          "^2.3.1",
     "vitest":                       "^4.1.10",
     "happy-dom":                    "^14.12.0"
