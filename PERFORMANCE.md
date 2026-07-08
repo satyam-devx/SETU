@@ -1,5 +1,7 @@
 # SETU — Performance (2G / low-end device budget)
 
+**Version:** 1.0.0 · **Last updated:** 2026-07-08
+
 SETU's audience is Tier-4/5 rural India: 2G/3G connections and entry-level
 Android phones. Bytes and main-thread work are the budget.
 

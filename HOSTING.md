@@ -1,5 +1,7 @@
 # SETU — Hosting & Security Headers
 
+**Version:** 1.0.0 · **Last updated:** 2026-07-08
+
 ## Why move off GitHub Pages
 
 GitHub Pages serves static files only. It **cannot**:

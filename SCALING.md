@@ -1,5 +1,7 @@
 # SETU — Scaling & Cost Controls (Phase 4)
 
+**Version:** 1.0.0 · **Last updated:** 2026-07-08
+
 How SETU scales reads, protects third-party spend, keeps the payment
 queue observable, and how to load-test before a traffic event.
 

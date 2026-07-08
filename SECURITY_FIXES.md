@@ -1,5 +1,7 @@
 # SETU — Security Fixes Changelog (Round 2)
 
+**Version:** 1.0.0 · **Last updated:** 2026-07-08
+
 This documents every change made in response to the production-readiness
 audit, plus several **new, more severe issues discovered while verifying
 that the audit's fixes actually work against the real deployed schema**.

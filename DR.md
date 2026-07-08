@@ -1,5 +1,7 @@
 # SETU — Disaster Recovery & Chaos Drills
 
+**Version:** 1.0.0 · **Last updated:** 2026-07-08
+
 A platform handling wallets, credit, and KYC must be able to recover from data
 loss, provider outages, and credential compromise. This is the drill playbook.
 Run each drill in a **staging** project on a schedule (suggested: quarterly).

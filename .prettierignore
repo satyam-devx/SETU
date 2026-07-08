@@ -1,0 +1,8 @@
+dist/
+node_modules/
+qa/reports/
+qa/test-results/
+qa/playwright-report/
+package-lock.json
+qa/package-lock.json
+*.min.js

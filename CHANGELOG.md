@@ -1,0 +1,85 @@
+# Changelog
+
+All notable changes to SETU are documented here.
+Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/); this project uses [Semantic Versioning](https://semver.org/).
+
+> **Note on dates:** this changelog was backfilled from `SECURITY_FIXES.md` and repository state during the July 2026 audit/cleanup pass — this repo's history predates the changelog itself and was not exported with commit history, so entries before `1.0.0` are grouped by phase/theme rather than exact calendar date. Going forward, every release gets a dated entry here in real time.
+
+---
+
+## [1.0.0] — 2026-07-08 — First stable release
+
+Marks SETU's transition from active buildout to a tracked, versioned release line. No functional app changes in this release — it consolidates prior work and fixes repo hygiene/tooling debt found during a full project audit.
+
+### Added
+- `CHANGELOG.md` (this file).
+- `LICENSE` — proprietary, all rights reserved (SETU is closed-source; no `CONTRIBUTING.md`/`CODE_OF_CONDUCT.md` needed at this stage since outside contributions aren't accepted).
+- ESLint (`eslint.config.js`) with React, Hooks, and `jsx-a11y` rules — first automated lint coverage for the ~230 file frontend.
+- Prettier (`.prettierrc.json`, `.prettierignore`) — shared formatting config.
+- `tsconfig.json` — enables `@/` alias resolution in editors and `npm run typecheck` (JS project, no TypeScript migration implied).
+- `npm run lint`, `lint:fix`, `format`, `format:check`, `typecheck`, `clean`, `analyze`, `test`, `test:all` scripts at repo root.
+- "Last updated" + version metadata headers across all top-level documentation.
+- Cross-links between all documentation files from `README.md`.
+
+### Changed
+- `README.md` fully rewritten to reflect the actual current app (was describing an early mock-data-only build).
+- `SECURITY.md` reporting section updated with a working vulnerability-reporting path (see `SECURITY.md`).
+- `package.json` version set to `1.0.0`.
+- `vite.config.js`: added an explicit `firebase-vendor` manual chunk name (Firebase was already dynamically imported and code-split — this just gives it a stable chunk name); documented why Leaflet/Mapbox are intentionally *not* npm dependencies.
+
+### Removed
+- `leaflet` and `react-leaflet` npm dependencies — confirmed unused. The app loads Leaflet (and Mapbox GL) from a CDN at runtime via `src/lib/maps.js`, by design, to keep mapping libraries off the JS bundle for 2G users (see `PERFORMANCE.md`). The npm packages were dead weight in `package.json`/`package-lock.json` only — they were never imported anywhere in `src/`.
+- `database/migrations/007_phase2_hardening.sql` — orphaned duplicate of `supabase/migrations/20240101000007_phase2_hardening.sql` with drifted content; deleted to remove ambiguity about which is authoritative.
+- `qa/.github/workflows/` — a stale, non-functional copy of the real CI workflows. GitHub Actions only runs workflows from the repo-root `.github/workflows/`, so this nested copy never executed; it had drifted out of sync with the real `qa.yml`/`nightly.yml` and was actively misleading (referenced in `SECURITY_FIXES.md`'s deploy instructions as if it were live).
+- `audit.json` — a committed point-in-time `npm audit` snapshot; removed and added to `.gitignore`. Regenerate on demand via `qa`'s `audit:deps` script.
+- `supabase/functions/important_map.json` — typo'd, unreferenced file (Deno's convention is `import_map.json`); it was wired nowhere, so it was deleted rather than fixed. Re-add a correctly named, correctly wired import map if/when one is actually needed.
+
+### Fixed
+- `src/pages/rider/RiderSafety.jsx` — placeholder emergency support number (`1800-XXX-XXXX`) replaced/flagged; a rider in a real emergency must not be shown a fake number next to real Police/Ambulance numbers.
+
+---
+
+## [Unreleased history] — Security hardening (pre-1.0.0)
+
+Consolidated from `SECURITY_FIXES.md` ("Round 2" audit response) and prior sessions. Grouped by theme, not chronological.
+
+### Payments & money integrity
+- Server-side reconciliation of payment amounts against `orders.total` in `create-razorpay-order` and the Razorpay webhook — client-supplied amounts are no longer trusted.
+- `payment.captured` webhook now flags (rather than silently accepts) amount mismatches for manual review instead of auto-releasing escrow.
+- Wallet ownership, wallet-minting, and escrow-debit guard vulnerabilities found and fixed (migrations `016`, `037`).
+- Order write-path fully locked down to `SECURITY DEFINER` RPCs (`claim_order`, `admin_assign_rider`, `rate_order`); unrestricted client `UPDATE` policies on `orders` dropped (migration `050`).
+
+### Auth & access control
+- All Edge Functions now require authentication via `_shared/auth.ts` (`requireUser`, `requireInternalOrAdmin`, `isInternalServiceCall`) except the HMAC-verified Razorpay webhook.
+- `--no-verify-jwt` restricted to only the Razorpay webhook function (was previously blanket-applied).
+- Dynamic RBAC, `EXECUTE` privilege lockdown on money/escrow/internal RPCs (migrations `021`, `035`).
+- Admin privilege-escalation vulnerability in RLS policies found and fixed.
+
+### KYC & identity
+- Aadhaar dev-mode bypass no longer client-triggerable; gated behind a server-only `ALLOW_KYC_DEV_BYPASS` secret that must never be set in production.
+- Aadhaar data encrypted at rest via `pgcrypto` / Supabase Vault.
+
+### Infrastructure
+- CORS hardened across all Edge Functions — replaced wildcard `Access-Control-Allow-Origin: *` with an explicit allow-list (`_shared/cors.ts`).
+- Silent demo-mode auto-login fallback removed; app now fails closed (shows a configuration-error screen) unless `VITE_DEMO_MODE=true` is explicitly set.
+- Sensitive profile columns (`is_verified`, etc.) made non-self-updatable.
+- Migrated production hosting target from GitHub Pages to Cloudflare Pages (feature-flagged rollout) for WAF/CSP support — see `HOSTING.md`.
+
+### Admin platform
+- Seven new production database tables; six new admin pages (incidents, refunds, promotions, settlements, rider incentives, inventory).
+- Server-side `SECURITY DEFINER` aggregate RPCs for admin dashboards/analytics (migrations `044`, `046`, `047`, `048`) — no raw table downloads to the browser.
+- PostgreSQL SLA-breach detection function via `pg_cron`.
+- Super Admin panel (17 pages) UI audit: fixed broken Tailwind sidebar color classes, sticky-header collisions across 15 pages, desktop width constraints, hardcoded placeholder data in unwired pages.
+
+### QA & CI/CD
+- Full QA pipeline built: Vitest (unit/integration), Playwright (e2e + accessibility via axe-core), k6 (load testing), 15 SQL security/regression proof files.
+- Bundle optimization: route-level lazy loading across every portal, `framer-motion`/`recharts` isolated into separate chunks, deferred Firebase load until push-notification opt-in.
+- i18n system covering Hindi, Maithili, Bhojpuri, English.
+
+---
+
+## [0.1.0] — Initial buildout
+
+- Initial React/Vite scaffold, mock-data-only demo across 7 portals (Customer, Vendor, Rider, Seva, Anchor, Admin, Super Admin) + onboarding flows.
+- Full PostgreSQL schema (18 tables), RLS policies, atomic RPCs (`place_order`, `pay_from_wallet`).
+- Real Supabase backend, Razorpay Edge Functions, Realtime hooks, FCM push, Whisper transcription, Anthropic API integration replacing the original stub.

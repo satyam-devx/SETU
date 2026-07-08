@@ -1,5 +1,7 @@
 # SETU — Operations Runbook & Rollback Strategy
 
+**Version:** 1.0.0 · **Last updated:** 2026-07-08
+
 Deploys are split across three independently-rollbackable layers:
 **frontend**, **Edge Functions**, and **database migrations**. Each has a
 different rollback mechanism — there is no single "undo button," so know which

@@ -1,11 +1,22 @@
 # SETU — Security Policy
 
+**Version:** 1.0.0 · **Last updated:** 2026-07-08
+
 SETU handles real money (wallet, credit, escrow, payouts), COD cash, and
 Aadhaar KYC. Security reports are taken seriously.
 
 ## Reporting a vulnerability (coordinated disclosure)
 
-- Email: **security@setu.example** (replace with the real inbox before launch).
+- **Preferred: GitHub Private Vulnerability Reporting.** Go to this repo's
+  **Security** tab → **Report a vulnerability**. This opens a private,
+  repo-scoped advisory thread visible only to the maintainer and you — no
+  email setup required, and nothing becomes public until a fix ships. If the
+  "Report a vulnerability" button isn't visible, ask the maintainer to enable
+  it under **Settings → Security → Private vulnerability reporting**.
+- Alternative: open a private Security Advisory directly at
+  `https://github.com/satyam-devx/SETU/security/advisories/new`.
+- Do **not** open public issues for security bugs, and do not access, modify,
+  or exfiltrate other users' data while testing.
 - Please include: affected area, reproduction steps, impact, and any PoC.
 - Do **not** open public issues for security bugs, and do not access, modify, or
   exfiltrate other users' data while testing.

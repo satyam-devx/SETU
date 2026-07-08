@@ -1,5 +1,7 @@
 # SETU — Accessibility (WCAG 2.1 AA)
 
+**Version:** 1.0.0 · **Last updated:** 2026-07-08
+
 SETU serves first-time smartphone users, many with limited literacy or vision.
 Accessibility is a usability requirement here, not a checkbox.
 

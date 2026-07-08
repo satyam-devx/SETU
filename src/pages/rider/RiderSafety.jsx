@@ -4,9 +4,17 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
+import { usePublicSettings } from '@/lib/settings';
 
 export default function RiderSafety() {
   const [sosActive, setSosActive] = useState(false);
+  const { get: getSetting } = usePublicSettings();
+  // Was hardcoded as the placeholder '1800-XXX-XXXX' — a rider in a real
+  // emergency must never be shown a fake number next to real Police/
+  // Ambulance numbers. Now reads the real, admin-configurable value from
+  // app_settings (support_phone) via get_public_settings(); falls back to
+  // null (hides the Call button) rather than a fake number if unset.
+  const supportPhone = getSetting('support_phone', null);
 
   return (
     <div className="pb-6">
@@ -29,15 +37,27 @@ export default function RiderSafety() {
         <Card className="p-4 border-border">
           <h3 className="font-semibold text-sm mb-3 flex items-center gap-2"><Phone className="w-4 h-4 text-primary" /> Emergency Contacts</h3>
           <div className="space-y-2">
-            {[{ name: 'SETU Support', number: '1800-XXX-XXXX', type: 'Platform' }, { name: 'Police', number: '100', type: 'Emergency' }, { name: 'Ambulance', number: '108', type: 'Medical' }].map(c => (
+            {[
+              { name: 'SETU Support', number: supportPhone, type: 'Platform' },
+              { name: 'Police', number: '100', type: 'Emergency' },
+              { name: 'Ambulance', number: '108', type: 'Medical' },
+            ].map(c => (
               <div key={c.name} className="flex items-center justify-between p-2 rounded-lg bg-muted/40">
                 <div>
                   <p className="text-sm font-medium">{c.name}</p>
-                  <p className="text-xs text-muted-foreground">{c.number}</p>
+                  <p className="text-xs text-muted-foreground">{c.number || 'Not configured'}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-[9px]">{c.type}</Badge>
-                  <Button size="sm" variant="outline" className="h-7 text-xs">Call</Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    disabled={!c.number}
+                    onClick={() => c.number && (window.location.href = `tel:${c.number}`)}
+                  >
+                    Call
+                  </Button>
                 </div>
               </div>
             ))}
