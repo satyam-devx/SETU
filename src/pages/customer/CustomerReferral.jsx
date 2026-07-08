@@ -77,7 +77,7 @@ export default function CustomerReferral() {
           <div className="space-y-2">
             {referrals.map((r, i) => (
               <Card key={i} className="p-3 border-border flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm shrink-0">
+                <div className="w-9 h-9 rounded-full bg-primary/5 flex items-center justify-center font-bold text-primary text-sm shrink-0">
                   {r.name[0]}
                 </div>
                 <div className="flex-1 min-w-0">

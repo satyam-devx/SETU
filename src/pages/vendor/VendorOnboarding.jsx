@@ -168,7 +168,7 @@ function Step1({ onNext, user }) {
           Your Village Anchor must vouch for you before your store goes live.
         </p>
         <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-xl">
-          <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary text-sm">
+          <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center font-bold text-primary text-sm">
             RD
           </div>
           <div>
@@ -361,7 +361,7 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
               onClick={() => set('delivery_radius', r.value)}
               className={`flex-1 text-xs py-2 rounded-lg border transition-colors ${
                 form.delivery_radius === r.value
-                  ? 'border-primary bg-primary/10 text-primary font-medium'
+                  ? 'border-primary bg-primary/5 text-primary font-medium'
                   : 'border-border hover:border-primary/50'
               }`}
             >
@@ -835,7 +835,7 @@ export default function VendorOnboarding() {
     <div className="min-h-screen bg-background max-w-md mx-auto">
       <div className="sticky top-0 bg-card z-10 border-b border-border">
         <div className="px-4 py-3 flex items-center gap-3">
-          <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+          <div className="w-8 h-8 bg-primary/5 rounded-lg flex items-center justify-center">
             <Store className="w-4 h-4 text-primary" />
           </div>
           <div>

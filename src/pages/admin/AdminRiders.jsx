@@ -155,7 +155,7 @@ export default function AdminRiders() {
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-3">
                       <div className="relative">
-                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm">
+                        <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center font-bold text-primary text-sm">
                           {(rider.name ?? '?').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                         </div>
                         <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background

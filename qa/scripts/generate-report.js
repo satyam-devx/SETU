@@ -21,12 +21,31 @@ function safeReadJSON(filePath) {
 }
 
 // ── Load all reports ───────────────────────────────────────────
-const vitestResults  = safeReadJSON(path.join(REPORTS, 'vitest-results.json'));
-const playwrightJson = safeReadJSON(path.join(REPORTS, 'playwright-results.json'));
-const securityReport = safeReadJSON(path.join(REPORTS, 'security-report.json'));
-const a11yReport     = safeReadJSON(path.join(REPORTS, 'a11y-report.json'));
-const perfReport     = safeReadJSON(path.join(REPORTS, 'performance-report.json'));
-const npmAudit       = safeReadJSON(path.join(REPORTS, 'npm-audit.json'));
+// Search for files recursively in case they are nested in subdirectories from artifacts
+function findAndReadJSON(fileName) {
+  const findFile = (dir) => {
+    if (!fs.existsSync(dir)) return null;
+    const items = fs.readdirSync(dir);
+    for (const item of items) {
+      const fullPath = path.join(dir, item);
+      if (fs.statSync(fullPath).isDirectory()) {
+        const found = findFile(fullPath);
+        if (found) return found;
+      } else if (item === fileName) {
+        return safeReadJSON(fullPath);
+      }
+    }
+    return null;
+  };
+  return findFile(REPORTS);
+}
+
+const vitestResults  = findAndReadJSON('vitest-results.json');
+const playwrightJson = findAndReadJSON('playwright-results.json');
+const securityReport = findAndReadJSON('security-report.json');
+const a11yReport     = findAndReadJSON('a11y-report.json');
+const perfReport     = findAndReadJSON('performance-report.json');
+const npmAudit       = findAndReadJSON('npm-audit.json');
 
 // ── Build summary ──────────────────────────────────────────────
 function getVitestSummary() {

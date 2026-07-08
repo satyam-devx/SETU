@@ -157,7 +157,7 @@ function ProductCard({ product }) {
               className={`w-11 h-11 rounded-xl flex items-center justify-center transition-colors shrink-0 ${
                 inCart
                   ? 'bg-primary text-primary-foreground'
-                  : 'bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground'
+                  : 'bg-primary/5 text-primary hover:bg-primary hover:text-primary-foreground'
               }`}
             >
               {inCart ? <ShoppingCart className="w-5 h-5" /> : <Plus className="w-5 h-5" />}

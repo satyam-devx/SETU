@@ -32,7 +32,7 @@ export default function VendorProfile() {
               <p className="text-sm text-muted-foreground">Grocery & Essentials</p>
               <div className="flex items-center gap-2 mt-1">
                 <Badge className="bg-accent/10 text-accent text-[9px] border-0">✓ Verified</Badge>
-                <Badge className="bg-primary/10 text-primary text-[9px] border-0">Pro</Badge>
+                <Badge className="bg-primary/5 text-primary text-[9px] border-0">Pro</Badge>
                 <div className="flex items-center gap-0.5">
                   <Star className="w-3 h-3 text-primary fill-primary" />
                   <span className="text-xs font-medium">4.5</span>

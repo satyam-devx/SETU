@@ -263,7 +263,7 @@ export default function CustomerOrderDetail() {
         </h2>
         {riderName && isLive && (
           <div className="flex items-center gap-3 mt-3 p-3 bg-card rounded-xl border border-border">
-            <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary text-sm">
+            <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center font-bold text-primary text-sm">
               {riderName.split(' ').map(n => n[0]).join('')}
             </div>
             <div className="flex-1">

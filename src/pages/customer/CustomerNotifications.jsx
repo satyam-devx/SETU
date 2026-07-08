@@ -8,7 +8,7 @@ import { useStore } from '@/lib/store';
 
 const typeIcon = { order: ShoppingBag, credit: Wallet, promo: Tag, scheme: Info, system: Bell };
 const typeColor = {
-  order:  'bg-primary/10 text-primary',
+  order:  'bg-primary/5 text-primary',
   credit: 'bg-green-100 text-green-700',
   promo:  'bg-amber-100 text-amber-700',
   scheme: 'bg-blue-100 text-blue-700',

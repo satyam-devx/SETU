@@ -109,7 +109,7 @@ export default function RiderProfile() {
         <Card className="p-5 border-border">
           <div className="flex items-center gap-4 mb-4">
             <div className="relative">
-              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary">
+              <div className="w-16 h-16 rounded-full bg-primary/5 flex items-center justify-center text-2xl font-bold text-primary">
                 {initials}
               </div>
               {rider.is_online && (

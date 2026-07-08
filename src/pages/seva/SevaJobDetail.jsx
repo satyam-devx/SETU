@@ -110,7 +110,7 @@ export default function SevaJobDetail() {
         <Card className="p-4 border-border space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-sm">{job.title}</h3>
-            <Badge className="text-xs bg-primary/10 text-primary border-0">₹{job.amount}</Badge>
+            <Badge className="text-xs bg-primary/5 text-primary border-0">₹{job.amount}</Badge>
           </div>
           {job.description && <p className="text-sm text-muted-foreground">{job.description}</p>}
           <div className="space-y-1.5 text-xs text-muted-foreground">
@@ -121,7 +121,7 @@ export default function SevaJobDetail() {
 
         {(job.customer_name || job.phone) && (
           <Card className="p-4 border-border flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
+            <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center font-bold text-primary">
               {(job.customer_name || '?')[0]}
             </div>
             <div className="flex-1">

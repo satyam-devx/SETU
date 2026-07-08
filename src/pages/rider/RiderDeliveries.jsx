@@ -164,7 +164,7 @@ export default function RiderDeliveries() {
                 >
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex items-center gap-2">
-                      <Badge className="bg-primary/10 text-primary text-[10px] font-black uppercase px-2 h-5">
+                      <Badge className="bg-primary/5 text-primary text-[10px] font-black uppercase px-2 h-5">
                         {order.status.replace(/_/g, ' ')}
                       </Badge>
                       <span className="text-[10px] font-mono font-bold text-muted-foreground">

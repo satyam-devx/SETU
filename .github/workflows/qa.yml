@@ -367,12 +367,23 @@ jobs:
           VITE_MAPBOX_TOKEN: 'pk.placeholder'
           VITE_RAZORPAY_KEY_ID: 'rzp_test_placeholder'
           CI: 'true'
-        run: npm run test:e2e -- --project=a11y --reporter=list,json
+        run: |
+          # Use webServer from playwright.config.js to start dev server
+          npm run test:e2e -- --project=a11y --reporter=list,json
 
       - name: Run a11y audit script
         if: always()
         working-directory: ${{ env.QA_DIR }}
-        run: node scripts/run-a11y-suite.js
+        env:
+          # Use a manual server start for the standalone script if needed,
+          # or ensure it hits the same port.
+          SETU_E2E_URL: 'http://localhost:5173'
+        run: |
+          # Start dev server in background and wait for it
+          npm run dev > /dev/null 2>&1 &
+          timeout 60s bash -c "until curl -s http://localhost:5173 > /dev/null; do sleep 2; done"
+          node scripts/run-a11y-suite.js
+          kill $(lsof -t -i:5173) || true
 
       - name: Upload a11y report
         uses: actions/upload-artifact@v4
@@ -483,6 +494,12 @@ jobs:
           name: perf-report-${{ github.sha }}
           path: ${{ env.QA_DIR }}/reports/
         continue-on-error: true
+
+      - name: Debug: list report artifacts
+        working-directory: ${{ env.QA_DIR }}
+        run: |
+          echo "Listing reports/ directory:"
+          ls -R reports/
 
       - name: Generate unified HTML report
         working-directory: ${{ env.QA_DIR }}
