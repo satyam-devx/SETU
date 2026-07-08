@@ -83,8 +83,9 @@ const hasUnitFails    = (summary.suites.unit?.failed ?? 0) > 0;
 const hasE2EFails     = (summary.suites.e2e?.failed ?? 0) > 0;
 const hasSecFails     = (summary.suites.security?.failed ?? 0) > 0;
 const hasPerfFails    = (summary.suites.performance?.failed ?? 0) > 0;
+const hasA11yFails    = (summary.suites.a11y?.failed ?? 0) > 0;
 
-summary.overall.passed = !hasUnitFails && !hasE2EFails && !hasSecFails && !hasPerfFails;
+summary.overall.passed = !hasUnitFails && !hasE2EFails && !hasSecFails && !hasPerfFails && !hasA11yFails;
 
 // Score: 0–100
 const totalTests  = (summary.suites.unit?.total ?? 0) + (summary.suites.e2e?.total ?? 0);

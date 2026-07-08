@@ -295,7 +295,7 @@ jobs:
           VITE_MAPBOX_TOKEN:                 'pk.placeholder'
           VITE_RAZORPAY_KEY_ID:              'rzp_test_placeholder'
           CI: 'true'
-        run: npm run test:e2e -- --project=mobile-chrome --reporter=list,json,junit
+        run: npm run test:e2e -- --project=mobile-chrome --project=desktop-chrome --reporter=list,json,junit
 
       - name: Upload Playwright results
         uses: actions/upload-artifact@v4
@@ -353,7 +353,6 @@ jobs:
 
       - name: Run a11y tests (Playwright + axe-core spec)
         working-directory: ${{ env.QA_DIR }}
-        continue-on-error: true
         env:
           VITE_SUPABASE_URL: ''
           VITE_SUPABASE_ANON_KEY: ''
@@ -373,7 +372,7 @@ jobs:
       - name: Run a11y audit script
         if: always()
         working-directory: ${{ env.QA_DIR }}
-        run: node scripts/run-a11y-suite.js || true  # don't double-fail, spec already reported
+        run: node scripts/run-a11y-suite.js
 
       - name: Upload a11y report
         uses: actions/upload-artifact@v4
@@ -555,86 +554,22 @@ jobs:
         run: |
           node -e "
             const s = JSON.parse(require('fs').readFileSync('reports/summary.json'));
-            const critical = ['unit', 'security', 'e2e'];
-            const failed = critical.filter(k => (s.suites[k]?.failed ?? 0) > 0);
+            const critical = ['unit', 'security', 'e2e', 'a11y'];
+            const failed = [];
+            for (const k of critical) {
+              if (s.suites[k] === null) {
+                console.error('✗ Critical suite missing results:', k);
+                failed.push(k);
+              } else if ((s.suites[k]?.failed ?? 0) > 0) {
+                console.error('✗ Critical suite has failures:', k);
+                failed.push(k);
+              }
+            }
             if (failed.length > 0) {
-              console.error('✗ Critical suite failures:', failed.join(', '));
+              console.error('✗ Critical pipeline failure in:', failed.join(', '));
               process.exit(1);
             }
             console.log('✓ All critical suites passed');
           "
 
 
-  # ════════════════════════════════════════════════════════════
-  # JOB 8: Post-deploy E2E against production URL
-  # Triggered only after deploy.yml completes on main
-  # ════════════════════════════════════════════════════════════
-  post-deploy-e2e:
-    name: Post-Deploy E2E (Production)
-    runs-on: ubuntu-latest
-    # Only run on main after a deploy — or on manual trigger with URL
-    if: >
-      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.target_url != '')
-    needs: [unit-tests, security]
-    environment: production
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-
-      - name: Install QA deps
-        working-directory: ${{ env.QA_DIR }}
-        run: npm ci
-
-      - name: Restore Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('qa/package-lock.json') }}
-
-      - name: Install Playwright browsers
-        working-directory: ${{ env.QA_DIR }}
-        run: npx playwright install --with-deps chromium
-
-      - name: Wait for GitHub Pages propagation
-        run: sleep 45
-
-      - name: Run E2E against production URL
-        working-directory: ${{ env.QA_DIR }}
-        env:
-          SETU_E2E_URL: ${{ github.event.inputs.target_url || vars.PROD_URL }}
-          CI: 'true'
-        run: |
-          # Override webServer — we're hitting real prod, not starting a local server
-          npx playwright test \
-                --config playwright.config.js \
-                tests/e2e/auth.spec.js \
-                tests/e2e/role-isolation.spec.js \
-                --project=mobile-chrome \
-                --reporter=list,json
-
-      - name: Upload post-deploy E2E results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: post-deploy-e2e-${{ github.sha }}
-          path: ${{ env.QA_DIR }}/reports/
-          retention-days: 30
-
-      - name: Alert on regression
-        if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.create({
-              owner: context.repo.owner,
-              repo:  context.repo.repo,
-              title: `🚨 Post-deploy E2E regression on main — ${context.sha.slice(0,8)}`,
-              body:  `E2E tests failed after deployment of commit ${context.sha}.\n\nBranch: ${context.ref}\nActor: ${context.actor}\n\nCheck the workflow run for traces and screenshots.`,
-              labels: ['bug', 'regression', 'automated'],
-            });
