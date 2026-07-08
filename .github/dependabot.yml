@@ -1,0 +1,51 @@
+# Dependabot — continuous dependency-vulnerability scanning.
+# Replaces the previous approach of committing one-off `npm audit` snapshots
+# (audit.json, removed in 1.0.0 — see CHANGELOG.md) with an always-on,
+# scheduled check that opens PRs automatically for outdated/vulnerable deps.
+#
+# Security updates (CVEs) are opened as soon as GitHub's advisory database
+# flags them, independent of the schedule below. Docs:
+# https://docs.github.com/en/code-security/dependabot
+
+version: 2
+updates:
+  # Root frontend app
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "npm"]
+    groups:
+      radix-ui:
+        patterns: ["@radix-ui/*"]
+      dev-tooling:
+        patterns: ["eslint*", "prettier*", "@vitejs/*", "vite", "typescript", "@types/*"]
+    ignore:
+      # Major version bumps for React/Router get reviewed manually, not
+      # auto-PR'd — too many portals/screens to risk an unreviewed major bump.
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-router-dom"
+        update-types: ["version-update:semver-major"]
+
+  # QA pipeline (separate package.json/lockfile)
+  - package-ecosystem: "npm"
+    directory: "/qa"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "npm", "qa"]
+
+  # GitHub Actions versions used across all workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "github-actions"]

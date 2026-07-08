@@ -15,6 +15,8 @@ Marks SETU's transition from active buildout to a tracked, versioned release lin
 - `CHANGELOG.md` (this file).
 - `LICENSE` — proprietary, all rights reserved (SETU is closed-source; no `CONTRIBUTING.md`/`CODE_OF_CONDUCT.md` needed at this stage since outside contributions aren't accepted).
 - ESLint (`eslint.config.js`) with React, Hooks, and `jsx-a11y` rules — first automated lint coverage for the ~230 file frontend.
+- `qa/scripts/run-semgrep.js` — SAST scan (OWASP Top 10 / security-audit / JS / React rulesets) via Semgrep; previously referenced by `lint:security` but didn't exist. Wired into `qa.yml`'s `security` job and into `test:all`.
+- `.github/dependabot.yml` — weekly automated dependency-update PRs for the root app, the `qa/` pipeline, and GitHub Actions versions, plus immediate PRs for CVE-flagged dependencies. Replaces the one-off committed `audit.json` snapshot approach.
 - Prettier (`.prettierrc.json`, `.prettierignore`) — shared formatting config.
 - `tsconfig.json` — enables `@/` alias resolution in editors and `npm run typecheck` (JS project, no TypeScript migration implied).
 - `npm run lint`, `lint:fix`, `format`, `format:check`, `typecheck`, `clean`, `analyze`, `test`, `test:all` scripts at repo root.

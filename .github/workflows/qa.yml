@@ -198,6 +198,14 @@ jobs:
         working-directory: ${{ env.QA_DIR }}
         run: node scripts/run-security-suite.js
 
+      # SAST — Semgrep (OWASP Top 10 / security-audit / JS / React rulesets)
+      - name: Install semgrep
+        run: pip install semgrep
+
+      - name: Run semgrep SAST scan
+        working-directory: ${{ env.QA_DIR }}
+        run: node scripts/run-semgrep.js
+
       - name: Upload security report
         uses: actions/upload-artifact@v4
         if: always()
@@ -206,6 +214,7 @@ jobs:
           path: |
             ${{ env.QA_DIR }}/reports/security-report.json
             ${{ env.QA_DIR }}/reports/npm-audit.json
+            ${{ env.QA_DIR }}/reports/semgrep-report.json
           retention-days: 30
 
       # Annotate PR with security findings
