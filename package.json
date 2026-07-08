@@ -62,6 +62,9 @@
   "overrides": {
     "eslint-plugin-react-hooks": {
       "eslint": "$eslint"
+    },
+    "eslint-plugin-jsx-a11y": {
+      "eslint": "$eslint"
     }
   }
 }
