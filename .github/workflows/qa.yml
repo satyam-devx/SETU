@@ -105,7 +105,7 @@ jobs:
         run: npx playwright install --with-deps chromium firefox
 
       - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v3
         with:
           version: latest
         env:
