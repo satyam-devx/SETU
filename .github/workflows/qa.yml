@@ -495,7 +495,7 @@ jobs:
           path: ${{ env.QA_DIR }}/reports/
         continue-on-error: true
 
-      - name: Debug: list report artifacts
+      - name: "Debug: list report artifacts"
         working-directory: ${{ env.QA_DIR }}
         run: |
           echo "Listing reports/ directory:"
