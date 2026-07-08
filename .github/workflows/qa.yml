@@ -28,6 +28,7 @@ env:
   NODE_VERSION: '20'
   # QA pipeline lives in /qa subdirectory of the repo
   QA_DIR: qa
+  npm_config_legacy_peer_deps: true # <─── YEH LINE ADD KARO
 
 permissions:
   contents: read
@@ -102,6 +103,13 @@ jobs:
         if: steps.pw-cache.outputs.cache-hit != 'true'
         working-directory: ${{ env.QA_DIR }}
         run: npx playwright install --with-deps chromium firefox
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 
   # ════════════════════════════════════════════════════════════
