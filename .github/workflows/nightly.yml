@@ -64,7 +64,7 @@ jobs:
 
       - name: Open issue if critical CVEs found
         if: steps.audit.outputs.critical > 0 || steps.audit.outputs.high > 0
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const critical = '${{ steps.audit.outputs.critical }}';
@@ -148,7 +148,7 @@ jobs:
 
       - name: Alert on smoke test failure
         if: failure()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             github.rest.issues.create({
