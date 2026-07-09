@@ -64,6 +64,13 @@ Fixed four distinct CI failures found in a full GitHub Actions run (`qa.yml`), d
 
 ---
 
+## [1.0.3] — 2026-07-08 — Build failure: `manualChunks is not a function`
+
+### Fixed
+- **`npm run build` failing on Vite 8**: `TypeError: manualChunks is not a function` (rolldown internals). `vite.config.js`'s `build.rollupOptions.output.manualChunks` was the older object-map form (`{ 'chunk-name': ['pkg', ...] }`), which plain Rollup accepted but Vite 8's default bundler (rolldown) rejects outright — it only accepts the function form `manualChunks(id) { ... }`. Rewrote it as an equivalent function that inspects each module's path and returns the same chunk names (`react-vendor`, `supabase-vendor`, `ui-vendor`, `motion-vendor`, `chart-vendor`, `firebase-vendor`) as before — no change in the actual chunking behavior, just a syntax form both Rollup and rolldown accept. Also updated the `vite` version pin in `package.json` from `^5.4.0` (stale — the range didn't reflect what's actually being installed) to `^8.1.3` to match reality and avoid future confusion about which major is in play.
+
+---
+
 ## [Unreleased history] — Security hardening (pre-1.0.0)
 
 Consolidated from `SECURITY_FIXES.md` ("Round 2" audit response) and prior sessions. Grouped by theme, not chronological.
