@@ -79,6 +79,16 @@ Fixed four distinct CI failures found in a full GitHub Actions run (`qa.yml`), d
 
 ---
 
+## [1.0.5] — 2026-07-09 — `nightly.yml` missing `issues:write` permission + React 19 lockfile drift
+
+### Fixed
+- **`Production Smoke Test` (and `CVE Dependency Scan`) failing: `RequestError [HttpError]: Resource not accessible by integration` (403) when `actions/github-script` tried to open a GitHub issue.** `nightly.yml` never declared a `permissions:` block, so `GITHUB_TOKEN` fell back to the repo/org default — which doesn't include `issues: write` on this repo. Added an explicit, minimal workflow-level default (`contents: read`) plus a per-job `issues: write` grant on exactly the two jobs that open issues (`cve-check` on critical/high CVEs, `production-smoke` on a failed smoke test) — least-privilege rather than a blanket write-all token.
+
+### Known issue — needs a local step, not fixable by editing files
+- **`npm ci` failing: "Missing: react@19.2.7, react-dom@19.2.7, scheduler@0.27.0 from lock file."** `package.json` now specifies React 19.2.7 (bumped from 18.3.1 — bring `package.json` here in line) but `package-lock.json` was never regenerated to match, so `npm ci`'s strict lockfile-sync check correctly refuses to install. This can't be fixed by editing files in this environment — a real `npm install` run against the live npm registry is required to produce a valid lockfile, and this sandbox has no network access. **Action required:** run `npm install` (repo root) and `cd qa && npm install` locally, then commit the regenerated `package-lock.json` / `qa/package-lock.json`. Also worth running `npm run test:all` once locally afterward in case anything in the QA suite assumed React 18 behavior (unlikely, but cheap to check before the next CI run).
+
+---
+
 ## [Unreleased history] — Security hardening (pre-1.0.0)
 
 Consolidated from `SECURITY_FIXES.md` ("Round 2" audit response) and prior sessions. Grouped by theme, not chronological.

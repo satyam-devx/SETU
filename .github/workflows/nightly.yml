@@ -16,12 +16,23 @@ env:
   NODE_VERSION: '24'
   QA_DIR: qa
 
+# No permissions block existed before — GITHUB_TOKEN defaulted to whatever
+# the repo/org setting is (commonly read-only on newer repos), which is why
+# actions/github-script's issue-creation calls failed with 403 "Resource not
+# accessible by integration". Explicit, minimal permissions per job instead
+# of a blanket write-all. See CHANGELOG.md.
+permissions:
+  contents: read
+
 jobs:
 
   # ── Dependency CVE check ──────────────────────────────────
   cve-check:
     name: CVE Dependency Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues:   write   # opens an issue when critical/high CVEs are found
 
     steps:
       - uses: actions/checkout@v4
@@ -97,6 +108,9 @@ jobs:
     name: Production Smoke Test
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
+      issues:   write   # opens an issue when the smoke test fails
     if: vars.PROD_URL != ''
 
     steps:
