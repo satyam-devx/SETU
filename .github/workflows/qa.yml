@@ -25,7 +25,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '20'
+  NODE_VERSION: '24'
   # QA pipeline lives in /qa subdirectory of the repo
   QA_DIR: qa
   npm_config_legacy_peer_deps: true # <─── YEH LINE ADD KARO
@@ -105,9 +105,9 @@ jobs:
         run: npx playwright install --with-deps chromium firefox
 
       - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v3
         with:
-          version: latest
+          version: 2.109.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

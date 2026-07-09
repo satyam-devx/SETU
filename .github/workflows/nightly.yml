@@ -13,7 +13,7 @@ on:
   workflow_dispatch:        # Allow manual runs
 
 env:
-  NODE_VERSION: '20'
+  NODE_VERSION: '24'
   QA_DIR: qa
 
 jobs:

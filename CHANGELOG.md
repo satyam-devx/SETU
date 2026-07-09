@@ -54,6 +54,18 @@ Fixed four distinct CI failures found in a full GitHub Actions run (`qa.yml`), d
 ### Known follow-up (not fixed here, flagged for a dedicated pass)
 - `--secondary` (teal) fails WCAG AA text contrast even at full opacity against white (4.12:1, e.g. `.btn-secondary` in `src/index.css`), and `--accent` (green) similarly (3.48:1 solid, e.g. the "Verified" badge in `VendorProfile.jsx`). Unlike `--primary`, these weren't tuned for 4.5:1 on white in the first place. `--secondary` also has a dark-mode-specific problem: darkening it enough to fix `text-secondary`-on-dark-background contrast makes white-text-on-solid-`secondary` buttons fail instead (2.91:1) — the two use cases pull the token in opposite directions, so this needs two separate tokens (a text-on-background variant and a solid-fill variant), not a single-value tweak. Left out of this round since it's a broader design-token change, not a CI-flagged regression.
 
+---
+
+## [1.0.2] — 2026-07-08 — CI infra fixes (Supabase CLI rate limit, Node EOL)
+
+### Fixed
+- **`Setup and Build` job failing: "Failed to resolve latest Supabase CLI release: rate limit exceeded."** Every workflow using `supabase/setup-cli` had `version: latest`, which makes the action call GitHub's API to resolve the newest release on every single run — across all jobs/workflows this adds up fast and trips GitHub's API rate limit, independent of the `GITHUB_TOKEN` already being passed in. Pinned all 8 occurrences (across `ci.yml`, `deploy.yml`, `health-monitor.yml`, `secrets-sync.yml`, `qa.yml`) to an explicit CLI version (`2.109.0`, current stable as of this fix) instead of `latest` — this skips the API-resolution call entirely and downloads the pinned release directly. Also bumped the action itself from `supabase/setup-cli@v1` to `@v3` (current major version). Bump the pinned CLI version periodically; Dependabot won't do this automatically since it's a `with:` input, not a dependency file.
+- **Node 20 deprecation warning** ("Node 20 is being deprecated... running with Node 24 by default"). Node 20 reached end-of-life on 2026-04-30. Bumped every workflow's `node-version`/`NODE_VERSION` from `'20'` to `'24'` (current Active LTS, supported through April 2028) — `ci.yml`, `deploy.yml`, `deploy-cloudflare.yml`, `health-monitor.yml`, `qa.yml`, `nightly.yml`. No app code changes required for this bump; re-run `npm run test:all` after pulling this change to confirm nothing in the QA suite assumed Node 20 behavior.
+
+---
+
+## [Unreleased history] — Security hardening (pre-1.0.0)
+
 Consolidated from `SECURITY_FIXES.md` ("Round 2" audit response) and prior sessions. Grouped by theme, not chronological.
 
 ### Payments & money integrity
