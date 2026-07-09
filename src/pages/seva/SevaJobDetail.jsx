@@ -110,7 +110,7 @@ export default function SevaJobDetail() {
         <Card className="p-4 border-border space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-sm">{job.title}</h3>
-            <Badge className="text-xs bg-primary/10 text-primary border-0">₹{job.amount}</Badge>
+            <Badge className="text-xs chip-primary border-0">₹{job.amount}</Badge>
           </div>
           {job.description && <p className="text-sm text-muted-foreground">{job.description}</p>}
           <div className="space-y-1.5 text-xs text-muted-foreground">

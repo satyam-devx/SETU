@@ -366,9 +366,22 @@ const FUNCTION_CHECKS = [
     critical: true,
   },
   {
+    // Was: checked for the literal string 'Access-Control-Allow-Origin' inside
+    // ai-assistant/index.ts. That was true before the CORS-hardening refactor
+    // (audit H5) centralized all CORS header construction into
+    // _shared/cors.ts's corsHeaders(); functions now just call corsHeaders(req)
+    // and spread the result, so the literal string legitimately no longer
+    // appears in each function file. Check the real source of truth instead,
+    // and confirm the function actually imports/uses it. See CHANGELOG.md.
     name:    'Edge functions return CORS headers',
-    file:    'supabase/functions/ai-assistant/index.ts',
-    patterns: ['Access-Control-Allow-Origin'],
+    check:   () => {
+      const cors = fs.readFileSync(path.join(SETU_ROOT, 'supabase/functions/_shared/cors.ts'), 'utf8');
+      const fn   = fs.readFileSync(path.join(SETU_ROOT, 'supabase/functions/ai-assistant/index.ts'), 'utf8');
+      const corsSetsHeader = cors.includes('Access-Control-Allow-Origin');
+      const fnUsesSharedCors = /import\s*\{[^}]*corsHeaders[^}]*\}\s*from\s*["'].*_shared\/cors(\.ts)?["']/.test(fn)
+        && fn.includes('corsHeaders(');
+      return corsSetsHeader && fnUsesSharedCors;
+    },
     critical: false,
   },
   {
@@ -381,6 +394,11 @@ const FUNCTION_CHECKS = [
 
 for (const check of FUNCTION_CHECKS) {
   try {
+    if (typeof check.check === 'function') {
+      const passed = check.check();
+      addResult(check.name, passed ? 'PASS' : 'FAIL', '', check.critical);
+      continue;
+    }
     const content = fs.readFileSync(path.join(SETU_ROOT, check.file), 'utf8');
     const allFound = check.patterns.every(p => content.includes(p));
     addResult(

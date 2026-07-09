@@ -149,7 +149,11 @@ export default function CustomerProfile() {
               )}
 
               <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <span className="text-xs bg-primary/15 text-primary px-2 py-0.5 rounded-full font-bold">
+                {/* bg-primary/15 measured 4.02:1 contrast (fails WCAG AA 4.5:1 —
+                    flagged by qa/tests/e2e/a11y/accessibility.spec.js). At /5
+                    opacity the tint is lighter, keeping text-primary's contrast
+                    at ~4.67:1 against it. See CHANGELOG.md. */}
+                <span className="text-xs chip-primary px-2 py-0.5 rounded-full font-bold">
                   SETU Score: {setuScore}
                 </span>
                 {selectedVillage && (

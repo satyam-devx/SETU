@@ -202,7 +202,7 @@ export default function RiderIncentives() {
                       <p className="text-sm font-semibold">{inc.title}</p>
                       <p className="text-xs text-muted-foreground">{inc.description}</p>
                     </div>
-                    <Badge className={`border-0 text-xs shrink-0 ${done ? 'bg-primary/10 text-primary' : 'bg-green-100 text-green-700'}`}>
+                    <Badge className={`border-0 text-xs shrink-0 ${done ? 'chip-primary' : 'bg-green-100 text-green-700'}`}>
                       ₹{Number(inc.reward_amount).toLocaleString()} bonus
                     </Badge>
                   </div>
@@ -236,7 +236,7 @@ export default function RiderIncentives() {
                 <b.icon className={`w-6 h-6 mx-auto mb-1 ${b.earned ? 'text-primary' : 'text-muted-foreground'}`} />
                 <p className="text-[10px] font-medium">{b.label}</p>
                 {b.earned && (
-                  <Badge className="text-[8px] mt-1 bg-primary/10 text-primary border-0">Earned</Badge>
+                  <Badge className="text-[8px] mt-1 chip-primary border-0">Earned</Badge>
                 )}
               </Card>
             ))}

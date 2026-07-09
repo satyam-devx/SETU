@@ -361,7 +361,7 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
               onClick={() => set('delivery_radius', r.value)}
               className={`flex-1 text-xs py-2 rounded-lg border transition-colors ${
                 form.delivery_radius === r.value
-                  ? 'border-primary bg-primary/10 text-primary font-medium'
+                  ? 'border-primary bg-primary/5 text-primary font-medium'
                   : 'border-border hover:border-primary/50'
               }`}
             >

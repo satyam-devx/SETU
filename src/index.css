@@ -211,6 +211,17 @@
     @apply max-w-lg mx-auto min-h-screen bg-background;
   }
 
+  /* Accessible "tinted primary" chip/badge.
+     bg-primary/10 and bg-primary/15 (used ad hoc across several pages) both
+     measured below WCAG 2.1 AA's 4.5:1 text contrast minimum (4.35:1 and
+     4.02:1 respectively) once text-primary sits on the tinted background
+     instead of solid white — even though --primary itself is tuned for
+     4.5:1 on white. /5 opacity keeps ~4.67:1. Prefer this class over
+     hand-rolled `bg-primary/NN text-primary` combinations. See CHANGELOG.md. */
+  .chip-primary {
+    @apply bg-primary/5 text-primary border border-primary/20;
+  }
+
   /* Safe bottom padding for fixed bottom nav */
   .pb-nav {
     padding-bottom: calc(5rem + env(safe-area-inset-bottom));

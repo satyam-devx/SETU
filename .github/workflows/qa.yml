@@ -370,10 +370,47 @@ jobs:
           CI: 'true'
         run: npm run test:e2e -- --project=a11y --reporter=list,json
 
+      # run-a11y-suite.js is a standalone script (not a Playwright test), so
+      # it needs its own running server — Playwright's built-in webServer
+      # from the step above already started AND stopped its own dev server
+      # by the time this step runs. Without this, every page in the script
+      # gets ERR_CONNECTION_REFUSED and the audit silently reports nothing
+      # (see CHANGELOG.md).
+      - name: Start dev server (for a11y audit script)
+        working-directory: ${{ github.workspace }}
+        env:
+          VITE_DEMO_MODE: 'true'
+          VITE_FIREBASE_API_KEY: 'placeholder'
+          VITE_FIREBASE_AUTH_DOMAIN: 'placeholder.firebaseapp.com'
+          VITE_FIREBASE_PROJECT_ID: 'placeholder-project'
+          VITE_FIREBASE_STORAGE_BUCKET: 'placeholder.appspot.com'
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+          VITE_FIREBASE_APP_ID: '1:000000000000:web:placeholder'
+          VITE_FIREBASE_VAPID_KEY: 'placeholder-vapid'
+          VITE_MAPBOX_TOKEN: 'pk.placeholder'
+          VITE_RAZORPAY_KEY_ID: 'rzp_test_placeholder'
+        run: |
+          nohup npm run dev -- --host --port 5173 > /tmp/vite-dev.log 2>&1 &
+          echo "Waiting for http://localhost:5173 ..."
+          for i in $(seq 1 30); do
+            if curl -sSf http://localhost:5173 > /dev/null 2>&1; then
+              echo "Dev server is up."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Dev server did not become ready in time."
+          cat /tmp/vite-dev.log
+          exit 1
+
       - name: Run a11y audit script
         if: always()
         working-directory: ${{ env.QA_DIR }}
         run: node scripts/run-a11y-suite.js || true  # don't double-fail, spec already reported
+
+      - name: Stop dev server
+        if: always()
+        run: pkill -f "vite" || true
 
       - name: Upload a11y report
         uses: actions/upload-artifact@v4
@@ -572,9 +609,14 @@ jobs:
   post-deploy-e2e:
     name: Post-Deploy E2E (Production)
     runs-on: ubuntu-latest
-    # Only run on main after a deploy — or on manual trigger with URL
+    # Only run on main after a deploy (and only if PROD_URL is actually
+    # configured — a repo var, Settings → Secrets and variables → Actions →
+    # Variables), or on manual trigger with an explicit URL. Previously this
+    # ran unconditionally on every push to main, so an unset/misconfigured
+    # PROD_URL produced a confusing "Site not found · GitHub Pages" failure
+    # instead of a clear skip. See CHANGELOG.md.
     if: >
-      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+      (github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.PROD_URL != '') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.target_url != '')
     needs: [unit-tests, security]
     environment: production
@@ -603,6 +645,24 @@ jobs:
 
       - name: Wait for GitHub Pages propagation
         run: sleep 45
+
+      - name: Verify production URL is actually live
+        env:
+          TARGET_URL: ${{ github.event.inputs.target_url || vars.PROD_URL }}
+        run: |
+          echo "Checking $TARGET_URL ..."
+          BODY=$(curl -sSL --max-time 15 "$TARGET_URL" || true)
+          if [ -z "$BODY" ]; then
+            echo "::error::Could not reach $TARGET_URL at all (timeout/DNS/connection failure)."
+            echo "::error::Check that vars.PROD_URL is set correctly (Settings → Secrets and variables → Actions → Variables) and that GitHub Pages / Cloudflare Pages is actually deployed — see HOSTING.md."
+            exit 1
+          fi
+          if echo "$BODY" | grep -qi "there isn't a github pages site here\|404.*github pages"; then
+            echo "::error::$TARGET_URL resolved but GitHub Pages returned its 'site not found' page."
+            echo "::error::This means Pages isn't enabled/published for this repo yet, or vars.PROD_URL points at the wrong path. See HOSTING.md."
+            exit 1
+          fi
+          echo "✓ $TARGET_URL is live."
 
       - name: Run E2E against production URL
         working-directory: ${{ env.QA_DIR }}

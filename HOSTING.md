@@ -70,3 +70,19 @@ Moving JWTs out of `localStorage` (e.g. to a server-set, `HttpOnly`,
 `SameSite` cookie via a small auth proxy) would remove the XSS-token-theft
 vector entirely. That's a larger change than a host swap; the CSP above is the
 pragmatic first layer of defence in the meantime.
+
+## Required repo variable: `PROD_URL` (for post-deploy QA)
+
+`qa.yml`'s **Post-Deploy E2E** job and `nightly.yml`'s production smoke
+checks run real Playwright tests against your live site. For that to
+work, set a repo variable (not a secret) pointing at the live URL:
+
+1. GitHub repo → **Settings → Secrets and variables → Actions → Variables**.
+2. Add `PROD_URL` = your live URL, e.g. `https://satyam-devx.github.io/SETU`
+   (GitHub Pages) or your Cloudflare Pages domain once migrated.
+
+If `PROD_URL` is unset, the post-deploy E2E job is skipped rather than
+failing. If it's set but wrong (Pages not enabled, wrong path, DNS not
+propagated), the job now fails fast with a clear `::error::` message
+instead of a confusing raw "Site not found · GitHub Pages" Playwright
+failure — see `qa.yml`'s "Verify production URL is actually live" step.
