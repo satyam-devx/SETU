@@ -71,6 +71,14 @@ Fixed four distinct CI failures found in a full GitHub Actions run (`qa.yml`), d
 
 ---
 
+## [1.0.4] — 2026-07-09 — Flaky Supabase container start + broken production E2E URLs
+
+### Fixed
+- **`db-integrity-tests` job failing: "failed to bind host port for 0.0.0.0:54324 ... address already in use"** (Docker networking race starting the Mailpit/Inbucket container). This job only runs raw `psql` against the Postgres container — it never touches Studio, Mailpit, Kong, PostgREST, etc. `supabase start` now excludes all of those (`-x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor`) in `ci.yml`, which avoids the port-binding race entirely and starts faster. Also added a one-time retry (`supabase stop --no-backup` + retry) as defense-in-depth against the same class of transient Docker networking failure.
+- **`Post-Deploy E2E (Production)` still failing after 1.0.1's guard fix, now with a real deployed URL** (`Received string: "Site not found · GitHub Pages"` on every route except `/`). Root cause was different from the earlier "unconfigured PROD_URL" issue: `SETU_E2E_URL` is `https://satyam-devx.github.io/SETU` (a GitHub Pages *project* site under the `/SETU` subpath), but every spec called `page.goto('/login')` etc. with a **leading slash**. Per the URL spec, `new URL('/login', 'https://host/SETU')` resolves to `https://host/login` — a leading slash is root-relative and discards the baseURL's `/SETU` segment entirely, so nearly every test was silently hitting a URL that doesn't exist on GitHub Pages at all. This never surfaced locally because `localhost:5173` has no subpath to lose. Fixed centrally rather than by editing all 46 call sites (many via dynamic route arrays): added `qa/tests/e2e/fixtures.js`, a thin wrapper around Playwright's `test`/`page` that strips a leading `/` from `page.goto()` arguments before resolving against `baseURL`; all 4 spec files (`auth.spec.js`, `role-isolation.spec.js`, `customer-portal.spec.js`, `a11y/accessibility.spec.js`) now import `test`/`expect` from it instead of `@playwright/test` directly. Also normalized `BASE_URL` in `playwright.config.js` to always end with a trailing slash — required for the relative-path resolution to land *inside* `/SETU/` rather than replacing it (a base path without a trailing slash is treated as a "file", not a "directory", per URL resolution rules). The site itself was never broken for real users; this was purely a test-URL-construction bug, but it was hiding whatever real production issues might exist behind ~40 false-red failures.
+
+---
+
 ## [Unreleased history] — Security hardening (pre-1.0.0)
 
 Consolidated from `SECURITY_FIXES.md` ("Round 2" audit response) and prior sessions. Grouped by theme, not chronological.

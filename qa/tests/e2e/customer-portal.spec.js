@@ -1,7 +1,7 @@
 // tests/e2e/customer-portal.spec.js — Customer portal E2E tests
 // Runs in demo mode (isSupabaseConfigured = false → uses mock data)
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 
 // In demo mode, the app auto-logs in with DEMO_PROFILE (customer role)
 // when Supabase env vars are missing. Set in playwright.config.js webServer env.

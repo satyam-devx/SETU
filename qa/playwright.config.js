@@ -3,7 +3,15 @@
 import { defineConfig, devices } from '@playwright/test';
 
 // Base URL: use local dev server in CI, or override with SETU_E2E_URL
-const BASE_URL = process.env.SETU_E2E_URL || 'http://localhost:5173';
+// Must end with a trailing slash: URL resolution treats a base path with no
+// trailing slash as a "file" (e.g. ".../SETU") and a relative reference
+// replaces it entirely (".../SETU" + "login" → ".../login", losing the
+// /SETU subpath), whereas a trailing slash makes it a "directory"
+// (".../SETU/" + "login" → ".../SETU/login", correct). This matters for
+// GitHub Pages project sites served under a subpath. See fixtures.js and
+// CHANGELOG.md.
+const RAW_BASE_URL = process.env.SETU_E2E_URL || 'http://localhost:5173';
+const BASE_URL = RAW_BASE_URL.endsWith('/') ? RAW_BASE_URL : `${RAW_BASE_URL}/`;
 
 export default defineConfig({
   testDir:   './tests/e2e',

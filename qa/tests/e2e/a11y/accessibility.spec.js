@@ -1,7 +1,7 @@
 // tests/e2e/a11y/accessibility.spec.js — Accessibility audit with axe-core
 // WCAG 2.1 AA compliance targeting critical user flows
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures.js';
 import AxeBuilder from '@axe-core/playwright';
 
 const ROUTES_TO_AUDIT = [

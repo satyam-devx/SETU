@@ -1,7 +1,7 @@
 // tests/e2e/role-isolation.spec.js — Role-based access control E2E tests
 // Critical security tests: verify portal boundaries are enforced in browser
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 
 test.describe('Admin portal - access control', () => {
   // Force unauthenticated state in demo mode for these tests

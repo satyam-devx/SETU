@@ -224,9 +224,29 @@ jobs:
           TWILIO_MESSAGE_SERVICE_SID: "dummy"
           TWILIO_AUTH_TOKEN:          "dummy"
         run: |
-          # Full local stack; the CLI applies every migration in
-          # supabase/migrations (including 017) during startup.
-          supabase start
+          # This job only runs raw psql against the Postgres container
+          # (127.0.0.1:54322) — it never touches Studio, Mailpit/Inbucket,
+          # Kong, PostgREST, etc. Excluding them means fewer containers
+          # starting concurrently, which avoids a flaky Docker networking
+          # race we hit in CI ("failed to bind host port ... address
+          # already in use", usually on the mailpit/inbucket port) and
+          # also starts faster. See CHANGELOG.md.
+          #
+          # Retry once: `supabase start` failing partway through leaves
+          # containers in a mixed state; `supabase stop` cleans that up
+          # before the retry.
+          for attempt in 1 2; do
+            if supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor; then
+              break
+            fi
+            if [ "$attempt" = "2" ]; then
+              echo "::error::supabase start failed twice, giving up."
+              exit 1
+            fi
+            echo "supabase start failed (attempt $attempt) — likely a transient Docker networking race. Cleaning up and retrying..."
+            supabase stop --no-backup || true
+            sleep 5
+          done
 
       - name: Install psql client
         run: |

@@ -1,7 +1,7 @@
 // tests/e2e/auth.spec.js — E2E authentication flow tests
 // Tests real browser interactions against the Vite dev server
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 
 // ── Shared login helper ────────────────────────────────────────
 async function fillPhoneAndContinue(page, phone = '+919876543210') {
