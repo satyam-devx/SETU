@@ -96,7 +96,7 @@ jobs:
             });
 
       - name: Upload audit results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nightly-audit-${{ github.run_id }}
           path: audit-results.json
@@ -261,7 +261,7 @@ jobs:
         run: npm run test:interaction -- --reporter=list,json,junit
 
       - name: Upload interaction crawler results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: interaction-crawler-results-${{ github.sha }}
