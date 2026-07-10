@@ -48,7 +48,10 @@ Test on a real low-end Android device where possible.
       darkened to `20 90% 40%` for AA — re-verify after any palette change.
 - [ ] Touch targets ≥ 44×44px (`.touch-target` utility exists; audit nav + chips).
 - [ ] App is usable at 200% browser zoom and 320px width without horizontal scroll.
-- [ ] Respect `prefers-reduced-motion` for framer-motion animations.
+- [x] Respect `prefers-reduced-motion` for entrance animations. (2026-07-09:
+      framer-motion removed entirely — see CHANGELOG.md — replaced with CSS
+      `@keyframes` on RoleSelect.jsx that fall back to a plain 1ms fade under
+      `@media (prefers-reduced-motion: reduce)` in `index.css`.)
 
 ### Language / literacy (SETU-specific)
 - [ ] UI language matches the user's chosen language (Hindi/Maithili/Bhojpuri/EN);

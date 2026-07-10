@@ -89,6 +89,13 @@ Fixed four distinct CI failures found in a full GitHub Actions run (`qa.yml`), d
 
 ---
 
+## [1.0.6] — 2026-07-09 — Performance budget failure: total JS bundle 2006KB > 2000KB
+
+### Fixed
+- **`run-perf-suite.js` FAIL: "Total JS bundle size: 2006KB (budget: 2000KB)"** — 6KB over, but the real story was `motion-vendor` (framer-motion) weighing 118KB for exactly one page's fade/slide-in entrance animations on `RoleSelect.jsx` — the only place framer-motion was used anywhere in the app. `PERFORMANCE.md` had actually flagged this exact swap as a "still worth doing" opportunity already (and separately, incorrectly claimed framer-motion "tree-shakes to ~1 KB in practice" — it measurably didn't). Removed the dependency entirely: the four `motion.div` fade/slide-ins in `RoleSelect.jsx` are now plain `div`s with CSS `@keyframes` (`animate-fade-slide-down`, `animate-fade-slide-up-lg`, `animate-fade-in-delayed` in `index.css`), staggered via inline `animationDelay` — visually identical output, zero JS bytes. Bonus: added a `prefers-reduced-motion` fallback for these animations while touching this code, resolving an existing unchecked item in `ACCESSIBILITY.md`. New bundle total: ~1888KB (112KB of headroom instead of failing by 6KB). Removed `framer-motion` from `package.json` and its `motion-vendor` chunk from `vite.config.js`; updated `PERFORMANCE.md`, `ACCESSIBILITY.md`, and `README.md` references accordingly.
+
+---
+
 ## [Unreleased history] — Security hardening (pre-1.0.0)
 
 Consolidated from `SECURITY_FIXES.md` ("Round 2" audit response) and prior sessions. Grouped by theme, not chronological.

@@ -91,7 +91,6 @@ SETU/
 - React 18 + React Router 6, Vite 5
 - Tailwind CSS 3 + shadcn/ui-style components on Radix UI primitives
 - Recharts (analytics charts, lazy-loaded per route)
-- Framer Motion (role selector animation only, isolated chunk)
 - Leaflet + Mapbox GL — **not npm dependencies.** Both are loaded from a CDN at runtime by `src/lib/maps.js` specifically to keep mapping code off the JS bundle for customers who never open a map screen (2G budget — see `PERFORMANCE.md`).
 
 **Backend**

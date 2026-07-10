@@ -250,6 +250,39 @@
     to   { transform: scale(1);    opacity: 1; }
   }
 
+  /* Added to replace framer-motion on RoleSelect.jsx (the only place it was
+     used) — framer-motion cost 118KB in the production bundle for four
+     simple fade/slide-in entrances with staggered delays, which plain CSS
+     does identically. See CHANGELOG.md. */
+  @keyframes fade-slide-down {
+    from { transform: translateY(-24px); opacity: 0; }
+    to   { transform: translateY(0);     opacity: 1; }
+  }
+  @keyframes fade-slide-up-lg {
+    from { transform: translateY(20px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+  /* animation-fill-mode: both keeps the element in its "from" state during
+     animation-delay (set inline per-element), instead of flashing visible
+     before the delay elapses. */
+  .animate-fade-slide-down { animation: fade-slide-down 500ms ease both; }
+  .animate-fade-slide-up-lg { animation: fade-slide-up-lg 450ms ease both; }
+  .animate-fade-in-delayed  { animation: fade-in 400ms ease both; }
+
+  /* Respect prefers-reduced-motion for entrance animations (RoleSelect.jsx)
+     — resolves the ACCESSIBILITY.md checklist item on this. Motion is
+     removed but the delayed *appearance* (opacity end-state) is preserved
+     via animation-fill-mode, so content still shows up staggered without
+     any translate/motion for users who've asked for reduced motion. */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-fade-slide-down,
+    .animate-fade-slide-up-lg,
+    .animate-fade-in-delayed {
+      animation-name: fade-in;
+      animation-duration: 1ms;
+    }
+  }
+
   .animate-slide-up  { animation: slide-up  200ms ease forwards; }
   .animate-fade-in   { animation: fade-in   150ms ease forwards; }
   .animate-scale-in  { animation: scale-in  150ms ease forwards; }

@@ -40,12 +40,11 @@ export default defineConfig(({ command }) => ({
           if (/node_modules\/(lucide-react|clsx|tailwind-merge)\//.test(id)) {
             return 'ui-vendor';
           }
-          // Heavy, route-specific libs split into named, cacheable chunks.
-          // framer-motion (role selector / animations) and recharts
-          // (analytics pages only) shouldn't bloat the shared entry chunk.
-          if (id.includes('node_modules/framer-motion')) {
-            return 'motion-vendor';
-          }
+          // Heavy, route-specific lib split into its own named, cacheable
+          // chunk. recharts (analytics pages only) shouldn't bloat the
+          // shared entry chunk. (framer-motion used to be split out here
+          // too, until it was removed entirely in favor of CSS animations
+          // — see CHANGELOG.md.)
           if (id.includes('node_modules/recharts')) {
             return 'chart-vendor';
           }

@@ -23,7 +23,13 @@ Android phones. Bytes and main-thread work are the budget.
   are never auto-prompted and never pull Firebase on the home screen; they opt
   in explicitly via `enablePush()` (wire it to an "Enable notifications"
   button). This was the single biggest 2G win in Phase 5.
-- `motion-vendor` (framer-motion) — isolated, tree-shakes to ~1 KB in practice.
+- `framer-motion` was removed entirely (2026-07-09) — it was actually costing
+  118 KB in the isolated `motion-vendor` chunk for one page's fade/slide-in
+  entrance animations (RoleSelect.jsx), not the ~1 KB this doc previously
+  (incorrectly) claimed. Replaced with plain CSS `@keyframes` in
+  `index.css` (`animate-fade-slide-down`, `animate-fade-slide-up-lg`,
+  `animate-fade-in-delayed`) — visually identical, zero JS cost. See
+  CHANGELOG.md.
 
 ## Images — the `<Img>` component
 
@@ -77,7 +83,8 @@ capped at 300 most-recent).
 ## Still worth doing (incremental)
 
 - Finish migrating remaining `<img>` usages to `<Img>`.
-- Consider replacing framer-motion on the RoleSelect landing with CSS
-  transitions to shave the entry further (it's already tiny after splitting).
+- ~~Consider replacing framer-motion on the RoleSelect landing with CSS~~ —
+  done 2026-07-09 (118 KB removed from the bundle, not the ~1 KB previously
+  estimated; see CHANGELOG.md).
 - A precaching service worker for the app shell (offline-first) — the FCM SW
   exists; an app-shell SW would make repeat loads near-instant on 2G.

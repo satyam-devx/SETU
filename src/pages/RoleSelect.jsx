@@ -21,7 +21,6 @@
 
 import React, { useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import { ArrowRight, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
@@ -66,12 +65,7 @@ export default function RoleSelect() {
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/30 flex flex-col items-center justify-center p-6">
 
       {/* Logo */}
-      <motion.div
-        initial={{ opacity: 0, y: -24 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="text-center mb-10"
-      >
+      <div className="text-center mb-10 animate-fade-slide-down">
         <h1 className="font-heading text-6xl md:text-7xl font-bold text-foreground tracking-tight">
           SETU
         </h1>
@@ -81,14 +75,12 @@ export default function RoleSelect() {
         <p className="text-muted-foreground/60 text-sm mt-1">
           Madhepur · Madhubani · Bihar · मिथिला
         </p>
-      </motion.div>
+      </div>
 
       {/* Welcome card */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.15, duration: 0.45 }}
-        className="w-full max-w-sm"
+      <div
+        className="w-full max-w-sm animate-fade-slide-up-lg"
+        style={{ animationDelay: '150ms' }}
       >
         <div className="bg-card border border-border rounded-3xl p-8 shadow-xl text-center">
           <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-5">
@@ -117,14 +109,12 @@ export default function RoleSelect() {
             No passwords to remember.
           </p>
         </div>
-      </motion.div>
+      </div>
 
       {/* Onboarding links */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.4 }}
-        className="mt-8 flex flex-wrap justify-center gap-5"
+      <div
+        className="mt-8 flex flex-wrap justify-center gap-5 animate-fade-in-delayed"
+        style={{ animationDelay: '400ms' }}
       >
         {[
           { label: 'Become a Vendor →',          path: '/onboarding/vendor', color: 'text-accent'  },
@@ -139,15 +129,13 @@ export default function RoleSelect() {
             {link.label}
           </Link>
         ))}
-      </motion.div>
+      </div>
 
       {/* Demo mode notice */}
       {!import.meta.env.VITE_SUPABASE_URL && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.6 }}
-          className="mt-6 w-full max-w-sm"
+        <div
+          className="mt-6 w-full max-w-sm animate-fade-in-delayed"
+          style={{ animationDelay: '600ms' }}
         >
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-center">
             <p className="text-xs text-amber-800 font-medium mb-0.5">Demo Mode Active</p>
@@ -155,7 +143,7 @@ export default function RoleSelect() {
               Use any 10-digit number and OTP <strong>1234</strong> to explore.
             </p>
           </div>
-        </motion.div>
+        </div>
       )}
 
       <p className="text-muted-foreground/40 text-xs mt-8">
