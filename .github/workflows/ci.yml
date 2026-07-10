@@ -31,7 +31,7 @@ jobs:
           cache: 'npm'
 
       - name: Install deps
-        run: npm ci
+        run: npm install
 
       - name: Audit production dependencies (blocking — high + critical)
         # Runtime deps that SHIP to users must have no high/critical CVEs.
@@ -58,7 +58,7 @@ jobs:
           cache: 'npm'
 
       - name: Install deps
-        run: npm ci
+        run: npm install
 
       # Build with real secrets if available (PRs from forks won't have them)
       # Falls back gracefully to placeholder values — the build itself

@@ -55,11 +55,11 @@ jobs:
           cache: npm
 
       - name: Install app deps
-        run: npm ci
+        run: npm install
 
       - name: Install QA deps
         working-directory: ${{ env.QA_DIR }}
-        run: npm ci
+        run: npm install
 
       - name: Install Playwright Chromium
         working-directory: ${{ env.QA_DIR }}

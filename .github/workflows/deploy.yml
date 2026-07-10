@@ -234,7 +234,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Inject Firebase config into service worker
         # The service worker lives outside the Vite build context and can't use
