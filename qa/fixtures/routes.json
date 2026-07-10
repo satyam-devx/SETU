@@ -1,0 +1,650 @@
+[
+  {
+    "path": "/",
+    "crawlPath": "/",
+    "role": null,
+    "dynamic": false
+  },
+  {
+    "path": "/login",
+    "crawlPath": "/login",
+    "role": null,
+    "dynamic": false
+  },
+  {
+    "path": "/login/verify",
+    "crawlPath": "/login/verify",
+    "role": null,
+    "dynamic": false
+  },
+  {
+    "path": "/role-error",
+    "crawlPath": "/role-error",
+    "role": null,
+    "dynamic": false
+  },
+  {
+    "path": "/auth/callback",
+    "crawlPath": "/auth/callback",
+    "role": null,
+    "dynamic": false
+  },
+  {
+    "path": "/onboarding/register",
+    "crawlPath": "/onboarding/register",
+    "role": null,
+    "dynamic": false
+  },
+  {
+    "path": "/onboarding/vendor",
+    "crawlPath": "/onboarding/vendor",
+    "role": null,
+    "dynamic": false
+  },
+  {
+    "path": "/onboarding/rider",
+    "crawlPath": "/onboarding/rider",
+    "role": null,
+    "dynamic": false
+  },
+  {
+    "path": "/onboarding/seva",
+    "crawlPath": "/onboarding/seva",
+    "role": null,
+    "dynamic": false
+  },
+  {
+    "path": "/customer",
+    "crawlPath": "/customer",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/orders",
+    "crawlPath": "/customer/orders",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/orders/:orderId",
+    "crawlPath": "/customer/orders/crawler-test-id",
+    "role": "customer",
+    "dynamic": true
+  },
+  {
+    "path": "/customer/wallet",
+    "crawlPath": "/customer/wallet",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/credit",
+    "crawlPath": "/customer/credit",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/schemes",
+    "crawlPath": "/customer/schemes",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/voice",
+    "crawlPath": "/customer/voice",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/offline",
+    "crawlPath": "/customer/offline",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/language",
+    "crawlPath": "/customer/language",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/fraud",
+    "crawlPath": "/customer/fraud",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/trust",
+    "crawlPath": "/customer/trust",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/profile",
+    "crawlPath": "/customer/profile",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/notifications",
+    "crawlPath": "/customer/notifications",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/support",
+    "crawlPath": "/customer/support",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/settings",
+    "crawlPath": "/customer/settings",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/search",
+    "crawlPath": "/customer/search",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/product/:productId",
+    "crawlPath": "/customer/product/crawler-test-id",
+    "role": "customer",
+    "dynamic": true
+  },
+  {
+    "path": "/customer/vendor/:vendorId",
+    "crawlPath": "/customer/vendor/crawler-test-id",
+    "role": "customer",
+    "dynamic": true
+  },
+  {
+    "path": "/customer/vendors",
+    "crawlPath": "/customer/vendors",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/cart",
+    "crawlPath": "/customer/cart",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/checkout",
+    "crawlPath": "/customer/checkout",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/addresses",
+    "crawlPath": "/customer/addresses",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/referral",
+    "crawlPath": "/customer/referral",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/reorder/:orderId",
+    "crawlPath": "/customer/reorder/crawler-test-id",
+    "role": "customer",
+    "dynamic": true
+  },
+  {
+    "path": "/customer/data-privacy",
+    "crawlPath": "/customer/data-privacy",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/privacy-policy",
+    "crawlPath": "/customer/privacy-policy",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/terms",
+    "crawlPath": "/customer/terms",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/account",
+    "crawlPath": "/customer/account",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/vendor",
+    "crawlPath": "/vendor",
+    "role": "vendor",
+    "dynamic": false
+  },
+  {
+    "path": "/vendor/orders",
+    "crawlPath": "/vendor/orders",
+    "role": "vendor",
+    "dynamic": false
+  },
+  {
+    "path": "/vendor/products",
+    "crawlPath": "/vendor/products",
+    "role": "vendor",
+    "dynamic": false
+  },
+  {
+    "path": "/vendor/products/new",
+    "crawlPath": "/vendor/products/new",
+    "role": "vendor",
+    "dynamic": false
+  },
+  {
+    "path": "/vendor/earnings",
+    "crawlPath": "/vendor/earnings",
+    "role": "vendor",
+    "dynamic": false
+  },
+  {
+    "path": "/vendor/analytics",
+    "crawlPath": "/vendor/analytics",
+    "role": "vendor",
+    "dynamic": false
+  },
+  {
+    "path": "/vendor/credit",
+    "crawlPath": "/vendor/credit",
+    "role": "vendor",
+    "dynamic": false
+  },
+  {
+    "path": "/vendor/customers",
+    "crawlPath": "/vendor/customers",
+    "role": "vendor",
+    "dynamic": false
+  },
+  {
+    "path": "/vendor/settings",
+    "crawlPath": "/vendor/settings",
+    "role": "vendor",
+    "dynamic": false
+  },
+  {
+    "path": "/vendor/profile",
+    "crawlPath": "/vendor/profile",
+    "role": "vendor",
+    "dynamic": false
+  },
+  {
+    "path": "/rider",
+    "crawlPath": "/rider",
+    "role": "rider",
+    "dynamic": false
+  },
+  {
+    "path": "/rider/deliveries",
+    "crawlPath": "/rider/deliveries",
+    "role": "rider",
+    "dynamic": false
+  },
+  {
+    "path": "/rider/earnings",
+    "crawlPath": "/rider/earnings",
+    "role": "rider",
+    "dynamic": false
+  },
+  {
+    "path": "/rider/cod",
+    "crawlPath": "/rider/cod",
+    "role": "rider",
+    "dynamic": false
+  },
+  {
+    "path": "/rider/safety",
+    "crawlPath": "/rider/safety",
+    "role": "rider",
+    "dynamic": false
+  },
+  {
+    "path": "/rider/incentives",
+    "crawlPath": "/rider/incentives",
+    "role": "rider",
+    "dynamic": false
+  },
+  {
+    "path": "/rider/settings",
+    "crawlPath": "/rider/settings",
+    "role": "rider",
+    "dynamic": false
+  },
+  {
+    "path": "/rider/profile",
+    "crawlPath": "/rider/profile",
+    "role": "rider",
+    "dynamic": false
+  },
+  {
+    "path": "/seva",
+    "crawlPath": "/seva",
+    "role": "seva_provider",
+    "dynamic": false
+  },
+  {
+    "path": "/seva/jobs",
+    "crawlPath": "/seva/jobs",
+    "role": "seva_provider",
+    "dynamic": false
+  },
+  {
+    "path": "/seva/jobs/:jobId",
+    "crawlPath": "/seva/jobs/crawler-test-id",
+    "role": "seva_provider",
+    "dynamic": true
+  },
+  {
+    "path": "/seva/schedule",
+    "crawlPath": "/seva/schedule",
+    "role": "seva_provider",
+    "dynamic": false
+  },
+  {
+    "path": "/seva/earnings",
+    "crawlPath": "/seva/earnings",
+    "role": "seva_provider",
+    "dynamic": false
+  },
+  {
+    "path": "/seva/settings",
+    "crawlPath": "/seva/settings",
+    "role": "seva_provider",
+    "dynamic": false
+  },
+  {
+    "path": "/seva/profile",
+    "crawlPath": "/seva/profile",
+    "role": "seva_provider",
+    "dynamic": false
+  },
+  {
+    "path": "/anchor",
+    "crawlPath": "/anchor",
+    "role": "anchor",
+    "dynamic": false
+  },
+  {
+    "path": "/anchor/village",
+    "crawlPath": "/anchor/village",
+    "role": "anchor",
+    "dynamic": false
+  },
+  {
+    "path": "/anchor/noticeboard",
+    "crawlPath": "/anchor/noticeboard",
+    "role": "anchor",
+    "dynamic": false
+  },
+  {
+    "path": "/anchor/disputes",
+    "crawlPath": "/anchor/disputes",
+    "role": "anchor",
+    "dynamic": false
+  },
+  {
+    "path": "/anchor/reports",
+    "crawlPath": "/anchor/reports",
+    "role": "anchor",
+    "dynamic": false
+  },
+  {
+    "path": "/anchor/kyc",
+    "crawlPath": "/anchor/kyc",
+    "role": "anchor",
+    "dynamic": false
+  },
+  {
+    "path": "/anchor/escalations",
+    "crawlPath": "/anchor/escalations",
+    "role": "anchor",
+    "dynamic": false
+  },
+  {
+    "path": "/admin",
+    "crawlPath": "/admin",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/orders",
+    "crawlPath": "/admin/orders",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/vendors",
+    "crawlPath": "/admin/vendors",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/vendor-approval",
+    "crawlPath": "/admin/vendor-approval",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/riders",
+    "crawlPath": "/admin/riders",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/cash",
+    "crawlPath": "/admin/cash",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/support",
+    "crawlPath": "/admin/support",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/seva-providers",
+    "crawlPath": "/admin/seva-providers",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/villages",
+    "crawlPath": "/admin/villages",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/settings",
+    "crawlPath": "/admin/settings",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/customers",
+    "crawlPath": "/admin/customers",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/incidents",
+    "crawlPath": "/admin/incidents",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/monitoring",
+    "crawlPath": "/admin/monitoring",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/categories",
+    "crawlPath": "/admin/categories",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/products",
+    "crawlPath": "/admin/products",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/coupons",
+    "crawlPath": "/admin/coupons",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/banners",
+    "crawlPath": "/admin/banners",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/notifications",
+    "crawlPath": "/admin/notifications",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/image-moderation",
+    "crawlPath": "/admin/image-moderation",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/kyc",
+    "crawlPath": "/admin/kyc",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/analytics",
+    "crawlPath": "/admin/analytics",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/audit-log",
+    "crawlPath": "/admin/audit-log",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/admin/disputes",
+    "crawlPath": "/admin/disputes",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
+    "path": "/superadmin",
+    "crawlPath": "/superadmin",
+    "role": "super_admin",
+    "dynamic": false
+  },
+  {
+    "path": "/superadmin/analytics",
+    "crawlPath": "/superadmin/analytics",
+    "role": "super_admin",
+    "dynamic": false
+  },
+  {
+    "path": "/superadmin/credit",
+    "crawlPath": "/superadmin/credit",
+    "role": "super_admin",
+    "dynamic": false
+  },
+  {
+    "path": "/superadmin/blocks",
+    "crawlPath": "/superadmin/blocks",
+    "role": "super_admin",
+    "dynamic": false
+  },
+  {
+    "path": "/superadmin/security",
+    "crawlPath": "/superadmin/security",
+    "role": "super_admin",
+    "dynamic": false
+  },
+  {
+    "path": "/superadmin/audit",
+    "crawlPath": "/superadmin/audit",
+    "role": "super_admin",
+    "dynamic": false
+  },
+  {
+    "path": "/superadmin/config",
+    "crawlPath": "/superadmin/config",
+    "role": "super_admin",
+    "dynamic": false
+  },
+  {
+    "path": "/superadmin/expansion",
+    "crawlPath": "/superadmin/expansion",
+    "role": "super_admin",
+    "dynamic": false
+  },
+  {
+    "path": "/superadmin/compliance",
+    "crawlPath": "/superadmin/compliance",
+    "role": "super_admin",
+    "dynamic": false
+  },
+  {
+    "path": "/superadmin/health",
+    "crawlPath": "/superadmin/health",
+    "role": "super_admin",
+    "dynamic": false
+  },
+  {
+    "path": "/superadmin/ai",
+    "crawlPath": "/superadmin/ai",
+    "role": "super_admin",
+    "dynamic": false
+  },
+  {
+    "path": "/superadmin/users",
+    "crawlPath": "/superadmin/users",
+    "role": "super_admin",
+    "dynamic": false
+  },
+  {
+    "path": "/superadmin/roles",
+    "crawlPath": "/superadmin/roles",
+    "role": "super_admin",
+    "dynamic": false
+  },
+  {
+    "path": "/superadmin/feature-flags",
+    "crawlPath": "/superadmin/feature-flags",
+    "role": "super_admin",
+    "dynamic": false
+  },
+  {
+    "path": "/superadmin/finance",
+    "crawlPath": "/superadmin/finance",
+    "role": "super_admin",
+    "dynamic": false
+  },
+  {
+    "path": "/superadmin/developer",
+    "crawlPath": "/superadmin/developer",
+    "role": "super_admin",
+    "dynamic": false
+  }
+]

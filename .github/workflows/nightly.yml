@@ -213,6 +213,64 @@ jobs:
           fi
 
 
+  # ── Interaction crawler: clicks every visible button/link on every
+  #    route, checks for crashes. Slow (one full page reload per click),
+  #    so it runs nightly rather than on every push — see
+  #    qa/tests/e2e/interaction-crawler.spec.js and qa.yml's ui-crawler job
+  #    (which runs the non-clicking crawler + visual regression on every
+  #    push instead).
+  interaction-crawler:
+    name: Interaction Crawler (click every button)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install app deps
+        run: npm ci
+
+      - name: Install QA deps
+        working-directory: ${{ env.QA_DIR }}
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: ${{ env.QA_DIR }}
+        run: npx playwright install --with-deps chromium
+
+      - name: Run interaction crawler
+        working-directory: ${{ env.QA_DIR }}
+        env:
+          VITE_SUPABASE_URL:                 ''
+          VITE_SUPABASE_ANON_KEY:            ''
+          VITE_DEMO_MODE:            'true'
+          VITE_FIREBASE_API_KEY:             'placeholder'
+          VITE_FIREBASE_AUTH_DOMAIN:         'placeholder.firebaseapp.com'
+          VITE_FIREBASE_PROJECT_ID:          'placeholder-project'
+          VITE_FIREBASE_STORAGE_BUCKET:      'placeholder.appspot.com'
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+          VITE_FIREBASE_APP_ID:              '1:000000000000:web:placeholder'
+          VITE_FIREBASE_VAPID_KEY:           'placeholder-vapid'
+          VITE_MAPBOX_TOKEN:                 'pk.placeholder'
+          VITE_RAZORPAY_KEY_ID:              'rzp_test_placeholder'
+          CI: 'true'
+        run: npm run test:interaction -- --reporter=list,json,junit
+
+      - name: Upload interaction crawler results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: interaction-crawler-results-${{ github.sha }}
+          path: |
+            ${{ env.QA_DIR }}/reports/playwright-html/
+            ${{ env.QA_DIR }}/reports/playwright-junit.xml
+          retention-days: 14
+
+
   # ── RLS policy drift detection ────────────────────────────
   rls-audit:
     name: RLS Policy Audit
@@ -309,7 +367,7 @@ jobs:
   nightly-summary:
     name: Nightly Summary
     runs-on: ubuntu-latest
-    needs: [cve-check, bundle-regression, rls-audit]
+    needs: [cve-check, bundle-regression, rls-audit, interaction-crawler]
     if: always()
 
     steps:

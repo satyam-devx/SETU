@@ -1,0 +1,109 @@
+name: SETU — Generate Visual Regression Baselines
+
+# ═══════════════════════════════════════════════════════════
+# Manual-only. Generates qa/tests/e2e/visual/*-snapshots/ baseline
+# screenshots on a real Linux GitHub Actions runner (where Playwright's
+# Chromium works reliably) and commits them back to the branch that
+# triggered this run.
+#
+# Why this exists: generating these locally requires a real Chromium
+# browser, and Playwright's bundled Chromium doesn't support every
+# platform (notably: Android/Termux, even via proot-distro — this was
+# tried and hit multiple dead ends: unsupported platform errors, snapd
+# not working inside proot without systemd/kernel support, native-binding
+# mismatches). Running it here sidesteps all of that — no local Chromium
+# setup needed at all.
+#
+# Usage: GitHub → Actions tab → "SETU — Generate Visual Regression
+# Baselines" → Run workflow → pick the branch → Run. When it finishes,
+# pull the new commit it made.
+#
+# Re-run this any time you make an intentional UI change and need to
+# update the baselines — review the diff in the resulting commit before
+# merging, a baseline update should always be a deliberate, reviewed step.
+# ═══════════════════════════════════════════════════════════
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_message:
+        description: 'Commit message for the baseline update'
+        required: false
+        default: 'chore(qa): update visual regression baselines'
+
+env:
+  NODE_VERSION: '24'
+  QA_DIR: qa
+  npm_config_legacy_peer_deps: true
+
+permissions:
+  contents: write
+
+jobs:
+  generate-baselines:
+    name: Generate Baselines
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install app deps
+        run: npm ci
+
+      - name: Install QA deps
+        working-directory: ${{ env.QA_DIR }}
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: ${{ env.QA_DIR }}
+        run: npx playwright install --with-deps chromium
+
+      - name: Generate baseline screenshots
+        working-directory: ${{ env.QA_DIR }}
+        env:
+          VITE_SUPABASE_URL:                 ''
+          VITE_SUPABASE_ANON_KEY:            ''
+          VITE_DEMO_MODE:            'true'
+          VITE_FIREBASE_API_KEY:             'placeholder'
+          VITE_FIREBASE_AUTH_DOMAIN:         'placeholder.firebaseapp.com'
+          VITE_FIREBASE_PROJECT_ID:          'placeholder-project'
+          VITE_FIREBASE_STORAGE_BUCKET:      'placeholder.appspot.com'
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+          VITE_FIREBASE_APP_ID:              '1:000000000000:web:placeholder'
+          VITE_FIREBASE_VAPID_KEY:           'placeholder-vapid'
+          VITE_MAPBOX_TOKEN:                 'pk.placeholder'
+          VITE_RAZORPAY_KEY_ID:              'rzp_test_placeholder'
+          CI: 'true'
+        # --update-snapshots always exits 0 (it's writing the baseline,
+        # not comparing against one) — no need for continue-on-error.
+        run: npm run test:visual:update
+
+      - name: Show what changed
+        run: git status --porcelain qa/tests/e2e/visual/
+
+      - name: Commit and push baselines
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add qa/tests/e2e/visual/
+          if git diff --cached --quiet; then
+            echo "No changes to baseline screenshots — nothing to commit."
+            exit 0
+          fi
+          git commit -m "${{ github.event.inputs.commit_message }}"
+          git push origin HEAD:${{ github.ref_name }}
+
+      - name: Upload snapshots as artifact too
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: visual-baselines-${{ github.sha }}
+          path: ${{ env.QA_DIR }}/tests/e2e/visual/**/*-snapshots/**
+          retention-days: 7

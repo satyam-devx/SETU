@@ -1,6 +1,6 @@
 # SETU QA Pipeline
 
-**Version:** 1.0.0 · **Last updated:** 2026-07-08
+**Version:** 1.1.1 · **Last updated:** 2026-07-10
 
 Automated quality assurance and security pipeline for the SETU platform.  
 Runs on every push and PR. Generates an HTML dashboard. Fails builds when critical issues are found.
@@ -83,6 +83,68 @@ qa/
 | No broken images | Login page |
 | Security headers | No X-Powered-By |
 | Error boundary | Deep-link to fake UUID |
+
+### UI Crawler (every route, every role — qa/tests/e2e/crawler.spec.js)
+
+Visits all 108 routes (`qa/fixtures/routes.json`, generated from `App.jsx`
+by `scripts/extract-routes.js`) as every relevant role, and fails a route
+on: console errors, uncaught JS exceptions, broken images, failed network
+requests, or a blank page. Runs on every push (`ui-crawler` job in
+`qa.yml`). Regenerate the manifest whenever routes change:
+
+```bash
+node scripts/extract-routes.js   # run from repo root
+```
+
+CI verifies the committed manifest is up to date and fails with a clear
+message if it isn't.
+
+### Visual Regression (every route — qa/tests/e2e/visual/)
+
+Screenshots every route and diffs against committed baselines
+(`qa/tests/e2e/visual/visual-regression.spec.js-snapshots/`). Catches
+layout/CSS regressions (like the Super Admin sidebar bugs found in an
+earlier manual audit) automatically instead of relying on someone noticing.
+
+**First-time setup (required, not automatic):** this suite ships with no
+baseline screenshots — Playwright needs a real Chromium browser to generate
+them.
+
+**Recommended: generate them via CI, not locally.** GitHub → Actions tab →
+**"SETU — Generate Visual Regression Baselines"** → Run workflow → pick your
+branch → Run. It installs Chromium on a real Linux runner, generates the
+baselines, and commits them back to your branch automatically — no local
+browser setup needed. (This path exists because generating them locally on
+Android/Termux hit several dead-end platform-support issues — unsupported
+Playwright platform, `snapd` not working inside `proot-distro`, rolldown
+native-binding mismatches — none of which are fixable from the app side.)
+
+If you're on a regular Linux/macOS/Windows dev machine and want to do it
+locally instead:
+
+```bash
+cd qa
+npx playwright install --with-deps chromium
+npm run test:visual:update
+```
+
+Either way, review the generated PNGs under `qa/tests/e2e/visual/*-snapshots/`
+before committing. After that, any future visual diff shows up as a CI failure
+with a rendered before/after/diff image in the Playwright HTML report
+artifact. To intentionally update baselines after a real UI change, rerun
+`npm run test:visual:update` and review the diff before committing.
+
+### Interaction Crawler (every button, every route — nightly only)
+
+`qa/tests/e2e/interaction-crawler.spec.js` clicks every visible button/link
+on every route (bounded to 15 per page) and checks whether the click
+crashes the app (uncaught error, or the ErrorBoundary's "Something went
+wrong" fallback appearing). One full page reload per click makes this the
+slowest suite here, so it runs nightly (`interaction-crawler` job in
+`nightly.yml`) rather than on every push. A denylist skips destructive-
+sounding actions (logout, delete, place order, external links) — see the
+file header for the full list and reasoning. Only ever run this against
+demo mode (`VITE_DEMO_MODE=true`), never a real Supabase project.
 
 ### Database Money-Integrity Proof (real RPCs + RLS, not mocks)
 

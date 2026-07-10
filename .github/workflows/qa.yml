@@ -319,6 +319,120 @@ jobs:
 
 
   # ════════════════════════════════════════════════════════════
+  # JOB 4b: UI Crawler + Visual Regression — every route, dev server
+  #
+  # Crawler: visits every route (qa/fixtures/routes.json, generated from
+  # App.jsx by scripts/extract-routes.js) and fails on any console error,
+  # uncaught JS exception, broken image, failed request, or blank page.
+  # Visual: screenshots every route and diffs against committed baselines
+  # (qa/tests/e2e/visual/*-snapshots/) — catches layout/CSS regressions
+  # automatically instead of relying on someone noticing them by eye.
+  #
+  # Does NOT include the interaction-crawler (clicks every button) — that
+  # one's slow (one page reload per click) and runs nightly instead, see
+  # nightly.yml.
+  # ════════════════════════════════════════════════════════════
+  ui-crawler:
+    name: UI Crawler & Visual Regression
+    runs-on: ubuntu-latest
+    needs: [unit-tests, security]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install app deps
+        run: npm ci
+
+      - name: Install QA deps
+        working-directory: ${{ env.QA_DIR }}
+        run: npm ci
+
+      - name: Verify route manifest is up to date
+        # Fails loudly if someone added/changed a route in App.jsx without
+        # regenerating qa/fixtures/routes.json — a stale manifest means the
+        # crawler is silently testing the wrong set of pages.
+        run: |
+          node scripts/extract-routes.js
+          if ! git diff --quiet -- qa/fixtures/routes.json; then
+            echo "::error::qa/fixtures/routes.json is out of date. Run 'node scripts/extract-routes.js' and commit the result."
+            git diff -- qa/fixtures/routes.json
+            exit 1
+          fi
+
+      - name: Restore Playwright browsers from cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('qa/package-lock.json') }}
+
+      - name: Install Playwright browsers (if cache miss)
+        working-directory: ${{ env.QA_DIR }}
+        run: npx playwright install --with-deps chromium
+
+      - name: Run UI crawler
+        working-directory: ${{ env.QA_DIR }}
+        env:
+          VITE_SUPABASE_URL:                 ''
+          VITE_SUPABASE_ANON_KEY:            ''
+          VITE_DEMO_MODE:            'true'
+          VITE_FIREBASE_API_KEY:             'placeholder'
+          VITE_FIREBASE_AUTH_DOMAIN:         'placeholder.firebaseapp.com'
+          VITE_FIREBASE_PROJECT_ID:          'placeholder-project'
+          VITE_FIREBASE_STORAGE_BUCKET:      'placeholder.appspot.com'
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+          VITE_FIREBASE_APP_ID:              '1:000000000000:web:placeholder'
+          VITE_FIREBASE_VAPID_KEY:           'placeholder-vapid'
+          VITE_MAPBOX_TOKEN:                 'pk.placeholder'
+          VITE_RAZORPAY_KEY_ID:              'rzp_test_placeholder'
+          CI: 'true'
+        run: npm run test:crawler -- --reporter=list,json,junit
+
+      - name: Run visual regression
+        if: always()
+        working-directory: ${{ env.QA_DIR }}
+        env:
+          VITE_SUPABASE_URL:                 ''
+          VITE_SUPABASE_ANON_KEY:            ''
+          VITE_DEMO_MODE:            'true'
+          VITE_FIREBASE_API_KEY:             'placeholder'
+          VITE_FIREBASE_AUTH_DOMAIN:         'placeholder.firebaseapp.com'
+          VITE_FIREBASE_PROJECT_ID:          'placeholder-project'
+          VITE_FIREBASE_STORAGE_BUCKET:      'placeholder.appspot.com'
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+          VITE_FIREBASE_APP_ID:              '1:000000000000:web:placeholder'
+          VITE_FIREBASE_VAPID_KEY:           'placeholder-vapid'
+          VITE_MAPBOX_TOKEN:                 'pk.placeholder'
+          VITE_RAZORPAY_KEY_ID:              'rzp_test_placeholder'
+          CI: 'true'
+        run: npm run test:visual -- --reporter=list,json,junit
+
+      - name: Upload crawler & visual results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-crawler-results-${{ github.sha }}
+          path: |
+            ${{ env.QA_DIR }}/reports/playwright-html/
+            ${{ env.QA_DIR }}/reports/playwright-results.json
+            ${{ env.QA_DIR }}/reports/playwright-junit.xml
+            ${{ env.QA_DIR }}/test-results/
+          retention-days: 14
+
+      - name: Publish crawler/visual test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always() && github.event_name == 'pull_request'
+        with:
+          files: ${{ env.QA_DIR }}/reports/playwright-junit.xml
+          comment_title: '🕷️ UI Crawler & Visual Regression Results'
+          check_name: 'UI Crawler & Visual Regression'
+
+
+  # ════════════════════════════════════════════════════════════
   # JOB 5: Accessibility audit
   # ════════════════════════════════════════════════════════════
   accessibility:
@@ -471,7 +585,7 @@ jobs:
   report:
     name: Generate QA Report
     runs-on: ubuntu-latest
-    needs: [unit-tests, e2e-tests, security, accessibility, performance]
+    needs: [unit-tests, e2e-tests, ui-crawler, security, accessibility, performance]
     if: always()
 
     steps:

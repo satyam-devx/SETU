@@ -58,6 +58,7 @@ export default defineConfig({
         locale:   'hi-IN',
         timezone: 'Asia/Kolkata',
       },
+      testIgnore: ['**/crawler.spec.js', '**/interaction-crawler.spec.js', '**/visual/**', '**/a11y/**'],
     },
 
     // ── Desktop Chrome (admin/vendor portals) ───────────────────
@@ -69,6 +70,7 @@ export default defineConfig({
         locale:   'hi-IN',
         timezone: 'Asia/Kolkata',
       },
+      testIgnore: ['**/crawler.spec.js', '**/interaction-crawler.spec.js', '**/visual/**', '**/a11y/**'],
     },
 
     // ── Mobile Firefox (broader compatibility) ──────────────────
@@ -77,6 +79,7 @@ export default defineConfig({
       use: {
         ...devices['Galaxy S9+'],
       },
+      testIgnore: ['**/crawler.spec.js', '**/interaction-crawler.spec.js', '**/visual/**', '**/a11y/**'],
     },
 
     // ── Accessibility: screen reader simulation ──────────────────
@@ -87,6 +90,37 @@ export default defineConfig({
         // Intentionally no JS disabled — we test with axe-core instead
       },
       testMatch: '**/a11y/**/*.spec.js',
+    },
+
+    // ── UI Crawler: every route, checks for console/JS errors, broken
+    //    images, failed requests, blank screens. Single browser — this
+    //    isn't a cross-browser-compat check, it's a "does the page work"
+    //    check, and running it 3× per browser would just triple runtime
+    //    for no real signal. See qa/tests/e2e/crawler.spec.js.
+    {
+      name: 'crawler',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 } },
+      testMatch: '**/crawler.spec.js',
+    },
+
+    // ── Interaction Crawler: clicks every visible button/link per route.
+    //    Slower (one page reload per click) — intended for nightly.yml,
+    //    not every push. See qa/tests/e2e/interaction-crawler.spec.js.
+    {
+      name: 'interaction-crawler',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 } },
+      testMatch: '**/interaction-crawler.spec.js',
+    },
+
+    // ── Visual regression: screenshot diff every route. Single browser +
+    //    fixed viewport is required for stable diffs — screenshots are
+    //    OS/renderer-specific, so baselines must be generated on the same
+    //    platform they're compared against (the CI runner), not locally
+    //    on a different OS. See qa/tests/e2e/visual/visual-regression.spec.js.
+    {
+      name: 'visual',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } },
+      testMatch: '**/visual/**/*.spec.js',
     },
   ],
 

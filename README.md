@@ -101,6 +101,7 @@ SETU/
 
 **QA / Ops**
 - Vitest (unit + integration), Playwright (e2e + accessibility via axe-core), k6 (load testing), 15 dedicated SQL security/regression proof files
+- Full-app UI crawler (every route, every role) + visual regression (screenshot diffing) on every push; interaction crawler (clicks every button, every route) nightly — see `qa/README.md`
 - GitHub Actions: CI, dual-target deploy (GitHub Pages live / Cloudflare Pages feature-flagged), nightly regression, health monitoring, secrets sync
 - ESLint + Prettier (frontend), `deno lint` (Edge Functions), `lint_sql.py` (migrations)
 

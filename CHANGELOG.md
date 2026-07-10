@@ -96,6 +96,34 @@ Fixed four distinct CI failures found in a full GitHub Actions run (`qa.yml`), d
 
 ---
 
+## [1.1.0] — 2026-07-09 — UI crawler + visual regression testing
+
+New capability, not a bug fix: automated exploratory-style testing that catches issues real users would hit but scripted flows don't — every page, every role, every visible button, checked automatically instead of relying on someone noticing.
+
+### Added
+- **`scripts/extract-routes.js`** — parses `App.jsx`'s `<Route>` tree into a static manifest (`qa/fixtures/routes.json`, 108 routes across 7 portal roles + public). Committed and diffable, regenerated with `node scripts/extract-routes.js`; CI fails loudly if it's out of date with `App.jsx`.
+- **`qa/tests/e2e/crawler.spec.js`** — visits every route as every relevant role and fails on: console errors, uncaught JS exceptions, broken images, failed network requests, or a blank page. Runs on every push (`ui-crawler` job in `qa.yml`).
+- **`qa/tests/e2e/interaction-crawler.spec.js`** — clicks every visible button/link on every route (bounded to 15/page) and checks for crashes (uncaught error or the ErrorBoundary's "Something went wrong" fallback appearing). One page reload per click makes this the slow one, so it's nightly-only (`interaction-crawler` job in `nightly.yml`), not on every push. A denylist skips destructive-sounding actions (logout, delete, place order, external links) — only ever run against demo mode, never a real backend.
+- **`qa/tests/e2e/visual/visual-regression.spec.js`** — screenshots every route and diffs against committed baselines, with animations frozen and live/non-deterministic regions (maps, timestamps) masked. Catches layout/CSS regressions (the exact class of bug found manually in the earlier Super Admin sidebar audit) automatically. **Requires a one-time manual step — see `qa/README.md`'s "First-time setup"**: no baseline screenshots exist yet (can't be generated without a real browser), run `npm run test:visual:update` locally once and commit the resulting PNGs before this check is meaningful in CI.
+- **`setu_test_demo_role` localStorage flag** (`AuthContext.jsx`) — demo mode previously always logged in as a hardcoded `role: 'customer'`, so only ~33 of 108 routes were ever reachable without a real backend; every vendor/rider/seva_provider/anchor/admin/super_admin route just redirected to `/login`. This flag (read only when Supabase isn't configured) lets the new crawler/visual suites simulate any role, following the same pattern as the existing `setu_test_unauth` test hook.
+- New Playwright projects (`qa/playwright.config.js`): `crawler`, `interaction-crawler`, `visual` — each single-browser (cross-browser-compat isn't the point of these suites, and running them 3× per default browser project would just triple runtime for no signal). Also excluded these, and the pre-existing `a11y` suite, from the 3 default browser projects via `testIgnore` — a11y and the new suites already had (or now have) their own dedicated projects, so they were running redundantly up to 4× before this.
+- `qa.yml`: new `ui-crawler` job (crawler + visual regression, every push). `nightly.yml`: new `interaction-crawler` job.
+- `qa/package.json` scripts: `test:crawler`, `test:interaction`, `test:visual`, `test:visual:update`, `routes:extract`. Added `test:crawler` and `test:visual` to `test:all` (kept `test:interaction` out — it's the slow nightly one).
+
+---
+
+## [1.1.1] — 2026-07-10 — Generate visual baselines via CI instead of locally
+
+### Added
+- **`.github/workflows/generate-visual-baselines.yml`** — manual (`workflow_dispatch`) workflow that installs Playwright's Chromium and runs `npm run test:visual:update` on a real Linux GitHub Actions runner, then commits the resulting baseline screenshots back to the triggering branch automatically.
+
+### Why
+Generating the 1.1.0 visual-regression baselines requires a real Chromium browser, which turned out to not be reliably available in a Termux/Android environment even via `proot-distro` — hit, in order: `Unsupported platform: android` (Playwright's own Chromium), then `Unsupported platform: ubuntu26.04-arm64` inside a proot Ubuntu container, then `chromium-browser` (apt) requiring `snapd`, which doesn't function inside `proot-distro` (no real systemd/kernel), then a rolldown-vite native-binding mismatch (`Cannot find module '@rolldown/binding-linux-arm64-gnu'`) after reinstalling node_modules on ARM64 Linux. None of these are fixable from the app side — they're fundamental platform-support gaps in Playwright/Chromium/snapd on this specific device+environment combination.
+
+Running the exact same `npm run test:visual:update` command on GitHub's `ubuntu-latest` runner (x86_64, full systemd, Playwright officially supports it) sidesteps all of it — no local Chromium setup needed at all. **Usage:** GitHub → Actions tab → "SETU — Generate Visual Regression Baselines" → Run workflow → pick branch → Run; pull the resulting commit when it finishes. Re-run any time an intentional UI change needs new baselines.
+
+---
+
 ## [Unreleased history] — Security hardening (pre-1.0.0)
 
 Consolidated from `SECURITY_FIXES.md` ("Round 2" audit response) and prior sessions. Grouped by theme, not chronological.

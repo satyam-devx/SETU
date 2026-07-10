@@ -24,15 +24,32 @@ import { clearCache } from '@/hooks/useDataFetch';
 
 const AuthContext = createContext(null);
 
-const DEMO_PROFILE = {
-  id:          'u1',
-  phone:       '+919876543200',
-  name:        'Anita Devi',
-  role:        'customer',
-  village_id:  'madhepur',
-  is_verified: true,
-  setu_score:  720,
-};
+// Test-only hook, following the existing `setu_test_unauth` pattern: lets
+// the E2E crawler/visual-regression suite (qa/tests/e2e/crawler.spec.js,
+// qa/tests/visual/) simulate being logged in as any role in demo mode,
+// instead of always getting the hardcoded 'customer' demo profile below —
+// otherwise every vendor/rider/seva_provider/anchor/admin/super_admin route
+// would just redirect to /login and only ~33 of 116 routes were ever
+// reachable in demo mode. Never affects a real Supabase-backed session (only
+// read when !isSupabaseConfigured). See CHANGELOG.md.
+function getDemoRole() {
+  if (typeof window === 'undefined') return 'customer';
+  return window.localStorage.getItem('setu_test_demo_role') || 'customer';
+}
+
+function buildDemoProfile() {
+  return {
+    id:          'u1',
+    phone:       '+919876543200',
+    name:        'Anita Devi',
+    role:        getDemoRole(),
+    village_id:  'madhepur',
+    is_verified: true,
+    setu_score:  720,
+  };
+}
+
+const DEMO_PROFILE = buildDemoProfile();
 
 // ── GitHub Pages / Vite base-path aware callback URL ─────
 function getCallbackUrl() {
