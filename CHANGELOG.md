@@ -140,6 +140,19 @@ Periodically run `npm install` (root and `qa/`) on a real machine with network a
 
 ---
 
+## [1.2.0] — 2026-07-10 — UI crawler's first real CI run: fixed all 37 false-positive failures
+
+The `ui-crawler` job (added in 1.1.0) ran for real for the first time and failed 37 of 108 routes. Investigated all 37 — every one was a false positive from the same two root causes, not real app bugs.
+
+### Fixed
+- **`crawler.spec.js` — every failure was "Console error(s) on `<route>`": `["Failed to load resource: net::ERR_NAME_NOT_RESOLVED", ...]`, on ~35 routes.** Root cause: Chrome's console message for a network-*level* failure (DNS resolution failing, as opposed to an HTTP error status) does **not** include the failing URL in the message text — only the `requestfailed`/`response` events do. `IGNORED_CONSOLE_PATTERNS` was written assuming every ignorable message would contain a matchable domain (`/Failed to load resource.*supabase\.co/`), which structurally can never match this exact Chrome message. Every route's placeholder Firebase/Supabase/Mapbox config in demo mode legitimately can't resolve DNS for those placeholder hostnames — that's expected, not a bug — so this is a real gap in the filter, not a real gap in the app. Added the generic, URL-less Chrome network-failure message patterns (`net::ERR_NAME_NOT_RESOLVED`, `ERR_INTERNET_DISCONNECTED`, `ERR_CONNECTION_REFUSED`, `ERR_FAILED`) to `IGNORED_CONSOLE_PATTERNS` directly — genuinely wrong/unexpected failed requests are still caught separately by the `failedRequests` check, which does filter by URL and wasn't affected by this bug.
+- **`crawler.spec.js` — "Broken image(s) on /customer/search": `images.unsplash.com/photo-...`.** `mockData.js` hotlinks real Unsplash photos for demo product images rather than shipping fixtures; Unsplash isn't guaranteed fast/reachable from every CI runner, and that's not an app bug either. Added an `IGNORED_IMAGE_DOMAINS` filter (currently just `images.unsplash.com`) to the broken-image check — same-origin image failures (the app's own assets) still fail the crawl correctly, since those would indicate a real missing file or wrong path. Also added `images.unsplash.com` and `api.mapbox.com` (placeholder token in demo mode) to `IGNORED_FAILED_REQUEST_PATTERNS` for consistency.
+
+### Not a bug — expected, documented behavior
+- **`visual-regression.spec.js` failing on every route** with `A snapshot doesn't exist at .../*-visual-linux.png, writing actual.` This is exactly the documented first-time-setup step from 1.1.0/1.1.1 — no baselines have been generated and committed yet. Run the **"SETU — Generate Visual Regression Baselines"** workflow (Actions tab → Run workflow) once, pull the resulting commit, and this stops happening. Not touched in this release since there's nothing to fix in the test itself.
+
+---
+
 ## [Unreleased history] — Security hardening (pre-1.0.0)
 
 Consolidated from `SECURITY_FIXES.md` ("Round 2" audit response) and prior sessions. Grouped by theme, not chronological.
