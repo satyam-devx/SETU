@@ -7,7 +7,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AppHeader from '@/components/shared/AppHeader';
 import VillageMap from '@/components/maps/VillageMap';
 import { useVillage } from '@/lib/village';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 // ── Data loaders ──────────────────────────────────────────
 async function fetchVillageDirectory(villageId) {
@@ -88,6 +88,7 @@ export default function AnchorVillage() {
 
   // ── Realtime: rider online status changes ─────────────────
   useEffect(() => {
+    if (!isSupabaseConfigured) return; // demo mode has no real Supabase project — see CHANGELOG.md
     if (!villageId) return;
     const channel = supabase
       .channel(`village-riders-${villageId}`)

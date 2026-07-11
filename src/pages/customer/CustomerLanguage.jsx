@@ -87,9 +87,17 @@ function LangCard({ lang, selected, onSelect, speaking, onListen }) {
   const isSelected = selected === lang.code;
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(lang.code)}
-      className={`w-full text-left rounded-2xl border-2 p-4 transition-all ${
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect(lang.code);
+        }
+      }}
+      className={`w-full text-left rounded-2xl border-2 p-4 transition-all cursor-pointer ${
         isSelected
           ? 'border-orange-500 bg-orange-50'
           : 'border-gray-100 bg-white shadow-sm'
@@ -142,7 +150,7 @@ function LangCard({ lang, selected, onSelect, speaking, onListen }) {
           {lang.script}
         </span>
       </div>
-    </button>
+    </div>
   );
 }
 

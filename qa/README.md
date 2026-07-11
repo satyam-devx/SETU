@@ -1,6 +1,6 @@
 # SETU QA Pipeline
 
-**Version:** 1.2.0 · **Last updated:** 2026-07-10
+**Version:** 1.2.1 · **Last updated:** 2026-07-11
 
 Automated quality assurance and security pipeline for the SETU platform.  
 Runs on every push and PR. Generates an HTML dashboard. Fails builds when critical issues are found.

@@ -31,7 +31,7 @@ import {
 import AppHeader from '@/components/shared/AppHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { AdminAPI } from '@/lib/api';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 const STATUS_FLOW = ['pending', 'confirmed', 'preparing', 'ready', 'picked_up', 'on_the_way', 'delivered'];
 
@@ -280,6 +280,7 @@ export default function AdminOrders() {
 
   // Realtime
   useEffect(() => {
+    if (!isSupabaseConfigured) return; // demo mode has no real Supabase project — see CHANGELOG.md
     const channel = supabase
       .channel('admin-orders-rt-v2')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, (payload) => {

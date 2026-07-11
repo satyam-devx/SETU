@@ -9,7 +9,7 @@ import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
 import { AdminAPI } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 function fmtTime(iso) {
   if (!iso) return '—';
@@ -61,6 +61,7 @@ export default function AdminCash() {
 
   // Realtime: new deposits
   useEffect(() => {
+    if (!isSupabaseConfigured) return; // demo mode has no real Supabase project — see CHANGELOG.md
     const channel = supabase
       .channel('admin-cod-deposits')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'cod_deposits' }, payload => {

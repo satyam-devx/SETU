@@ -153,6 +153,20 @@ The `ui-crawler` job (added in 1.1.0) ran for real for the first time and failed
 
 ---
 
+## [1.2.1] — 2026-07-11 — UI crawler's second real run: 9 failures, all genuine app bugs this time
+
+Unlike 1.2.0 (37 false positives from the crawler script itself), this run's 9 failures were real — the crawler doing exactly what it's for.
+
+### Fixed
+- **Nested `<button>` inside `<button>` on `/customer/language`** (`CustomerLanguage.jsx`'s `LangCard`): React logged `"In HTML, %s cannot be a descendant of <%s>."` — the whole language card was a `<button>` (tap-to-select), with a "Listen" sample-audio `<button>` nested inside it (already needed an `e.stopPropagation()` workaround to avoid double-firing, a sign the markup was wrong). Invalid HTML aside, nested interactive elements break keyboard navigation and screen-reader semantics — a real accessibility bug, not just a console warning. Changed the outer element to `<div role="button" tabIndex={0}>` with an `onKeyDown` handler (Enter/Space activates it, matching native button behavior), keeping the inner Listen `<button>` intact and no longer nested.
+- **Six admin/anchor pages establishing Supabase Realtime subscriptions unconditionally**, regardless of demo mode: `AdminCash`, `AdminMonitoring`, `AdminOrders`, `AdminRiders`, `AdminSupport`, `AnchorVillage`. Each tried to open a WebSocket to the placeholder Supabase URL in demo mode (`wss://placeholder.supabase.co/realtime/...`), failing with `net::ERR_NAME_NOT_RESOLVED`. `useRealtimeNotifications`/`useRealtimeOrders` (the shared hooks) already correctly check `isSupabaseConfigured` before subscribing — these six pages each hand-rolled their own `supabase.channel(...)` effect instead of using the hooks, and none of them carried the same guard over. Added `if (!isSupabaseConfigured) return;` to each realtime `useEffect`.
+- **`getAdminVillages()` (`src/lib/api.js`) calling a real Supabase RPC unconditionally**, unlike every other function in that file, which goes through the `safeQuery()` wrapper (which already correctly checks `isSupabaseConfigured`). Failed with `TypeError: Failed to fetch` in demo mode, on both `/admin/villages` (direct caller) and `/admin/banners` (which also calls `getVillages()` for a village-picker dropdown). Added the same `isSupabaseConfigured` guard directly, short-circuiting to `{ data: [], error: null }` in demo mode instead of attempting the network call.
+
+### Note for future admin-page work
+The realtime-subscription and `getAdminVillages` gaps above are both instances of the same category of bug: code added during the admin platform expansion that talks to Supabase directly instead of through the established `safeQuery()`/hook patterns, and so misses the demo-mode guard those patterns provide for free. If you add a new admin page with its own `supabase.channel()` or `supabase.rpc()` call, prefer `safeQuery()` (queries) or an explicit `if (!isSupabaseConfigured) return;` (realtime effects) rather than calling `supabase` directly — this exact class of bug will keep recurring otherwise, and the crawler will keep finding it one route at a time rather than it being structurally prevented.
+
+---
+
 ## [Unreleased history] — Security hardening (pre-1.0.0)
 
 Consolidated from `SECURITY_FIXES.md` ("Round 2" audit response) and prior sessions. Grouped by theme, not chronological.

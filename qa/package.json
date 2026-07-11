@@ -1,6 +1,6 @@
 {
   "name": "setu-qa-pipeline",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "SETU Platform — Automated QA & Security Pipeline",
   "private": true,
   "type": "module",

@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import AppHeader from '@/components/shared/AppHeader';
 import { AdminAPI } from '@/lib/api';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 function StatTile({ label, value, color = 'text-foreground', loading }) {
   return (
@@ -63,6 +63,7 @@ export default function AdminMonitoring() {
 
   // Realtime: re-aggregate when orders or riders change
   useEffect(() => {
+    if (!isSupabaseConfigured) return; // demo mode has no real Supabase project — see CHANGELOG.md
     const channel = supabase
       .channel('monitoring-rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => load())

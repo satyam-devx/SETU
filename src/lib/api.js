@@ -1413,6 +1413,11 @@ export async function setSevaAvailable(providerId, isAvailable) {
 
 /** Admin: get all villages with per-village order/vendor aggregates. */
 export async function getAdminVillages() {
+  // Unlike most functions here, this doesn't go through safeQuery() because
+  // of the post-processing map() below — but it needs the same demo-mode
+  // guard safeQuery applies, which it was missing (see CHANGELOG.md).
+  if (!isSupabaseConfigured) return { data: [], error: null };
+
   // Server-side aggregation (one RPC) instead of downloading all orders +
   // vendors and joining in the browser. See migration 044.
   const { data, error } = await supabase.rpc('get_admin_village_stats');

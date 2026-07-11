@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AppHeader from '@/components/shared/AppHeader';
 import { AdminAPI } from '@/lib/api';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 const PRIORITY_STYLE = {
   critical: 'bg-red-100   text-red-800',
@@ -54,6 +54,7 @@ export default function AdminSupport() {
 
   // Realtime: new tickets
   useEffect(() => {
+    if (!isSupabaseConfigured) return; // demo mode has no real Supabase project — see CHANGELOG.md
     const channel = supabase
       .channel('admin-support-tickets')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'support_tickets' }, (payload) => {
