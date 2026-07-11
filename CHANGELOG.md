@@ -167,6 +167,16 @@ The realtime-subscription and `getAdminVillages` gaps above are both instances o
 
 ---
 
+## [1.2.2] — 2026-07-11 — UI crawler's third real run: down to 1 failure (Mapbox placeholder token)
+
+### Fixed
+- **`crawler.spec.js` — last remaining false positive: "Console error(s) on /anchor/village"**, `["Failed to load resource: the server responded with a status of 401 ()", "[VillageMap] Mapbox error: ... invalid Mapbox access token ..."]`. `VillageMap.jsx` correctly logs Mapbox init failures via `console.error('[VillageMap] Mapbox error:', ...)` — good practice — but in CI, `VITE_MAPBOX_TOKEN` is intentionally a placeholder (`pk.placeholder`), so Mapbox's real API correctly rejects it with a genuine 401. This is the same category as the Firebase/Supabase placeholder-config noise fixed in 1.2.0/1.2.1, just a real HTTP status instead of a DNS failure this time — also revealed that Chrome's generic "responded with a status of NNN" console message can lack a URL too, not just DNS-failure messages (corrected an inaccurate comment about this in `crawler.spec.js`). Added the exact `[VillageMap] Mapbox error` message (and `RiderNavigationMap`'s identical pattern, proactively, since it wasn't hit yet but uses the same message format and would hit the same issue on a rider map route) and the generic 401 message to `IGNORED_CONSOLE_PATTERNS`.
+
+Three consecutive real CI runs of the crawler have now gone 37 failures → 9 → 1 → (expected) 0, entirely by fixing either the test script's blind spots or genuine app gaps it found — this is the crawler doing exactly what it was built for.
+
+
+---
+
 ## [Unreleased history] — Security hardening (pre-1.0.0)
 
 Consolidated from `SECURITY_FIXES.md` ("Round 2" audit response) and prior sessions. Grouped by theme, not chronological.

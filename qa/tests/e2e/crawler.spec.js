@@ -45,17 +45,22 @@ const IGNORED_FAILED_REQUEST_PATTERNS = [
 // Console messages that are expected noise in demo mode / dev builds and
 // shouldn't fail the crawl.
 //
-// IMPORTANT: Chrome's console message for a network-level failure — e.g.
-// "Failed to load resource: net::ERR_NAME_NOT_RESOLVED" — does NOT include
-// the failing URL in the message text (unlike an HTTP-status failure, which
-// does). So a domain-based regex like /supabase\.co/ can never match it;
-// the *same* underlying failure also fires as a `requestfailed`/`response`
-// event (which DOES have a URL, filtered separately below), but the
-// console.error duplicate needs its own message-text-only match. This was
-// the root cause of every crawler.spec.js failure in the first real CI
-// run — every route's placeholder Firebase/Supabase/Mapbox config in demo
-// mode legitimately can't resolve DNS for those placeholder hostnames, and
-// each one logs one of these generic, URL-less lines. See CHANGELOG.md.
+// IMPORTANT: Chrome's generic "Failed to load resource: ..." console
+// messages often do NOT include the failing URL in the message text —
+// true for network-level failures (net::ERR_NAME_NOT_RESOLVED) and, it
+// turns out, also for at least some HTTP-status failures (a bare "the
+// server responded with a status of 401 ()" with no URL, seen from
+// Mapbox rejecting the CI placeholder token). A domain-based regex like
+// /supabase\.co/ can never match either. The *same* underlying failure
+// also fires as a `requestfailed`/`response` event (which DOES have a
+// URL, filtered separately below via IGNORED_FAILED_REQUEST_PATTERNS),
+// so genuinely unexpected failures from domains NOT in that list still
+// get caught there even though the console-text match here is broad.
+// This was the root cause of every crawler.spec.js failure in the first
+// two real CI runs — every route's placeholder Firebase/Supabase/Mapbox
+// config in demo mode legitimately can't authenticate/resolve against
+// those services, and each one logs one of these generic, URL-less
+// lines. See CHANGELOG.md.
 const IGNORED_CONSOLE_PATTERNS = [
   /Download the React DevTools/i,
   /\[SETU Auth\]/, // AuthContext's own retry/warning logs are informational
@@ -64,6 +69,8 @@ const IGNORED_CONSOLE_PATTERNS = [
   /Failed to load resource: net::ERR_INTERNET_DISCONNECTED/,
   /Failed to load resource: net::ERR_CONNECTION_REFUSED/,
   /Failed to load resource: net::ERR_FAILED/,
+  /Failed to load resource: the server responded with a status of 401/, // Mapbox rejecting the CI placeholder token (see VillageMap pattern below)
+  /\[(VillageMap|RiderNavigationMap)\] Mapbox error/, // app's own logged message — expected with a placeholder Mapbox token in demo mode
 ];
 
 // Demo/mock data (src/lib/mockData.js) hotlinks real product photos from
