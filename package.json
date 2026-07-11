@@ -1,7 +1,7 @@
 {
   "name": "setu",
   "private": true,
-  "version": "1.2.2",
+  "version": "1.2.3",
   "type": "module",
   "description": "SETU — Rural Commerce Operating System for Madhepur–Laxmipur–Parsad, Madhubani District, Bihar.",
   "scripts": {

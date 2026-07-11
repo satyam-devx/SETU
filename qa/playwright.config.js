@@ -108,7 +108,17 @@ export default defineConfig({
     //    not every push. See qa/tests/e2e/interaction-crawler.spec.js.
     {
       name: 'interaction-crawler',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 } },
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 390, height: 844 },
+        // Headless Chrome doesn't grant clipboard-write by default even on
+        // a real click, unlike a real user's browser session — without
+        // this, every "Copy to clipboard" button (referral codes, etc.)
+        // fails with "Write permission denied", which looks like an app
+        // crash in the failure report but is a CI-environment permission
+        // gap, not a real bug. See CHANGELOG.md.
+        permissions: ['clipboard-read', 'clipboard-write'],
+      },
       testMatch: '**/interaction-crawler.spec.js',
     },
 

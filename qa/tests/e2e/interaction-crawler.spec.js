@@ -46,8 +46,19 @@ const CLICKABLE_SELECTOR = [
 // Skip anything that sounds destructive, session-ending, or that just opens
 // an external app/site — clicking these tells us nothing useful about app
 // stability and some would actively break the rest of the crawl.
+//
+// "go back"/"back" specifically: every route here is a *fresh* page.goto(),
+// so there's no real prior page in that browser context's history — a
+// "Go back" click navigates to about:blank instead of a real previous page
+// (there was never a real one to go back to). Once on about:blank, any
+// subsequent localStorage access (including this crawler's own role-reset
+// on the next iteration) throws "Access is denied for this document" —
+// looks exactly like a crash in the failure report, but isn't one; it's an
+// artifact of testing back-navigation without a synthetic browsing history
+// to back into, which this simple click-crawler isn't set up to simulate.
+// See CHANGELOG.md.
 const DENYLIST_PATTERN =
-  /log ?out|sign ?out|delete|remove|deactivate|close account|place order|pay now|confirm payment|proceed to pay|cancel order/i;
+  /log ?out|sign ?out|delete|remove|deactivate|close account|place order|pay now|confirm payment|proceed to pay|cancel order|go back|^back$|previous page/i;
 
 for (const route of routes) {
   test.describe(`Interaction crawl`, () => {

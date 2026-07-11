@@ -174,6 +174,15 @@ The realtime-subscription and `getAdminVillages` gaps above are both instances o
 
 Three consecutive real CI runs of the crawler have now gone 37 failures → 9 → 1 → (expected) 0, entirely by fixing either the test script's blind spots or genuine app gaps it found — this is the crawler doing exactly what it was built for.
 
+---
+
+## [1.2.3] — 2026-07-11 — Interaction crawler's first real run: 68 failures, both test-environment artifacts
+
+`interaction-crawler.spec.js` (nightly-only, clicks every button — see 1.1.0) ran for real for the first time and failed 68 tests across every portal. Investigated all of them; both root causes are test-environment limitations, not real app bugs.
+
+### Fixed
+- **"Go back" (174 occurrences across ~68 routes) — `"Failed to read the 'localStorage' property from 'Window': Access is denied for this document."`** Every route this suite tests is a *fresh* `page.goto()` with no real prior page in that browser context's history. Clicking "Go back" as the first interaction on such a page navigates to `about:blank` instead of a real previous page — there was never a real one to go back to. Once on `about:blank` (an opaque/null origin), any subsequent `localStorage` access throws a `SecurityError`, which surfaces as a false "crashed the page" failure. This isn't something a simple click-crawler can meaningfully test without simulating a realistic browsing history first, so "Go back"/"Back"/"Previous page" buttons are now skipped — added to `DENYLIST_PATTERN` in `interaction-crawler.spec.js`.
+- **"Copy Code" (6 occurrences) — `"Failed to execute 'writeText' on 'Clipboard': Write permission denied."`** Headless Chrome doesn't grant `clipboard-write` by default even on a synthetic click, unlike a real user's browser session responding to a genuine click gesture. Rather than denylisting copy-to-clipboard buttons (a real, safe, worth-testing UI action — unlike "Go back", this one *can* be tested meaningfully), granted `permissions: ['clipboard-read', 'clipboard-write']` on the `interaction-crawler` Playwright project in `qa/playwright.config.js`, so these buttons now get exercised for real instead of skipped or false-failing.
 
 ---
 
