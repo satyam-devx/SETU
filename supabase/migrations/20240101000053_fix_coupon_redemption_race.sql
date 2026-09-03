@@ -28,7 +28,7 @@
 -- its own validation — making both the global and per-user limits
 -- correctly atomic.
 --
--- We deliberately do NOT add a blind UNIQUE(coupon_id, user_id)
+-- We deliberately do NOT add a blind uniqueness constraint on (coupon_id, user_id)
 -- constraint on coupon_redemptions: per_user_limit can legitimately
 -- be > 1 (upsert_coupon accepts an arbitrary p_per_user_limit), and a
 -- uniqueness constraint would incorrectly cap every coupon at exactly

@@ -8,7 +8,7 @@ import AppHeader from '@/components/shared/AppHeader';
 import { AIAPI } from '@/lib/api';
 
 // PASS 5 FIX (FUNC-02): CustomerVoice previously called the non-existent
-// `AIAPI.transcribeVoice()` (only `AIAPI.voiceQuery(text, context)` exists,
+// AIAPI had no voice-transcription method (only `AIAPI.voiceQuery(text, context)` exists,
 // which forwards to the real `ai-assistant` Edge Function — a TEXT chat
 // endpoint, not an audio-transcription endpoint; see supabase/functions/
 // ai-assistant/index.ts, which reads `{ message, context }` from the

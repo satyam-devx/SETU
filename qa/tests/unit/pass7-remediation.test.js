@@ -100,7 +100,7 @@ describe('Workstream 4 — pay_from_wallet rejects amount-mismatched replays', (
   });
 
   it('preserves the ownership check (kept, not retired)', () => {
-    expect(migration).toMatch(/Unauthorized: cannot debit another user's wallet/);
+    expect(migration).toMatch(/Unauthorized: cannot debit another user''s wallet/);
   });
 
   it('applies the same amount check on the concurrent-race (unique_violation) path too', () => {
