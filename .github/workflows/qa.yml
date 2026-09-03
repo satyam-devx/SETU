@@ -94,7 +94,7 @@ jobs:
       # Cache Playwright browsers
       - name: Cache Playwright browsers
         id: pw-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('qa/package-lock.json') }}
@@ -269,7 +269,7 @@ jobs:
         run: npm install
 
       - name: Restore Playwright browsers from cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('qa/package-lock.json') }}
@@ -365,7 +365,7 @@ jobs:
           fi
 
       - name: Restore Playwright browsers from cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('qa/package-lock.json') }}
@@ -456,7 +456,7 @@ jobs:
         run: npm install
 
       - name: Restore Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('qa/package-lock.json') }}
@@ -748,7 +748,7 @@ jobs:
         run: npm install
 
       - name: Restore Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('qa/package-lock.json') }}
