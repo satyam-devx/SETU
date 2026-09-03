@@ -1,21 +1,22 @@
 // ═══════════════════════════════════════════════════════════
-// SETU — AdminSidebar (v3 — production-grade)
-// Includes all new pages: Analytics, Audit Log, Disputes
+// SETU — AdminSidebar (v4 — enterprise design system)
+// Static sidebar on desktop (expanded or icon-only rail),
+// rendered inside AdminShell's modal drawer on mobile.
 // ═══════════════════════════════════════════════════════════
-import React, { useEffect, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   LayoutDashboard, ShoppingBag, Store, Bike,
   IndianRupee, HeadphonesIcon, Settings, MapPin,
   AlertTriangle, ArrowLeft, Wrench, Users,
   ShieldAlert, Activity, Tag, Package, Bell,
   Image, FileCheck, Megaphone, TrendingUp,
-  ClipboardList, Scale, ChevronRight, X,
+  ClipboardList, Scale, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
-import { Badge } from '@/components/ui/badge';
+import { NavItem, SectionLabel, RailToggleButton, SidebarUserFooter } from '@/components/admin/SidebarPrimitives';
 
 const menuItems = [
   // ── Core ──────────────────────────────────────────────
@@ -66,118 +67,123 @@ const GROUP_LABELS = {
   platform:  'Platform',
 };
 
-export default function AdminSidebar({ onClose }) {
-  const location = useLocation();
-  const { profile } = useAuth();
-  const [badges,  setBadges]  = useState({});
+const ROOT_PATHS = ['/admin'];
 
-  // Load badge counts (pending vendors, KYC queue, open disputes)
+export default function AdminSidebar({ onClose, collapsed = false, onToggleCollapsed, accent = 'saffron' }) {
+  const { profile, signOut } = useAuth();
+  const [badges, setBadges] = useState({});
+
+  // Load badge counts (pending vendors, KYC queue, open disputes).
+  // Guarded against setState-after-unmount and a rejected query
+  // silently breaking the whole poll.
   useEffect(() => {
+    let cancelled = false;
+
     async function loadBadges() {
-      const [pendingVendors, kycQueue, disputes] = await Promise.all([
-        supabase.from('vendors').select('id', { count: 'exact', head: true })
-          .eq('is_verified', false).neq('kyc_status', 'rejected'),
-        supabase.from('kyc_records').select('id', { count: 'exact', head: true })
-          .eq('status', 'submitted'),
-        supabase.from('disputes').select('id', { count: 'exact', head: true })
-          .in('status', ['open', 'escalated']),
-      ]);
-      setBadges({
-        pending_vendors: pendingVendors.count ?? 0,
-        kyc_queue:       kycQueue.count       ?? 0,
-        disputes:        disputes.count       ?? 0,
-      });
+      try {
+        const [pendingVendors, kycQueue, disputes] = await Promise.all([
+          supabase.from('vendors').select('id', { count: 'exact', head: true })
+            .eq('is_verified', false).neq('kyc_status', 'rejected'),
+          supabase.from('kyc_records').select('id', { count: 'exact', head: true })
+            .eq('status', 'submitted'),
+          supabase.from('disputes').select('id', { count: 'exact', head: true })
+            .in('status', ['open', 'escalated']),
+        ]);
+        if (cancelled) return;
+        setBadges({
+          pending_vendors: pendingVendors.count ?? 0,
+          kyc_queue:       kycQueue.count       ?? 0,
+          disputes:        disputes.count       ?? 0,
+        });
+      } catch (err) {
+        if (!cancelled) console.warn('[AdminSidebar] badge counts failed to load:', err?.message);
+      }
     }
 
     loadBadges();
     const interval = setInterval(loadBadges, 60_000);
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
-  // Group items
-  const groups = menuItems.reduce((acc, item) => {
-    if (!acc[item.group]) acc[item.group] = [];
-    acc[item.group].push(item);
-    return acc;
-  }, {});
+  const groups = useMemo(
+    () =>
+      menuItems.reduce((acc, item) => {
+        if (!acc[item.group]) acc[item.group] = [];
+        acc[item.group].push(item);
+        return acc;
+      }, {}),
+    []
+  );
 
   return (
-    <aside className="w-60 bg-sidebar text-sidebar-foreground border-r border-sidebar-border h-screen sticky top-0 flex flex-col">
-      <div className="p-5 border-b border-sidebar-border relative">
+    <aside className="flex h-full w-full flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+      {/* Header */}
+      <div className="relative shrink-0 border-b border-sidebar-border p-5">
         {onClose && (
           <button
             onClick={onClose}
-            className="lg:hidden absolute top-4 right-4 text-sidebar-foreground/50 hover:text-white"
+            aria-label="Close navigation menu"
+            className="absolute right-4 top-4 text-sidebar-foreground/50 transition-colors hover:text-white lg:hidden"
           >
-            <X className="w-4 h-4" />
+            <X className="h-4 w-4" />
           </button>
         )}
-        <Link
-          to="/"
-          className="text-xs text-sidebar-foreground/50 flex items-center gap-1 mb-3 hover:text-sidebar-foreground"
-          onClick={onClose}
-        >
-          <ArrowLeft className="w-3 h-3" /> Back to SETU
-        </Link>
-        <h1 className="font-heading text-xl font-bold text-white tracking-tight">SETU Admin</h1>
-        <p className="text-xs text-sidebar-foreground/60 mt-0.5">Operations Control Center</p>
+        {!collapsed && (
+          <Link
+            to="/"
+            className="mb-3 flex items-center gap-1 text-xs text-sidebar-foreground/50 hover:text-sidebar-foreground"
+            onClick={onClose}
+          >
+            <ArrowLeft className="h-3 w-3" /> Back to SETU
+          </Link>
+        )}
+        <h1 className={cn('font-heading font-bold text-white tracking-tight', collapsed ? 'text-center text-lg' : 'text-xl')}>
+          {collapsed ? 'S' : 'SETU Admin'}
+        </h1>
+        {!collapsed && <p className="mt-0.5 text-xs text-sidebar-foreground/60">Operations Control Center</p>}
       </div>
 
-      <nav className="flex-1 py-3 px-3 overflow-y-auto space-y-4 nav-scroll">
+      <nav className="nav-scroll flex-1 space-y-4 overflow-y-auto px-3 py-3">
         {Object.entries(groups).map(([groupKey, items]) => (
           <div key={groupKey}>
-            <p className="text-[9px] font-semibold uppercase tracking-widest text-sidebar-foreground/30 px-3 mb-1">
-              {GROUP_LABELS[groupKey]}
-            </p>
+            <SectionLabel collapsed={collapsed}>{GROUP_LABELS[groupKey]}</SectionLabel>
             <div className="space-y-0.5">
-              {items.map(item => {
-                const isActive =
-                  location.pathname === item.path ||
-                  (item.path !== '/admin' && location.pathname.startsWith(item.path));
-                const badgeCount = item.badge ? (badges[item.badge] ?? 0) : 0;
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    onClick={onClose}
-                    className={cn(
-                      'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
-                      isActive
-                        ? 'bg-sidebar-accent text-white font-medium'
-                        : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-white'
-                    )}
-                  >
-                    <item.icon className="w-4 h-4 shrink-0" />
-                    <span className="flex-1">{item.label}</span>
-                    {badgeCount > 0 && (
-                      <span className={cn(
-                        'text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center',
-                        isActive
-                          ? 'bg-white/20 text-white'
-                          : 'bg-red-500 text-white'
-                      )}>
-                        {badgeCount > 99 ? '99+' : badgeCount}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
+              {items.map((item) => (
+                <NavItem
+                  key={item.path}
+                  icon={item.icon}
+                  label={item.label}
+                  path={item.path}
+                  badgeCount={item.badge ? badges[item.badge] ?? 0 : 0}
+                  collapsed={collapsed}
+                  onNavigate={onClose}
+                  rootPaths={ROOT_PATHS}
+                  accent={accent}
+                />
+              ))}
             </div>
           </div>
         ))}
       </nav>
 
-      <div className="p-4 border-t border-sidebar-border">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-sidebar-primary flex items-center justify-center text-white text-xs font-bold shrink-0">
-            {(profile?.name ?? 'A')[0].toUpperCase()}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-white truncate">{profile?.name ?? 'Admin User'}</p>
-            <p className="text-[10px] text-sidebar-foreground/50 capitalize">{profile?.role ?? 'admin'}</p>
-          </div>
+      {/* Desktop-only rail toggle */}
+      {onToggleCollapsed && (
+        <div className={cn('shrink-0 border-t border-sidebar-border p-2', collapsed ? 'flex justify-center' : 'flex justify-end')}>
+          <RailToggleButton collapsed={collapsed} onToggle={onToggleCollapsed} accent={accent} />
         </div>
-      </div>
+      )}
+
+      <SidebarUserFooter
+        initials={(profile?.name ?? 'A')[0].toUpperCase()}
+        name={profile?.name ?? 'Admin User'}
+        subtitle={profile?.role ?? 'admin'}
+        accentClass="bg-sidebar-primary"
+        collapsed={collapsed}
+        onSignOut={signOut}
+      />
     </aside>
   );
 }

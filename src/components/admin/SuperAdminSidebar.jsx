@@ -1,16 +1,15 @@
 // ═══════════════════════════════════════════════════════════
-// SETU — SuperAdminSidebar (v4)
+// SETU — SuperAdminSidebar (v5 — enterprise design system)
 // Super Admin has full access to:
-//   • All SuperAdmin-only pages (/superadmin/*)
+//   • All SuperAdmin-only pages (/superadmin/*) — "God Mode" gold
 //   • All Admin pages (/admin/*) — same components, no duplication
 // ═══════════════════════════════════════════════════════════
-import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import React, { useMemo } from 'react';
 import {
   // SuperAdmin icons
   LayoutDashboard as SADashboard, BarChart2, CreditCard, Map,
   ShieldAlert, FileText, Settings as SASettings, Zap,
-  CheckSquare, Heart, Cpu, Crown, Users as SAUsers, ChevronDown, ChevronRight,
+  CheckSquare, Heart, Cpu, Crown, Users as SAUsers,
   // Admin icons
   ShoppingBag, Store, Bike, IndianRupee, HeadphonesIcon,
   Settings, MapPin, AlertTriangle, Wrench, Users, Activity,
@@ -19,25 +18,28 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
+import {
+  NavItem, SectionLabel, CollapsibleGroup, RailToggleButton, SidebarUserFooter,
+} from '@/components/admin/SidebarPrimitives';
 
 // ── SuperAdmin-only menu ─────────────────────────────────
 const SUPERADMIN_MENU = [
-  { label: 'SA Dashboard',     icon: SADashboard, path: '/superadmin'              },
-  { label: 'Platform Analytics', icon: BarChart2, path: '/superadmin/analytics'   },
-  { label: 'User Management',  icon: SAUsers,     path: '/superadmin/users'        },
-  { label: 'Roles & Permissions', icon: ShieldCheck, path: '/superadmin/roles'     },
-  { label: 'Feature Flags',    icon: Zap,         path: '/superadmin/feature-flags' },
-  { label: 'SETU Credit',      icon: CreditCard,  path: '/superadmin/credit'       },
-  { label: 'Finance Center',   icon: IndianRupee, path: '/superadmin/finance'      },
-  { label: 'Blocks & Geo',     icon: Map,         path: '/superadmin/blocks'       },
-  { label: 'Fraud & Security', icon: ShieldAlert, path: '/superadmin/security'     },
-  { label: 'SA Audit Log',     icon: FileText,    path: '/superadmin/audit'        },
-  { label: 'Configuration',    icon: SASettings,  path: '/superadmin/config'       },
-  { label: 'Expansion',        icon: Zap,         path: '/superadmin/expansion'    },
-  { label: 'Compliance',       icon: CheckSquare, path: '/superadmin/compliance'   },
-  { label: 'Platform Health',  icon: Heart,       path: '/superadmin/health'       },
-  { label: 'Developer Center', icon: Cpu,         path: '/superadmin/developer'    },
-  { label: 'AI Monitoring',    icon: Cpu,         path: '/superadmin/ai'           },
+  { label: 'SA Dashboard',        icon: SADashboard, path: '/superadmin'               },
+  { label: 'Platform Analytics',  icon: BarChart2,   path: '/superadmin/analytics'     },
+  { label: 'User Management',     icon: SAUsers,     path: '/superadmin/users'         },
+  { label: 'Roles & Permissions', icon: ShieldCheck, path: '/superadmin/roles'         },
+  { label: 'Feature Flags',       icon: Zap,         path: '/superadmin/feature-flags' },
+  { label: 'SETU Credit',         icon: CreditCard,  path: '/superadmin/credit'        },
+  { label: 'Finance Center',      icon: IndianRupee, path: '/superadmin/finance'       },
+  { label: 'Blocks & Geo',        icon: Map,         path: '/superadmin/blocks'        },
+  { label: 'Fraud & Security',    icon: ShieldAlert, path: '/superadmin/security'      },
+  { label: 'SA Audit Log',        icon: FileText,    path: '/superadmin/audit'         },
+  { label: 'Configuration',       icon: SASettings,  path: '/superadmin/config'        },
+  { label: 'Expansion',           icon: Zap,         path: '/superadmin/expansion'     },
+  { label: 'Compliance',          icon: CheckSquare, path: '/superadmin/compliance'    },
+  { label: 'Platform Health',     icon: Heart,       path: '/superadmin/health'        },
+  { label: 'Developer Center',    icon: Cpu,         path: '/superadmin/developer'     },
+  { label: 'AI Monitoring',       icon: Cpu,         path: '/superadmin/ai'            },
 ];
 
 // ── Admin menu (same paths as /admin, super_admin now allowed) ──
@@ -45,19 +47,19 @@ const ADMIN_MENU_GROUPS = [
   {
     label: 'Operations',
     items: [
-      { label: 'Dashboard',       icon: SADashboard,  path: '/admin'                  },
-      { label: 'Orders',          icon: ShoppingBag,  path: '/admin/orders'           },
-      { label: 'Analytics',       icon: TrendingUp,   path: '/admin/analytics'        },
-      { label: 'Live Monitoring', icon: Activity,     path: '/admin/monitoring'       },
-      { label: 'Disputes',        icon: Scale,        path: '/admin/disputes'         },
+      { label: 'Dashboard',       icon: SADashboard,  path: '/admin'            },
+      { label: 'Orders',          icon: ShoppingBag,  path: '/admin/orders'     },
+      { label: 'Analytics',       icon: TrendingUp,   path: '/admin/analytics'  },
+      { label: 'Live Monitoring', icon: Activity,     path: '/admin/monitoring' },
+      { label: 'Disputes',        icon: Scale,        path: '/admin/disputes'   },
     ],
   },
   {
     label: 'Onboarding',
     items: [
-      { label: 'Vendor Approvals',  icon: AlertTriangle, path: '/admin/vendor-approval'  },
-      { label: 'KYC Review',        icon: FileCheck,     path: '/admin/kyc'               },
-      { label: 'Image Moderation',  icon: Image,         path: '/admin/image-moderation'  },
+      { label: 'Vendor Approvals', icon: AlertTriangle, path: '/admin/vendor-approval' },
+      { label: 'KYC Review',       icon: FileCheck,     path: '/admin/kyc'             },
+      { label: 'Image Moderation', icon: Image,         path: '/admin/image-moderation'},
     ],
   },
   {
@@ -80,157 +82,137 @@ const ADMIN_MENU_GROUPS = [
   {
     label: 'Content',
     items: [
-      { label: 'Banners',        icon: Megaphone, path: '/admin/banners'        },
-      { label: 'Notifications',  icon: Bell,      path: '/admin/notifications'  },
+      { label: 'Banners',       icon: Megaphone, path: '/admin/banners'       },
+      { label: 'Notifications', icon: Bell,      path: '/admin/notifications' },
     ],
   },
   {
     label: 'Finance',
     items: [
-      { label: 'COD & Cash', icon: IndianRupee, path: '/admin/cash'      },
-      { label: 'Incidents',  icon: ShieldCheck, path: '/admin/incidents' },
+      { label: 'COD & Cash', icon: IndianRupee,  path: '/admin/cash'      },
+      { label: 'Incidents',  icon: ShieldAlert,  path: '/admin/incidents' },
     ],
   },
   {
     label: 'Platform',
     items: [
-      { label: 'Support Tickets', icon: HeadphonesIcon, path: '/admin/support'    },
-      { label: 'Villages',        icon: MapPin,          path: '/admin/villages'   },
-      { label: 'Settings',        icon: Settings,        path: '/admin/settings'   },
-      { label: 'Audit Log',       icon: ClipboardList,   path: '/admin/audit-log'  },
+      { label: 'Support Tickets', icon: HeadphonesIcon, path: '/admin/support'   },
+      { label: 'Villages',        icon: MapPin,          path: '/admin/villages'  },
+      { label: 'Settings',        icon: Settings,        path: '/admin/settings'  },
+      { label: 'Audit Log',       icon: ClipboardList,   path: '/admin/audit-log' },
     ],
   },
 ];
 
-function NavLink({ item, onClose, compact = false }) {
-  const location = useLocation();
-  const isActive =
-    location.pathname === item.path ||
-    (item.path !== '/admin' && item.path !== '/superadmin' && location.pathname.startsWith(item.path));
+const ROOT_PATHS = ['/admin', '/superadmin'];
+const DEFAULT_OPEN_GROUPS = new Set(['Operations', 'Onboarding', 'People']);
 
-  return (
-    <Link
-      to={item.path}
-      onClick={onClose}
-      className={cn(
-        'flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs transition-colors',
-        isActive
-          ? 'bg-sidebar-accent text-white font-medium'
-          : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/40 hover:text-white'
-      )}
-    >
-      <item.icon className={cn('shrink-0', compact ? 'w-3.5 h-3.5' : 'w-3.5 h-3.5')} />
-      <span className="truncate">{item.label}</span>
-    </Link>
-  );
-}
-
-function CollapsibleSection({ label, items, onClose, defaultOpen = false }) {
-  const location = useLocation();
-  const hasActive = items.some(i =>
-    location.pathname === i.path ||
-    (i.path !== '/admin' && i.path !== '/superadmin' && location.pathname.startsWith(i.path))
-  );
-  const [open, setOpen] = useState(defaultOpen || hasActive);
-
-  return (
-    <div>
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-3 py-1 text-[9px] font-bold uppercase tracking-widest text-sidebar-foreground/40 hover:text-sidebar-foreground/60 transition-colors"
-      >
-        <span>{label}</span>
-        {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-      </button>
-      {open && (
-        <div className="space-y-0.5 mt-0.5">
-          {items.map(item => (
-            <NavLink key={item.path} item={item} onClose={onClose} compact />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export default function SuperAdminSidebar({ onClose }) {
-  const { profile } = useAuth();
+export default function SuperAdminSidebar({ onClose, collapsed = false, onToggleCollapsed, accent = 'gold' }) {
+  const { profile, signOut } = useAuth();
 
   const initials = profile?.name
-    ? profile.name.trim().split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+    ? profile.name.trim().split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
     : 'SA';
 
-  return (
-    <aside className="w-60 bg-sidebar text-sidebar-foreground border-r border-sidebar-border h-screen sticky top-0 flex flex-col">
+  // Rail mode has no room for group headers or a collapse/expand
+  // interaction that means anything visually — flatten to one
+  // continuous icon column instead of nested collapsible groups.
+  const flatAdminItems = useMemo(() => ADMIN_MENU_GROUPS.flatMap((g) => g.items), []);
 
+  return (
+    <aside className="flex h-full w-full flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
       {/* Header */}
-      <div className="p-4 border-b border-sidebar-border relative shrink-0">
+      <div className="relative shrink-0 border-b border-sidebar-border p-4">
         {onClose && (
           <button
             onClick={onClose}
-            className="lg:hidden absolute top-3 right-3 text-sidebar-foreground/40 hover:text-white"
+            aria-label="Close navigation menu"
+            className="absolute right-3 top-3 text-sidebar-foreground/40 transition-colors hover:text-white lg:hidden"
           >
-            <X className="w-4 h-4" />
+            <X className="h-4 w-4" />
           </button>
         )}
-        <div className="flex items-center gap-2">
-          <Crown className="w-4 h-4 text-yellow-400 shrink-0" />
-          <h1 className="font-heading text-base font-bold text-white tracking-tight">Super Admin</h1>
+        <div className={cn('flex items-center gap-2', collapsed && 'justify-center')}>
+          <Crown className="h-4 w-4 shrink-0 text-yellow-400" />
+          {!collapsed && <h1 className="font-heading text-base font-bold tracking-tight text-white">Super Admin</h1>}
         </div>
-        <p className="text-[10px] text-sidebar-foreground/50 mt-0.5">All Blocks · God Mode</p>
+        {!collapsed && <p className="mt-0.5 text-[10px] text-sidebar-foreground/50">All Blocks · God Mode</p>}
       </div>
 
       {/* Scrollable nav */}
-      <nav className="flex-1 py-2 px-2 space-y-3 overflow-y-auto nav-scroll">
-
+      <nav className="nav-scroll flex-1 space-y-3 overflow-y-auto px-2 py-2">
         {/* ── SuperAdmin-only section ── */}
         <div>
-          <p className="px-3 py-1 text-[9px] font-bold uppercase tracking-widest text-sidebar-foreground/40">
-            Super Admin
-          </p>
-          <div className="space-y-0.5 mt-0.5">
-            {SUPERADMIN_MENU.map(item => (
-              <NavLink key={item.path} item={item} onClose={onClose} />
-            ))}
-          </div>
-        </div>
-
-        {/* Divider */}
-        <div className="border-t border-sidebar-border/50 mx-1" />
-
-        {/* ── Block Admin section (all /admin/* routes) ── */}
-        <div>
-          <p className="px-3 py-1 text-[9px] font-bold uppercase tracking-widest text-yellow-400/70">
-            Block Admin Access
-          </p>
-          <div className="space-y-1.5 mt-1">
-            {ADMIN_MENU_GROUPS.map(group => (
-              <CollapsibleSection
-                key={group.label}
-                label={group.label}
-                items={group.items}
-                onClose={onClose}
-                defaultOpen={['Operations', 'Onboarding', 'People'].includes(group.label)}
+          <SectionLabel collapsed={collapsed}>Super Admin</SectionLabel>
+          <div className="space-y-0.5">
+            {SUPERADMIN_MENU.map((item) => (
+              <NavItem
+                key={item.path}
+                icon={item.icon}
+                label={item.label}
+                path={item.path}
+                collapsed={collapsed}
+                onNavigate={onClose}
+                rootPaths={ROOT_PATHS}
+                accent={accent}
               />
             ))}
           </div>
         </div>
+
+        <div aria-hidden="true" className="mx-1 border-t border-sidebar-border/50" />
+
+        {/* ── Block Admin section (all /admin/* routes) ── */}
+        <div>
+          <SectionLabel collapsed={collapsed} tone="accent">Block Admin Access</SectionLabel>
+          {collapsed ? (
+            <div className="space-y-0.5">
+              {flatAdminItems.map((item) => (
+                <NavItem
+                  key={item.path}
+                  icon={item.icon}
+                  label={item.label}
+                  path={item.path}
+                  collapsed
+                  onNavigate={onClose}
+                  rootPaths={ROOT_PATHS}
+                  accent="saffron"
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="mt-1 space-y-1.5">
+              {ADMIN_MENU_GROUPS.map((group) => (
+                <CollapsibleGroup
+                  key={group.label}
+                  label={group.label}
+                  items={group.items}
+                  onNavigate={onClose}
+                  defaultOpen={DEFAULT_OPEN_GROUPS.has(group.label)}
+                  rootPaths={ROOT_PATHS}
+                  accent="saffron"
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </nav>
 
-      {/* Profile footer */}
-      <div className="p-3 border-t border-sidebar-border shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-full bg-yellow-500 flex items-center justify-center text-white text-[10px] font-bold shrink-0">
-            {initials}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-white truncate">{profile?.name ?? 'Super Admin'}</p>
-            <p className="text-[9px] text-sidebar-foreground/50 truncate">
-              {profile?.phone ?? 'super_admin'}
-            </p>
-          </div>
+      {/* Desktop-only rail toggle */}
+      {onToggleCollapsed && (
+        <div className={cn('shrink-0 border-t border-sidebar-border p-2', collapsed ? 'flex justify-center' : 'flex justify-end')}>
+          <RailToggleButton collapsed={collapsed} onToggle={onToggleCollapsed} accent={accent} />
         </div>
-      </div>
+      )}
+
+      <SidebarUserFooter
+        initials={initials}
+        name={profile?.name ?? 'Super Admin'}
+        subtitle={profile?.phone ?? 'super_admin'}
+        accentClass="bg-yellow-500"
+        collapsed={collapsed}
+        onSignOut={signOut}
+      />
     </aside>
   );
 }

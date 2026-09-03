@@ -15,7 +15,11 @@ export default function AdminLayout() {
       <AdminShell
         title="SETU Admin"
         banner={<OfflineBanner />}
-        renderSidebar={(onClose) => <AdminSidebar onClose={onClose} />}
+        persistKey="admin"
+        accent="saffron"
+        renderSidebar={(onClose, { collapsed, onToggleCollapsed, accent }) => (
+          <AdminSidebar onClose={onClose} collapsed={collapsed} onToggleCollapsed={onToggleCollapsed} accent={accent} />
+        )}
       >
         <Outlet />
       </AdminShell>

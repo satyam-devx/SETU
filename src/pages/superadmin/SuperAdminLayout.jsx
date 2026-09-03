@@ -13,7 +13,11 @@ export default function SuperAdminLayout() {
     <ErrorBoundary portal="Super Admin" fallbackRoute="/superadmin">
       <AdminShell
         title="SETU Super Admin"
-        renderSidebar={(onClose) => <SuperAdminSidebar onClose={onClose} />}
+        persistKey="superadmin"
+        accent="gold"
+        renderSidebar={(onClose, { collapsed, onToggleCollapsed, accent }) => (
+          <SuperAdminSidebar onClose={onClose} collapsed={collapsed} onToggleCollapsed={onToggleCollapsed} accent={accent} />
+        )}
       >
         <Outlet />
       </AdminShell>
