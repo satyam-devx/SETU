@@ -209,16 +209,39 @@ export default function CustomerCheckout() {
       } else if (payMethod === 'wallet') {
         // Single atomic RPC: charges order.total, confirms order, credits escrow.
         const { data: walletRes, error: walletError } = await PaymentAPI.payOrderFromWallet(order.id);
+
+        // PASS 7 FIX: a same-order retry after a real, already-committed
+        // success is reported by the RPC as success:true with
+        // already_paid:true (see migration 059) — it therefore never
+        // reaches this `if (walletError)` branch at all, and is handled
+        // by the normal success path below exactly as it should be:
+        // the order genuinely was placed and paid, just not on this
+        // particular call. This block only ever runs for a GENUINE
+        // payment failure (insufficient funds, or the order having
+        // become non-payable for some other real reason) — never for
+        // an already-successful payment — so cancelling here remains
+        // safe and correct.
         if (walletError) {
           // Wallet debit failed — cancel the order atomically (nothing captured)
           await cancelOrderWithRefund(order.id, user.id, 'customer', 'Wallet payment failed');
           throw new Error(walletError.message ?? 'Wallet payment failed. Please try again.');
         }
 
-        dispatch({
-          type:    'UPDATE_WALLET_BALANCE',
-          payload: { balance: walletRes?.new_balance ?? (walletBalance - serverTotal) },
-        });
+        if (walletRes?.already_paid) {
+          // Reconciliation path: this exact order was already paid by
+          // an earlier attempt whose response we never received. Do
+          // NOT re-debit, do NOT cancel — treat it as the success it
+          // already is.
+          dispatch({
+            type:    'UPDATE_WALLET_BALANCE',
+            payload: { balance: walletRes?.new_balance ?? walletBalance },
+          });
+        } else {
+          dispatch({
+            type:    'UPDATE_WALLET_BALANCE',
+            payload: { balance: walletRes?.new_balance ?? (walletBalance - serverTotal) },
+          });
+        }
       }
       // COD: no payment action — stays 'pending'
 

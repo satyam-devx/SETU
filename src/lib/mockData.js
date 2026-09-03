@@ -90,7 +90,7 @@ export const WALLET = {
   transactions: [
     { id: 't1', type: 'credit', amount: 500, description: 'Wallet top-up via UPI', date: '2025-05-30', status: 'completed' },
     { id: 't2', type: 'debit', amount: 660, description: 'Order SETU-2025-0001 payment', date: '2025-05-30', status: 'completed' },
-    { id: 't3', type: 'credit', amount: 200, description: 'Referral bonus — Raj Kumar', date: '2025-05-29', status: 'completed' },
+    { id: 't3', type: 'credit', amount: 200, description: 'Promotional credit', date: '2025-05-29', status: 'completed' },
     { id: 't4', type: 'debit', amount: 390, description: 'Order SETU-2025-0004 payment', date: '2025-05-31', status: 'pending' },
     { id: 't5', type: 'credit', amount: 1000, description: 'SETU Credit disbursement', date: '2025-05-28', status: 'completed' },
     { id: 't6', type: 'debit', amount: 200, description: 'Order SETU-2025-0006 payment', date: '2025-05-30', status: 'completed' },

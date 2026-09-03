@@ -186,7 +186,119 @@ Three consecutive real CI runs of the crawler have now gone 37 failures → 9 �
 
 ---
 
-## [Unreleased history] — Security hardening (pre-1.0.0)
+## [1.3.0] — 2026-09-02 — Pass 5 forensic-audit remediation
+
+Remediates the P0/P1/P2/P3 findings from the four-pass forensic audit
+(`SETU-PASS1-DISCOVERY-REPORT.md` through `SETU-PASS4-FORENSIC-AUDIT-FINAL-REPORT.md`).
+Full evidence trail in `SETU-PASS5-REMEDIATION-REPORT.md`.
+
+### Fixed
+- `assign_role` — was `service_role`-only with no re-grant, making Super Admin role
+  assignment completely non-functional for everyone including legitimate super admins.
+  Re-gated with a self-escalation block and target validation (mirroring the existing
+  `ban_user`/`unban_user` fix from `migration_025`) and granted to `authenticated`
+  (`migration_054`).
+- Coupon redemption race — concurrent checkout requests against the same coupon code
+  could both pass the per-user/global usage-limit check before either committed,
+  over-redeeming a limited-use coupon. `create_order` now takes a row lock on the
+  coupon before validating/redeeming it (`migration_053`).
+- `cancel_order_with_refund` double-refund race, found during this pass's required
+  full audit of that function — concurrent cancellation attempts on the same order
+  could both pass the cancellable-status check before either committed, triggering two
+  refunds. Now row-locks the order first (`migration_055`).
+- `pay_from_wallet` retry idempotency — a client retry (e.g. after a network timeout)
+  could debit a wallet twice for one logical operation. Now idempotent per
+  (wallet, order reference), backed by a partial unique index (`migration_056`).
+- `CustomerVoice.jsx` called a non-existent `AIAPI.transcribeVoice()` method (the API
+  only exports `voiceQuery`) and had no real microphone capture at all — every real use
+  threw. Rewired to real browser `SpeechRecognition` capture → the existing, correct
+  `AIAPI.voiceQuery` → the real `ai-assistant` Edge Function, with unsupported-browser
+  and permission-denied states handled honestly. Suggested phrases now go through the
+  same real call instead of returning a hardcoded fake "AI result".
+- `store_aadhaar`/`decrypt_aadhaar` — found during this pass to have been missed by
+  `migration_035`'s PUBLIC-execute lockdown, making them callable directly by any
+  authenticated client (`store_aadhaar` has no internal role check, only an ownership
+  filter, so a user could write an unverified raw Aadhaar number into their own KYC
+  record, bypassing the intended SurePass flow). EXECUTE now revoked from
+  PUBLIC/authenticated/anon and not re-granted to anyone (`migration_058`).
+- Added `set search_path = public` to four `SECURITY DEFINER`/trigger functions that
+  were missing it: `topup_wallet`, `set_default_address`, `_set_internal_payment_flag`,
+  `update_updated_at` (`migration_057`).
+- Stale code comment in `supabase/functions/razorpay-webhook/index.ts` incorrectly
+  implied no `credit_wallet` function exists in this migration tree; corrected to
+  explain it exists as an internal refund-only helper, distinct from the legacy,
+  top-up-purpose function of the same name that only ever lived in the (non-deployed)
+  `database/` tree.
+
+### Changed
+- `CustomerReferral.jsx` — removed the hardcoded referral code and fabricated
+  friend/earnings data (no `referrals` table or backend has ever existed for this
+  screen). Now always shows a truthful "coming soon" state with no financial-looking
+  numbers, regardless of the `referral` feature flag's value.
+
+### Documentation
+- **Reconciling the discrepancy noted in `[1.0.0]`'s "Removed" section above:** a
+  four-pass forensic audit of this exact archive (Sept 2026) found
+  `database/migrations/007_phase2_hardening.sql`, `qa/.github/workflows/`,
+  `audit.json`, and `supabase/functions/important_map.json` all still present,
+  contradicting the removal claimed above. This could not be conclusively resolved —
+  it is consistent with either this archive being a snapshot taken before that cleanup
+  commit was applied, or an incomplete cleanup; no `.git` history was available in
+  any pass to distinguish the two. The `leaflet`/`react-leaflet` npm-dependency removal
+  claimed in the same section, by contrast, **is** accurate — `package.json` has no
+  such dependencies. Documented here rather than silently editing the `[1.0.0]` entry
+  above, since this pass cannot confirm which explanation is correct.
+- `place_order` (referenced in earlier audit passes as an open "vs. `create_order`"
+  question) is confirmed **intentionally retired**, not ambiguous: `migration_035`'s
+  own comment states it is "intentionally retired with no legitimate caller" and locks
+  it to no grants at all (not even `service_role`). No code change needed; documented
+  here for the record.
+
+---
+
+## [1.4.0] — 2026-09-02 — Pass 7 remediation (real wallet checkout path)
+
+Remediates the seven workstreams identified by the Pass 6 independent re-audit
+(`SETU-PASS6-INDEPENDENT-REAUDIT-REPORT.md`). Full evidence trail in
+`SETU-PASS7-REMEDIATION-REPORT.md`.
+
+### Fixed
+- **`pay_order_from_wallet`** (the RPC the live checkout flow actually calls — Pass
+  5's `1.3.0` wallet-idempotency fix targeted `pay_from_wallet`, a function with zero
+  frontend callers, and never touched this one). Now locks the order row before
+  checking its payment status, closing a concurrent-double-debit race, and reports a
+  same-order retry after a real success as an explicit `already_paid: true` outcome
+  instead of a generic failure — closing a path where a network-timeout retry could
+  cause a correctly-paid order to be auto-cancelled-and-refunded (`migration_059`).
+- `CustomerCheckout.jsx` / `src/lib/api.js` — updated to read and act on the new
+  `already_paid` signal explicitly, as defense-in-depth alongside the RPC-level fix.
+- `assign_role` — closed a PUBLIC/`anon` `EXECUTE` grant left open since `1.3.0`'s
+  `migration_054` (a `DROP`+`CREATE FUNCTION`, needed for a return-type change, resets
+  grants to Postgres's default-to-PUBLIC and was never followed by an explicit
+  `REVOKE ... FROM PUBLIC`). Not previously exploitable — every unauthorized caller was
+  already rejected by the function's internal checks — but now matches this schema's
+  established grant-restriction pattern (`migration_060`).
+- `pay_from_wallet` — its idempotency check (added in `1.3.0`) did not verify that a
+  replayed request's amount matched the originally-debited amount, meaning a mismatched
+  replay could silently report success without moving the requested money. Fixed with
+  an explicit amount-match check, both on the normal replay path and the concurrent-race
+  path. Kept (not retired) because `qa/sql/rls_permission_guards_test.sql`'s `T2` test
+  provides real regression coverage of this function's ownership guard (`migration_061`).
+- `src/lib/mockData.js` — removed a fabricated "Referral bonus — Raj Kumar" label from
+  demo-mode wallet-history data (demo-mode only, never shown to real users, but a loose
+  end relative to `1.3.0`'s referral-page cleanup).
+
+### Verified, no change required
+- Completed the RLS policy-body sweep to 59/59 tables (up from `1.3.0`'s ~27 and Pass
+  6's ~33) — the remaining ~26 tables (notification/campaign/admin-config/reporting)
+  were read in full this pass and found correctly ownership/permission/admin-scoped,
+  with no `USING(true)` on any sensitive table. No additional RLS defect found.
+- OPS-01 (the trigger mechanism for `vendor-payout`/`dispatch-notifications`) remains
+  genuinely unresolved — this requires live Supabase project/deployment access this
+  environment does not have, and was correctly left undiagnosed rather than guessed at,
+  consistent with `1.3.0`.
+
+
 
 Consolidated from `SECURITY_FIXES.md` ("Round 2" audit response) and prior sessions. Grouped by theme, not chronological.
 

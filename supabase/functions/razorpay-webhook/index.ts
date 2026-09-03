@@ -21,7 +21,7 @@
  *   refund.created     → update order_refunds, mark order refunded
  *   payout.processed   → confirm vendor_payout as paid
  *   payout.failed      → mark vendor_payout failed (funds returned to escrow)
- *   wallet_topup       → credit wallet via credit_wallet RPC
+ *   wallet_topup       → credit wallet via topup_wallet RPC
  *   credit_repayment   → reduce credit_accounts.outstanding
  *
  * All payment_status transitions go through security-definer Postgres
@@ -263,9 +263,19 @@ serve(async (req) => {
         } else if (paymentType === "wallet_topup" && notes.customerId) {
           // ── Wallet top-up ──────────────────────────────────
           // Uses the canonical topup_wallet RPC (supabase/migrations/
-          // 20240101000001_initial_schema.sql) — NOT a custom
-          // credit_wallet function, which only ever existed in the
-          // legacy database/ tree that CI doesn't deploy.
+          // 20240101000001_initial_schema.sql) — NOT credit_wallet.
+          // (PASS 5 correction: credit_wallet() does exist in this
+          // migration tree — supabase/migrations/20240101000017_
+          // order_integrity.sql — but it is an INTERNAL helper called
+          // only by cancel_order_with_refund() to credit a refund back
+          // to the wallet. It is not appropriate for top-ups and is
+          // not directly callable from here — see migration 035, which
+          // revokes its PUBLIC/authenticated/anon execute and grants
+          // only service_role. A same-named, top-up-purpose
+          // credit_wallet function did once exist only in the legacy
+          // database/ tree that CI doesn't deploy — that is the
+          // function this comment originally warned against, not the
+          // one that lives in this migration tree today.)
           console.log(`[webhook] Wallet topup for ${notes.customerId} ₹${amount}`);
 
           const { error: creditErr } = await rpc(supabase, "topup_wallet", {

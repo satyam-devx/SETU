@@ -694,9 +694,19 @@ export const PaymentAPI = {
             'PaymentAPI.payOrderFromWallet'
           );
         }
-        return err({ message: data?.error ?? 'Wallet payment failed' }, 'PaymentAPI.payOrderFromWallet');
+        // PASS 7: `order_not_payable` is a distinct, genuine failure
+        // (e.g. the order was cancelled before payment) — separate
+        // from the already_paid case above, which the RPC now
+        // reports as success:true and never reaches this branch.
+        return err(
+          {
+            message:           data?.message ?? data?.error ?? 'Wallet payment failed',
+            order_not_payable: data?.error === 'order_not_payable',
+          },
+          'PaymentAPI.payOrderFromWallet'
+        );
       }
-      return ok({ new_balance: data.new_balance, total: data.total });
+      return ok({ new_balance: data.new_balance, total: data.total, already_paid: data.already_paid === true });
     } catch (e) {
       return err(e, 'PaymentAPI.payOrderFromWallet');
     }
