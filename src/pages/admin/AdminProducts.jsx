@@ -30,7 +30,7 @@ import {
 import AppHeader from '@/components/shared/AppHeader';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { AdminAPI } from '@/lib/api';
-import { useAuth } from '@/context/AuthContext'; // Added AuthContext to fetch user role
+import { useAuth } from '@/lib/AuthContext'; // Corrected import path
 
 // ── Create Product Dialog ─────────────────────────────────
 const EMPTY_PRODUCT = {
@@ -43,12 +43,12 @@ function CreateProductDialog({ open, onClose, vendors, categories, onCreated }) 
   const [form,   setForm]   = useState(EMPTY_PRODUCT);
   const [saving, setSaving] = useState(false);
   const [err,    setErr]    = useState(null);
-  const { user } = useAuth(); // Auth context for checking role
+  const { userRole } = useAuth(); // Fetch user role directly from context
 
   const setF = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErr(null); };
 
   const handleCreate = async () => {
-    const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
+    const isAdmin = userRole === 'admin' || userRole === 'superadmin' || userRole === 'super_admin';
     
     // Vendor is required only if the user is NOT an admin or superadmin
     if (!isAdmin && !form.vendor_id) { 
