@@ -72,5 +72,8 @@ export default defineConfig(({ command }) => ({
   server: {
     port: 5173,
     host: true,
+    // Accept the Base44 preview's external hostname (served through a
+    // proxy host that changes whenever the environment is recreated).
+    allowedHosts: true,
   },
 }));

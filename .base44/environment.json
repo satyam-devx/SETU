@@ -1,0 +1,32 @@
+{
+  "previewPort": 3000,
+  "healthPath": "/",
+  "startCommand": "docker compose -f docker-compose.base44.yml up -d",
+  "secrets": [
+    {
+      "name": "VITE_SUPABASE_URL",
+      "description": "Supabase project URL (Settings → API). Optional — demo mode works without it.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "VITE_SUPABASE_ANON_KEY",
+      "description": "Supabase anon public key (Settings → API). Optional — demo mode works without it.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "VITE_MAPBOX_TOKEN",
+      "description": "Mapbox access token for map features (account.mapbox.com). Optional.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "VITE_RAZORPAY_KEY_ID",
+      "description": "Razorpay public key ID for payments (dashboard → API Keys). Optional.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "VITE_FIREBASE_API_KEY",
+      "description": "Firebase web API key for FCM push (Firebase Console → Project Settings). Optional.",
+      "requiredAtBoot": false
+    }
+  ]
+}
