@@ -90,10 +90,9 @@ export default function AdminShell({
   // ── Swipe-to-close (mobile drawer only) ───────────────────
   // Tracks the finger 1:1 via direct DOM mutation (no React
   // state during the drag) so this stays glitch-free at 60fps.
-  // Uses a plain CSS *transition* (not a keyframe animation) for
-  // both drag feedback and settle, so the browser always
-  // interpolates smoothly from wherever the finger let go —
-  // there's no "reset to 0 then re-animate" jump to fight.
+  // Content is only ever in the DOM while sidebarOpen is true
+  // (Radix mounts/unmounts it normally — no forceMount here, see
+  // note below), so dragging never has to fight anything.
   const dragStartX = useRef(0);
   const dragDeltaX = useRef(0);
   const isDragging = useRef(false);
@@ -119,8 +118,13 @@ export default function AdminShell({
     const shouldClose = dragDeltaX.current < -SWIPE_CLOSE_PX;
     dragDeltaX.current = 0;
     const node = drawerRef.current;
+    // Always hand control straight back to Radix's own open/close
+    // classes before touching `sidebarOpen` — clearing the inline
+    // override first means the closing keyframe animation (if any)
+    // starts from a clean, class-driven state instead of a stale
+    // mid-drag transform.
     if (node) {
-      node.style.transition = ''; // hand control back to the CSS transition class
+      node.style.transition = '';
       node.style.transform = '';
     }
     if (shouldClose) setSidebarOpen(false);
@@ -142,28 +146,35 @@ export default function AdminShell({
         </div>
       ) : (
         // ── Mobile / tablet: modal drawer ───────────────────
+        // Deliberately NOT using `forceMount` here: forceMount keeps
+        // Content (and its internal FocusScope/DismissableLayer/
+        // scroll-lock) permanently mounted regardless of `open`,
+        // which makes Radix treat the dialog as "active" even while
+        // visually closed — it ends up swallowing every click on the
+        // page and permanently locking scroll. Letting Radix mount/
+        // unmount Content normally (tied to `sidebarOpen`) is what
+        // keeps the rest of the app fully interactive while closed.
         <Dialog.Root open={sidebarOpen} onOpenChange={setSidebarOpen}>
-          <Dialog.Portal forceMount>
+          <Dialog.Portal>
             <Dialog.Overlay
-              forceMount
               className={cn(
-                'fixed inset-0 z-40 bg-black/50 backdrop-blur-sm transition-opacity duration-200',
-                sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
+                'fixed inset-0 z-40 bg-black/50 backdrop-blur-sm',
+                'data-[state=open]:animate-in data-[state=open]:fade-in-0',
+                'data-[state=closed]:animate-out data-[state=closed]:fade-out-0'
               )}
             />
             <Dialog.Content
-              forceMount
               ref={drawerRef}
               id="admin-sidebar-drawer"
-              inert={!sidebarOpen}
               onTouchStart={onTouchStart}
               onTouchMove={onTouchMove}
               onTouchEnd={onTouchEnd}
               aria-describedby={undefined}
               className={cn(
                 'fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] outline-none',
-                'transition-transform duration-200 ease-[cubic-bezier(0.32,0.72,0,1)]',
-                sidebarOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none'
+                'data-[state=open]:animate-in data-[state=open]:slide-in-from-left',
+                'data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left',
+                'duration-200'
               )}
             >
               <Dialog.Title className="sr-only">{title} navigation</Dialog.Title>
