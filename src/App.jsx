@@ -29,6 +29,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import ErrorBoundary from '@/components/shared/ErrorBoundary';
 import MaintenanceBanner from '@/components/shared/MaintenanceBanner';
 import CommandPalette from '@/components/shared/CommandPalette';
+import AppBackground from '@/components/shared/AppBackground';
 import { isSupabaseConfigured, isDemoModeEnabled } from '@/lib/supabase';
 
 // ── Eager: Auth & onboarding — tiny, always needed first ─
@@ -262,6 +263,7 @@ function App() {
           <AuthStoreBridge />
           <CartProvider>
             <VillageProvider>
+            <AppBackground />
             <ScrollToTop />
             <MaintenanceBanner />
             <CommandPalette />

@@ -19,15 +19,29 @@
 //     unauthenticated welcome screen before being redirected.
 // ═══════════════════════════════════════════════════════════
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
+import SplashScreen from '@/pages/SplashScreen';
+import RotatingText from '@/components/shared/RotatingText';
+
+const SPLASH_SESSION_KEY = 'setu-splash-seen';
+
+const HEADLINE_PHRASES = [
+  'Rural Commerce Operating System',
+  'Superfast Delivery, Har Gaon Mein',
+  'Welcome to SETU',
+  'Ghar Baithe Order Karo',
+];
 
 export default function RoleSelect() {
   const navigate = useNavigate();
   const { isAuthenticated, isProfileLoaded, isLoading, portalPath } = useAuth();
+  const [showSplash, setShowSplash] = useState(
+    () => typeof window !== 'undefined' && sessionStorage.getItem(SPLASH_SESSION_KEY) !== '1'
+  );
 
   // FIX (Issue 1 / RoleSelect): Wait for BOTH authentication AND profile load
   // before redirecting. This prevents:
@@ -45,12 +59,26 @@ export default function RoleSelect() {
     }
   }, [isAuthenticated, isProfileLoaded, isLoading, portalPath, navigate]);
 
+  // First paint of a fresh browser session — show the splash beat once,
+  // then fall straight into the normal loading/redirect/welcome logic
+  // below (sessionStorage means an in-app nav back to "/" won't replay it).
+  if (showSplash) {
+    return (
+      <SplashScreen
+        onFinish={() => {
+          sessionStorage.setItem(SPLASH_SESSION_KEY, '1');
+          setShowSplash(false);
+        }}
+      />
+    );
+  }
+
   // Show spinner while auth state is being resolved (e.g. page refresh with
   // existing session). This prevents returning users from seeing the
   // unauthenticated welcome screen before being redirected to their portal.
   if (isLoading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-background">
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-transparent">
         <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
           <span className="font-heading text-primary font-bold text-lg">S</span>
         </div>
@@ -62,15 +90,15 @@ export default function RoleSelect() {
 
   // Not authenticated — show welcome screen
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/30 flex flex-col items-center justify-center p-6">
+    <div className="min-h-screen bg-transparent flex flex-col items-center justify-center p-6">
 
       {/* Logo */}
       <div className="text-center mb-10 animate-fade-slide-down">
         <h1 className="font-heading text-6xl md:text-7xl font-bold text-foreground tracking-tight">
           SETU
         </h1>
-        <p className="text-muted-foreground mt-2 text-base font-light">
-          Rural Commerce Operating System
+        <p className="text-muted-foreground mt-2 text-base font-light h-6">
+          <RotatingText phrases={HEADLINE_PHRASES} />
         </p>
         <p className="text-muted-foreground/60 text-sm mt-1">
           Madhepur · Madhubani · Bihar · मिथिला
