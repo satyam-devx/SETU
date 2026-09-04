@@ -30,6 +30,7 @@ import {
 import AppHeader from '@/components/shared/AppHeader';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { AdminAPI } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext'; // Added AuthContext to fetch user role
 
 // ── Create Product Dialog ─────────────────────────────────
 const EMPTY_PRODUCT = {
@@ -42,18 +43,25 @@ function CreateProductDialog({ open, onClose, vendors, categories, onCreated }) 
   const [form,   setForm]   = useState(EMPTY_PRODUCT);
   const [saving, setSaving] = useState(false);
   const [err,    setErr]    = useState(null);
+  const { user } = useAuth(); // Auth context for checking role
 
   const setF = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErr(null); };
 
   const handleCreate = async () => {
-    if (!form.vendor_id) { setErr('Vendor is required'); return; }
+    const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
+    
+    // Vendor is required only if the user is NOT an admin or superadmin
+    if (!isAdmin && !form.vendor_id) { 
+      setErr('Vendor is required'); 
+      return; 
+    }
     if (!form.name.trim()) { setErr('Product name is required'); return; }
     if (!form.price || isNaN(Number(form.price)) || Number(form.price) <= 0) {
       setErr('Valid price is required'); return;
     }
     setSaving(true);
     const payload = {
-      vendor_id:   form.vendor_id,
+      vendor_id:   form.vendor_id || null,
       category_id: form.category_id && form.category_id !== 'none' ? form.category_id : null,
       name:        form.name.trim(),
       name_hindi:  form.name_hindi?.trim() || null,
@@ -85,7 +93,7 @@ function CreateProductDialog({ open, onClose, vendors, categories, onCreated }) 
           )}
 
           <div>
-            <Label className="text-xs mb-1 block">Vendor *</Label>
+            <Label className="text-xs mb-1 block">Vendor</Label>
             <Select value={form.vendor_id} onValueChange={v => setF('vendor_id', v)}>
               <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Select vendor…" /></SelectTrigger>
               <SelectContent>
