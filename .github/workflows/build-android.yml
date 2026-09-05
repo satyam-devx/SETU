@@ -1,0 +1,67 @@
+name: Build Android APK
+
+# Manual button in the Actions tab whenever you want a fresh APK, plus
+# automatic on version tags (v1.2.3) for a proper tagged release build.
+# This does NOT run on every push — the OTA updater (npm run release:ota)
+# handles day-to-day JS/CSS/HTML changes without needing a new APK at all.
+# Only rebuild the APK for native-shell changes: a new Capacitor plugin,
+# an Android permission, the app icon/splash, or the very first install.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web bundle (native base path)
+        run: npx cross-env VITE_BASE_PATH=/ vite build
+
+      # android/ is gitignored and regenerated fresh every run — see the
+      # comment in .gitignore. `cap add` bootstraps the native project;
+      # `cap sync` copies dist/ + registers plugins into it either way.
+      - name: Generate native Android project
+        run: npx cap add android
+
+      - name: Sync web assets + plugins into the native project
+        run: npx cap sync android
+
+      - name: Grant gradlew execute permission
+        run: chmod +x android/gradlew
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: setu-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      # For a Play-Store-ready *signed* release build, add these repo
+      # secrets — ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+      # ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD — then swap the two
+      # steps above for `assembleRelease` with a signing config in
+      # android/app/build.gradle. Skipped for now — debug APKs install
+      # fine for internal testing via "unknown sources".

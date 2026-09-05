@@ -16,9 +16,17 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "test": "npm run --prefix qa test",
-    "test:all": "npm run --prefix qa test:all"
+    "test:all": "npm run --prefix qa test:all",
+    "android:build": "cross-env VITE_BASE_PATH=/ vite build && npx cap sync android",
+    "android:open": "npx cap open android",
+    "release:ota": "node scripts/release-ota.mjs",
+    "revoke:ota": "node scripts/revoke-ota.mjs"
   },
   "dependencies": {
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/app": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@capgo/capacitor-updater": "^8.0.0",
     "@radix-ui/react-dialog": "^1.1.1",
     "@radix-ui/react-label": "^2.1.0",
     "@radix-ui/react-progress": "^1.1.0",
@@ -41,10 +49,13 @@
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "adm-zip": "^0.5.16",
     "autoprefixer": "^10.4.19",
+    "cross-env": "^7.0.3",
     "eslint": "^9.9.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-jsx-a11y": "^6.9.0",

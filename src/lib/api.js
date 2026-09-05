@@ -2274,16 +2274,28 @@ export const FeatureFlagsAPI = {
     () => supabase.from('feature_flags').select('*').order('name'),
     [], 'FeatureFlagsAPI.list'
   ),
-  set: (key, enabled) => safeQuery(
-    () => supabase.rpc('set_feature_flag', { p_key: key, p_enabled: enabled }),
+  set: (key, enabled, reason = null) => safeQuery(
+    () => supabase.rpc('set_feature_flag', { p_key: key, p_enabled: enabled, p_reason: reason }),
     null, 'FeatureFlagsAPI.set'
   ),
-  upsert: ({ key, name, description, enabled = true, rollout = 100, audience = null }) => safeQuery(
+  upsert: ({ key, name, description, enabled = true, rollout = 100, audience = null, isKillSwitch = false, reason = null }) => safeQuery(
     () => supabase.rpc('upsert_feature_flag', {
       p_key: key, p_name: name, p_description: description ?? null,
       p_enabled: enabled, p_rollout: rollout, p_audience: audience,
+      p_is_kill_switch: isKillSwitch, p_reason: reason,
     }),
     null, 'FeatureFlagsAPI.upsert'
+  ),
+  // Emergency panic-button — reason is required server-side. Distinct
+  // audit action ('kill_switch') from a routine set() toggle.
+  killSwitch: (key, reason) => safeQuery(
+    () => supabase.rpc('kill_switch', { p_key: key, p_reason: reason }),
+    null, 'FeatureFlagsAPI.killSwitch'
+  ),
+  // Per-flag audit trail for the admin screen's history panel.
+  history: (key, limit = 20) => safeQuery(
+    () => supabase.rpc('feature_flag_history', { p_key: key, p_limit: limit }),
+    [], 'FeatureFlagsAPI.history'
   ),
 };
 

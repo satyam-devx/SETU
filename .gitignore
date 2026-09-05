@@ -25,3 +25,12 @@ Thumbs.db
 
 # npm audit snapshots — regenerate via qa's audit:deps script, don't commit
 audit.json
+
+# Capacitor native Android project — regenerated fresh in CI on every
+# build from capacitor.config.json + dist/ (see .github/workflows/
+# build-android.yml). No custom native code lives here yet, so there's
+# nothing to preserve; keeping it out of git avoids committing a full
+# Android Studio/Gradle project. If that ever changes (custom native
+# plugin code, manual AndroidManifest edits), un-ignore it then.
+/android/
+dist.zip

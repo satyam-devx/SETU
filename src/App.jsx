@@ -30,6 +30,8 @@ import ErrorBoundary from '@/components/shared/ErrorBoundary';
 import MaintenanceBanner from '@/components/shared/MaintenanceBanner';
 import CommandPalette from '@/components/shared/CommandPalette';
 import AppBackground from '@/components/shared/AppBackground';
+import AppUpdateBanner from '@/components/shared/AppUpdateBanner';
+import { confirmHealthyBoot } from '@/lib/appUpdater';
 import { isSupabaseConfigured, isDemoModeEnabled } from '@/lib/supabase';
 
 // ── Eager: Auth & onboarding — tiny, always needed first ─
@@ -248,6 +250,14 @@ function ConfigErrorScreen() {
 
 // ── APP ───────────────────────────────────────────────────
 function App() {
+  // Confirms this bundle booted successfully to the native OTA plugin —
+  // must run unconditionally, before any early return. On a fresh OTA
+  // activation this runs a bounded health check first and rolls back
+  // automatically if it fails (see src/lib/appUpdater.js). No-op on web.
+  useEffect(() => {
+    confirmHealthyBoot();
+  }, []);
+
   if (!isSupabaseConfigured && !isDemoModeEnabled) {
     return <ConfigErrorScreen />;
   }
@@ -264,6 +274,7 @@ function App() {
           <CartProvider>
             <VillageProvider>
             <AppBackground />
+            <AppUpdateBanner />
             <ScrollToTop />
             <MaintenanceBanner />
             <CommandPalette />
