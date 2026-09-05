@@ -1816,19 +1816,40 @@ export async function reviewKYC(kycId, status, reason = null) {
 // ── Vendor approval (wired to real DB) ───────────────────
 
 export async function getPendingVendors() {
-  return safeQuery(
-    () => supabase
-      .from('vendors')
-      .select(`
-        id, name, category, village, village_id, phone,
-        image_url, kyc_status, created_at, subscription_tier,
-        kyc_records(type, status, doc_url, aadhaar_last4)
-      `)
-      .eq('kyc_status', 'pending')
-      .order('created_at', { ascending: true }),
-    [],
-    'getPendingVendors'
-  );
+  // PASS 9 FIX: vendors <-> kyc_records has no direct FK path (a KYC
+  // record belongs to a user, not a vendor; a vendor's owner_id
+  // happens to be that user's id) -- PostgREST cannot embed across
+  // that indirection in one hop, which is what produced "Could not
+  // find a relationship between 'vendors' and 'kyc_records'". Fetch
+  // vendors and their owners' KYC records as two queries and merge
+  // client-side, preserving the original one-to-many `kyc_records: []`
+  // shape every caller of this function already expects.
+  const { data: vendors, error } = await supabase
+    .from('vendors')
+    .select(`
+      id, owner_id, name, category, village, village_id, phone,
+      image_url, kyc_status, created_at, subscription_tier
+    `)
+    .eq('kyc_status', 'pending')
+    .order('created_at', { ascending: true });
+
+  if (error) return err(error, 'getPendingVendors');
+  if (!vendors || vendors.length === 0) return ok([]);
+
+  const ownerIds = [...new Set(vendors.map(v => v.owner_id).filter(Boolean))];
+  let kycByOwner = {};
+  if (ownerIds.length > 0) {
+    const { data: kycRows } = await supabase
+      .from('kyc_records')
+      .select('user_id, type, status, doc_url, aadhaar_last4')
+      .in('user_id', ownerIds);
+    kycByOwner = (kycRows || []).reduce((acc, row) => {
+      (acc[row.user_id] ??= []).push(row);
+      return acc;
+    }, {});
+  }
+
+  return ok(vendors.map(v => ({ ...v, kyc_records: kycByOwner[v.owner_id] || [] })));
 }
 
 export const AdminAPI = {
