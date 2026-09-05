@@ -34,6 +34,9 @@ jobs:
         run: npm ci
 
       - name: Build web bundle (native base path)
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npx cross-env VITE_BASE_PATH=/ vite build
 
       # android/ is gitignored and regenerated fresh every run — see the
