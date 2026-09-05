@@ -33,9 +33,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Generate Android app icons
-        run: npx @capacitor/assets generate --android
-
       - name: Build web bundle (native base path)
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
@@ -47,6 +44,9 @@ jobs:
       # `cap sync` copies dist/ + registers plugins into it either way.
       - name: Generate native Android project
         run: npx cap add android
+
+      - name: Generate Android app icons
+        run: npx @capacitor/assets generate --android
 
       - name: Sync web assets + plugins into the native project
         run: npx cap sync android
