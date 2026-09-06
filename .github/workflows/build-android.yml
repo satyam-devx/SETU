@@ -45,8 +45,11 @@ jobs:
       - name: Generate native Android project
         run: npx cap add android
 
+      # Must come AFTER `cap add android` — it writes generated icons into
+      # android/app/src/main/res/..., which doesn't exist until the step
+      # above creates it. Reads the source logo from assets/logo.png.
       - name: Generate Android app icons
-        run: npx @capacitor/assets generate --android
+        run: npx @capacitor/assets generate --android --iconBackgroundColor '#FDF8F0' --iconBackgroundColorDark '#1A1512' --splashBackgroundColor '#FDF8F0' --splashBackgroundColorDark '#1A1512'
 
       - name: Sync web assets + plugins into the native project
         run: npx cap sync android
