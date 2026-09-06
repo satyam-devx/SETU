@@ -32,6 +32,7 @@ import CommandPalette from '@/components/shared/CommandPalette';
 import AppBackground from '@/components/shared/AppBackground';
 import AppUpdateBanner from '@/components/shared/AppUpdateBanner';
 import { confirmHealthyBoot } from '@/lib/appUpdater';
+import { Capacitor } from '@capacitor/core';
 import { isSupabaseConfigured, isDemoModeEnabled } from '@/lib/supabase';
 
 // ── Eager: Auth & onboarding — tiny, always needed first ─
@@ -256,6 +257,18 @@ function App() {
   // automatically if it fails (see src/lib/appUpdater.js). No-op on web.
   useEffect(() => {
     confirmHealthyBoot();
+  }, []);
+
+  // SETU is portrait-only — lock orientation on native so the layout
+  // (splash, bottom nav, etc.) never has to support landscape. No-op on
+  // web, and safe to fire-and-forget: a failure here just means the
+  // rare user who force-rotates their device sees the normal responsive
+  // layout instead of a locked one, not a crash.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    import('@capacitor/screen-orientation')
+      .then(({ ScreenOrientation }) => ScreenOrientation.lock({ orientation: 'portrait' }))
+      .catch((err) => console.warn('[App] orientation lock failed:', err?.message));
   }, []);
 
   if (!isSupabaseConfigured && !isDemoModeEnabled) {
