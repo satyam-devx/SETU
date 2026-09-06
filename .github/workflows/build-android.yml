@@ -54,6 +54,11 @@ jobs:
       - name: Sync web assets + plugins into the native project
         run: npx cap sync android
 
+      - name: Restore fixed debug keystore
+        run: |
+          mkdir -p ~/.android
+          echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > ~/.android/debug.keystore
+
       - name: Grant gradlew execute permission
         run: chmod +x android/gradlew
 
