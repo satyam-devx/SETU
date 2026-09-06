@@ -11,6 +11,14 @@
       "autoUpdate": false,
       "appReadyTimeout": 10000,
       "responseTimeout": 20
+    },
+    "SplashScreen": {
+      "launchAutoHide": false,
+      "backgroundColor": "#FDF8F0",
+      "androidScaleType": "CENTER_CROP",
+      "splashFullScreen": true,
+      "splashImmersive": true,
+      "showSpinner": false
     }
   }
 }
