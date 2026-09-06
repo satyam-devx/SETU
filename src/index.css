@@ -287,6 +287,57 @@
   .animate-fade-in   { animation: fade-in   150ms ease forwards; }
   .animate-scale-in  { animation: scale-in  150ms ease forwards; }
 
+  /* ── Splash screen (SplashScreen.jsx) ──────────────────────
+     One-shot entrance keyframes (speed lines → hero slide-in →
+     underline draw) plus two subtle infinite loops (pin pulse,
+     road sweep) for the "journey in progress" micro-animation.
+     Kept deliberately minimal — background/food art stays static,
+     this is the ~10% of the screen that's allowed to move. */
+  @keyframes speed-line {
+    0%   { transform: scaleX(0) translateX(-20%); opacity: 0; }
+    35%  { opacity: 1; }
+    100% { transform: scaleX(1) translateX(0);     opacity: 0; }
+  }
+  @keyframes hero-enter {
+    0%   { transform: translateX(-6%) scale(0.92); opacity: 0; }
+    65%  { transform: translateX(1%)  scale(1.03); opacity: 1; }
+    100% { transform: translateX(0)   scale(1);    opacity: 1; }
+  }
+  @keyframes underline-draw {
+    from { transform: scaleX(0); }
+    to   { transform: scaleX(1); }
+  }
+  @keyframes pin-pulse-ring {
+    0%   { transform: scale(0.7); opacity: 0.55; }
+    100% { transform: scale(2.2); opacity: 0; }
+  }
+  @keyframes road-sweep {
+    0%   { transform: translateX(-120%); }
+    100% { transform: translateX(120%); }
+  }
+
+  .animate-speed-line     { animation: speed-line 700ms ease-out both; }
+  .animate-hero-enter     { animation: hero-enter 900ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .animate-underline-draw { animation: underline-draw 500ms ease-out both; transform-origin: left; }
+  .animate-pin-pulse-ring { animation: pin-pulse-ring 2000ms ease-out infinite; }
+  .animate-road-sweep     { animation: road-sweep 2600ms ease-in-out infinite; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-speed-line,
+    .animate-hero-enter,
+    .animate-underline-draw {
+      animation-name: fade-in;
+      animation-duration: 1ms;
+    }
+    /* Infinite loops are pure decoration with no informational value —
+       switch them off entirely rather than reduce their speed. */
+    .animate-pin-pulse-ring,
+    .animate-road-sweep {
+      animation: none;
+      opacity: 0;
+    }
+  }
+
   /* Touch target minimum */
   .touch-target {
     min-height: 44px;
