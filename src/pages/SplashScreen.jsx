@@ -184,24 +184,27 @@ export default function SplashScreen({ onFinish }) {
     >
       {/* Static background artwork — see file header for what to export. */}
       {!bgFailed && (
-        <img
-          src="/splash-bg.jpg"
-          alt=""
-          aria-hidden="true"
-          className="absolute inset-0 -z-10 h-full w-full object-cover"
-          onLoad={async (e) => {
-              try {
-                await e.currentTarget.decode?.();
-              } catch {
-                // Image is already usable even if decode() is unavailable/fails.
-              }
+  <img
+    src="/splash-bg.jpg"
+    alt=""
+    aria-hidden="true"
+    className="absolute inset-0 -z-10 h-full w-full object-cover"
+    onLoad={async (e) => {
+      try {
+        await e.currentTarget.decode?.();
+      } catch {
+        // Image is still usable if decode is unavailable or fails.
+      }
 
-              requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                  setBgLoaded(true);
-          onError={() => setBgFailed(true)}
-        />
-      )}
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setBgLoaded(true);
+        });
+      });
+    }}
+    onError={() => setBgFailed(true)}
+  />
+)}
 
       {/* Nothing below paints until the background is ready — this is
           what stops the "white background, elements pop in later" bug. */}
