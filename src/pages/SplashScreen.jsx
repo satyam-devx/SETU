@@ -123,15 +123,20 @@ export default function SplashScreen({ onFinish }) {
   // later than necessary (would reintroduce the gap this all exists
   // to remove).
   useEffect(() => {
-    if (!contentVisible || nativeHiddenRef.current || !Capacitor.isNativePlatform()) return;
-    nativeHiddenRef.current = true;
+  if (!contentVisible || nativeHiddenRef.current || !Capacitor.isNativePlatform()) return;
 
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          import('@capacitor/splash-screen')
-            .then(({ SplashScreen: NativeSplashScreen }) => NativeSplashScreen.hide())
-      .catch((err) => console.warn('[SplashScreen] native hide failed:', err?.message));
-  }, [contentVisible]);
+  nativeHiddenRef.current = true;
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      import('@capacitor/splash-screen')
+        .then(({ SplashScreen: NativeSplashScreen }) => NativeSplashScreen.hide())
+        .catch((err) =>
+          console.warn('[SplashScreen] native hide failed:', err?.message)
+        );
+    });
+  });
+}, [contentVisible]);
 
   // Real readiness signals — start counting only once the background
   // is actually visible, so "fonts ready" etc. reflect what the user
