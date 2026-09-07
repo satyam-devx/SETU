@@ -309,8 +309,14 @@ export default function SplashScreen({ onFinish }) {
         {/* BOTTOM — designed/developed credit + signature, anchored at
             the very bottom (bounded only by the container's safe-area
             padding below). */}
-        <div className="flex shrink-0 flex-col items-center gap-2 text-center">
-          <p className="text-[clamp(0.55rem,2.4vw,0.7rem)] tracking-[0.25em] text-foreground/40">{SIGNATURE_LABEL}</p>
+        {/* BOTTOM — designed/developed credit + signature */}
+        <div className="flex shrink-0 flex-col items-center text-center">
+          <p className="text-[clamp(0.55rem,2.4vw,0.7rem)] tracking-[0.25em] text-foreground/40">
+            {SIGNATURE_LABEL}
+          </p>
+
+          <div className="h-2" aria-hidden="true" />
+
           {!signatureFailed && (
             <img
               src="/satyam-signature.png"
