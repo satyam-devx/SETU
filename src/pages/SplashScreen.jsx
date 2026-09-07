@@ -125,8 +125,11 @@ export default function SplashScreen({ onFinish }) {
   useEffect(() => {
     if (!contentVisible || nativeHiddenRef.current || !Capacitor.isNativePlatform()) return;
     nativeHiddenRef.current = true;
-    import('@capacitor/splash-screen')
-      .then(({ SplashScreen: NativeSplashScreen }) => NativeSplashScreen.hide())
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          import('@capacitor/splash-screen')
+            .then(({ SplashScreen: NativeSplashScreen }) => NativeSplashScreen.hide())
       .catch((err) => console.warn('[SplashScreen] native hide failed:', err?.message));
   }, [contentVisible]);
 
@@ -186,7 +189,16 @@ export default function SplashScreen({ onFinish }) {
           alt=""
           aria-hidden="true"
           className="absolute inset-0 -z-10 h-full w-full object-cover"
-          onLoad={() => setBgLoaded(true)}
+          onLoad={async (e) => {
+              try {
+                await e.currentTarget.decode?.();
+              } catch {
+                // Image is already usable even if decode() is unavailable/fails.
+              }
+
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  setBgLoaded(true);
           onError={() => setBgFailed(true)}
         />
       )}
@@ -196,7 +208,7 @@ export default function SplashScreen({ onFinish }) {
       <div className={`flex min-h-0 w-full flex-1 flex-col items-center transition-opacity duration-200 ${contentVisible ? 'opacity-100' : 'opacity-0'}`}>
 
         {/* TOP — headline */}
-        <div className="mt-2 shrink-0 text-center">
+        <div className="mt-5 shrink-0 text-center">
           <p className="animate-fade-slide-down text-[clamp(0.6rem,2.8vw,0.75rem)] font-semibold tracking-[0.35em] text-foreground/70">
             {HEADLINE_TOP}
           </p>
@@ -225,7 +237,7 @@ export default function SplashScreen({ onFinish }) {
         </div>
 
         {/* gap a — top → hero (flexible, balanced with gap b) */}
-        <div className="min-h-[0.75rem] flex-[1.15]" aria-hidden="true" />
+        <div className="min-h-[0.75rem] flex-1" aria-hidden="true" />
 
         {/* CENTER HERO — logo + speed lines */}
         <div className="relative flex w-full max-w-xs shrink-0 items-center justify-center">
@@ -251,7 +263,7 @@ export default function SplashScreen({ onFinish }) {
         </div>
 
         {/* gap b — hero → serving-area pill (flexible, balanced with gap a) */}
-        <div className="min-h-[0.75rem] flex-[1.05]" aria-hidden="true" />
+        <div className="min-h-[0.75rem] flex-[0.7] " aria-hidden="true" />
 
         {/* MIDDLE-LOWER — "Serving Madhubani" pill. Subtle rounded pill,
             saffron pin with a gentle continuous pulse (alive, not
@@ -284,7 +296,7 @@ export default function SplashScreen({ onFinish }) {
         {/* gap c — loader → bottom signature. The one big flexible run:
             absorbs most of any extra tall-screen space, so everything
             above stays grouped while the bottom block still anchors low. */}
-        <div className="min-h-[1rem] flex-[1.8]" aria-hidden="true" />
+        <div className="min-h-[1rem] flex-[2.3]" aria-hidden="true" />
 
         {/* BOTTOM — designed/developed credit + signature, anchored at
             the very bottom (bounded only by the container's safe-area
@@ -295,7 +307,7 @@ export default function SplashScreen({ onFinish }) {
             <img
               src="/satyam-signature.png"
               alt=""
-              className="h-[clamp(4.2rem,13.5vh,6.8rem)] w-auto object-contain opacity-90"
+              className="h-[clamp(5.25rem,16.5vh,8.25rem)] w-auto object-contain opacity-90"
               onError={() => setSignatureFailed(true)}
             />
           )}
