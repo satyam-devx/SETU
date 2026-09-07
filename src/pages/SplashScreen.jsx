@@ -44,11 +44,26 @@
 //      fake fixed-duration timer; whichever milestone is slowest is
 //      what actually determines how long the splash shows.
 //
-// ── Responsiveness ──────────────────────────────────────────
-// No fixed-pixel positioning — flex layout with a single shared `gap`
-// (so headline↔logo and logo↔badge are always equal), dvh + safe-area
-// insets, clamp()'d type sizes, object-fit: cover/contain on both
-// images. Orientation lock is handled once, app-wide, in App.jsx.
+// ── Responsive vertical composition ─────────────────────────
+// Five fixed content groups (top heading / hero logo / serving-area
+// pill / loading bar / bottom signature) are separated by flex-grow
+// spacers instead of one shared fixed gap. Extra viewport height is
+// distributed proportionally across those spacers, so the RELATIVE
+// spacing between groups holds on both short and tall screens instead
+// of all slack piling up in one place:
+//   - gap "a" (top → hero) and gap "b" (hero → pill) carry equal
+//     weight (flex-1 each), so the hero logo settles roughly centered
+//     between the heading above and the pill below on any screen
+//     height — not nudged by a few fixed pixels.
+//   - the pill → loader gap stays a small, fixed, non-flexible margin,
+//     since those two read as one cluster, not two separate groups.
+//   - the final gap (flex-[2]) absorbs most of any leftover tall-screen
+//     space, since that's the one place the design wants a big
+//     flexible run before the bottom-anchored signature block.
+// Each spacer keeps a small min-height so nothing can collapse to a
+// literal zero-gap overlap on very short screens. dvh + safe-area
+// insets + clamp()'d type sizes handle the rest. Orientation lock is
+// handled once, app-wide, in App.jsx.
 // ═══════════════════════════════════════════════════════════
 import React, { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
@@ -67,9 +82,16 @@ const SIGNATURE_LABEL = 'DESIGNED & DEVELOPED BY';
 // at least once, so a very fast device doesn't cut the motion design
 // off mid-way. Starts counting only once the background is visible.
 const MIN_ENTRANCE_MS = 2200;
+// A short, deliberate breath between the progress bar's last segment
+// actually reaching 100% and the exit fade starting — without this,
+// the final milestone flipping true and the opacity fade both fired in
+// the same tick, so the bar's last fill visually got cut off mid-
+// transition instead of ever being seen at rest. Kept small on purpose:
+// this should read as "smoother", never as an added wait.
+const PRE_EXIT_DELAY_MS = 150;
 // Brief pause at 100% so the bar's completion is actually seen before
 // handoff, instead of hitting 100 and instantly vanishing.
-const SETTLE_MS = 450;
+const SETTLE_MS = 500;
 // If the background image genuinely never resolves (very slow/broken
 // connection), don't hold the native splash hostage forever — show
 // the gradient fallback and proceed.
@@ -135,14 +157,22 @@ export default function SplashScreen({ onFinish }) {
   useEffect(() => {
     if (!allDone || finishedRef.current) return;
     finishedRef.current = true;
-    setExiting(true);
-    const t = setTimeout(() => onFinish?.(), SETTLE_MS);
-    return () => clearTimeout(t);
+    // Let the bar's final fill actually be seen at rest for a beat
+    // before the fade-out starts — see PRE_EXIT_DELAY_MS above.
+    let settleTimer;
+    const preExitTimer = setTimeout(() => {
+      setExiting(true);
+      settleTimer = setTimeout(() => onFinish?.(), SETTLE_MS);
+    }, PRE_EXIT_DELAY_MS);
+    return () => {
+      clearTimeout(preExitTimer);
+      clearTimeout(settleTimer);
+    };
   }, [allDone, onFinish]);
 
   return (
     <div
-      className={`relative flex min-h-[100dvh] flex-col items-center overflow-hidden bg-gradient-to-b from-background via-background to-secondary/10 px-6 transition-opacity duration-300 ${
+      className={`relative flex min-h-[100dvh] flex-col items-center overflow-hidden bg-gradient-to-b from-background via-background to-secondary/10 px-6 transition-opacity duration-[350ms] ${
         exiting ? 'opacity-0' : 'opacity-100'
       }`}
       style={{
@@ -166,91 +196,101 @@ export default function SplashScreen({ onFinish }) {
           what stops the "white background, elements pop in later" bug. */}
       <div className={`flex w-full flex-1 flex-col items-center transition-opacity duration-200 ${contentVisible ? 'opacity-100' : 'opacity-0'}`}>
 
-        {/* Headline → Logo → "Serving Madhubani" badge share one equal,
-            responsive gap so all three read as evenly, deliberately spaced. */}
-        <div className="flex w-full flex-col items-center gap-[clamp(1.5rem,4.5vh,2.75rem)]">
-          <div className="mt-2 text-center">
-            <p className="animate-fade-slide-down text-[clamp(0.6rem,2.8vw,0.75rem)] font-semibold tracking-[0.35em] text-foreground/70">
-              {HEADLINE_TOP}
-            </p>
-            <p
-              className="animate-fade-slide-down mt-1 text-[clamp(1rem,5vw,1.4rem)] font-extrabold tracking-[0.2em] text-primary"
-              style={{ animationDelay: '150ms' }}
-            >
-              {HEADLINE_ACCENT}
-            </p>
-            {/* Smile-shaped curve (not a straight underline) — bows gently
-                downward at the center, mirroring the brand mark's curve. */}
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 200 24"
-              className="animate-curve-draw mx-auto mt-2 h-4 w-24 text-primary"
-              style={{ animationDelay: '450ms' }}
-            >
-              <path
-                d="M6 6 Q100 30 194 6"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="7"
-                strokeLinecap="round"
-              />
-            </svg>
-          </div>
-
-          <div className="relative flex w-full max-w-xs items-center justify-center">
-            <div aria-hidden="true" className="absolute left-[8%] top-1/2 -translate-y-1/2 space-y-1.5">
-              <span className="block h-1 w-10 origin-left animate-speed-line rounded-full bg-primary/70" />
-              <span className="block h-1 w-6 origin-left animate-speed-line rounded-full bg-primary/50" style={{ animationDelay: '90ms' }} />
-              <span className="block h-1 w-3 origin-left animate-speed-line rounded-full bg-primary/30" style={{ animationDelay: '180ms' }} />
-            </div>
-
-            {logoFailed ? (
-              <p className="animate-hero-enter font-heading text-[clamp(2rem,10vw,3rem)] font-bold tracking-tight text-foreground" style={{ animationDelay: '250ms' }}>
-                <span className="text-primary">SETU</span>
-              </p>
-            ) : (
-              <img
-                src="/splash-logo.png"
-                alt="SETU"
-                className="animate-hero-enter w-[min(68vw,300px)]"
-                style={{ animationDelay: '250ms' }}
-                onError={() => setLogoFailed(true)}
-              />
-            )}
-          </div>
-
-          {/* "Serving Madhubani" badge — subtle rounded pill, saffron pin
-              with a gentle continuous pulse (alive, not attention-grabbing). */}
-          <div
-            className="animate-fade-slide-up-lg flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5"
-            style={{ animationDelay: '1100ms' }}
+        {/* TOP — headline */}
+        <div className="mt-2 shrink-0 text-center">
+          <p className="animate-fade-slide-down text-[clamp(0.6rem,2.8vw,0.75rem)] font-semibold tracking-[0.35em] text-foreground/70">
+            {HEADLINE_TOP}
+          </p>
+          <p
+            className="animate-fade-slide-down mt-1 text-[clamp(1rem,5vw,1.4rem)] font-extrabold tracking-[0.2em] text-primary"
+            style={{ animationDelay: '150ms' }}
           >
-            <span className="relative flex h-3 w-3 shrink-0 items-center justify-center">
-              <span aria-hidden="true" className="animate-pin-pulse-ring absolute inset-0 rounded-full bg-primary/50" />
-              <MapPin className="relative h-3 w-3 text-primary" fill="currentColor" />
-            </span>
-            <span className="text-[clamp(0.55rem,2.5vw,0.7rem)] font-semibold tracking-[0.25em] text-primary">
-              {SERVING_AREA}
-            </span>
-          </div>
+            {HEADLINE_ACCENT}
+          </p>
+          {/* Smile-shaped curve (not a straight underline) — bows gently
+              downward at the center, mirroring the brand mark's curve. */}
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 200 24"
+            className="animate-curve-draw mx-auto mt-2 h-4 w-24 text-primary"
+            style={{ animationDelay: '450ms' }}
+          >
+            <path
+              d="M6 6 Q100 30 194 6"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="7"
+              strokeLinecap="round"
+            />
+          </svg>
         </div>
 
-        {/* Loading bar — real progress, not a fake timer. Subtler gap
-            than the group above, since it reads as the group's caption. */}
-        <div className="animate-fade-in-delayed mt-6 w-full max-w-[220px]" style={{ animationDelay: '1300ms' }}>
+        {/* gap a — top → hero (flexible, balanced with gap b) */}
+        <div className="min-h-[0.75rem] flex-1" aria-hidden="true" />
+
+        {/* CENTER HERO — logo + speed lines */}
+        <div className="relative flex w-full max-w-xs shrink-0 items-center justify-center">
+          <div aria-hidden="true" className="absolute left-[8%] top-1/2 -translate-y-1/2 space-y-1.5">
+            <span className="block h-1 w-10 origin-left animate-speed-line rounded-full bg-primary/70" />
+            <span className="block h-1 w-6 origin-left animate-speed-line rounded-full bg-primary/50" style={{ animationDelay: '90ms' }} />
+            <span className="block h-1 w-3 origin-left animate-speed-line rounded-full bg-primary/30" style={{ animationDelay: '180ms' }} />
+          </div>
+
+          {logoFailed ? (
+            <p className="animate-hero-enter font-heading text-[clamp(2rem,10vw,3rem)] font-bold tracking-tight text-foreground" style={{ animationDelay: '250ms' }}>
+              <span className="text-primary">SETU</span>
+            </p>
+          ) : (
+            <img
+              src="/splash-logo.png"
+              alt="SETU"
+              className="animate-hero-enter w-[min(68vw,300px)]"
+              style={{ animationDelay: '250ms' }}
+              onError={() => setLogoFailed(true)}
+            />
+          )}
+        </div>
+
+        {/* gap b — hero → serving-area pill (flexible, balanced with gap a) */}
+        <div className="min-h-[0.75rem] flex-1" aria-hidden="true" />
+
+        {/* MIDDLE-LOWER — "Serving Madhubani" pill. Subtle rounded pill,
+            saffron pin with a gentle continuous pulse (alive, not
+            attention-grabbing). */}
+        <div
+          className="animate-fade-slide-up-lg flex shrink-0 items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5"
+          style={{ animationDelay: '1100ms' }}
+        >
+          <span className="relative flex h-3 w-3 shrink-0 items-center justify-center">
+            <span aria-hidden="true" className="animate-pin-pulse-ring absolute inset-0 rounded-full bg-primary/50" />
+            <MapPin className="relative h-3 w-3 text-primary" fill="currentColor" />
+          </span>
+          <span className="text-[clamp(0.55rem,2.5vw,0.7rem)] font-semibold tracking-[0.25em] text-primary">
+            {SERVING_AREA}
+          </span>
+        </div>
+
+        {/* pill → loader: small, fixed, non-flexible — these two read as
+            one cluster rather than separate groups, so this stays a
+            plain margin instead of a flex-grow spacer. */}
+
+        {/* LOADING SECTION — real progress, not a fake timer. */}
+        <div className="animate-fade-in-delayed mt-4 w-full max-w-[220px] shrink-0" style={{ animationDelay: '1300ms' }}>
           <Progress value={progress} className="h-1.5" aria-label="Loading SETU" />
           <p className="mt-2 animate-pulse text-center text-[clamp(0.5rem,2.2vw,0.6rem)] tracking-[0.2em] text-foreground/40">
             {LOADING_LABEL}
           </p>
         </div>
 
-        {/* One flexible spacer soaks up all remaining space, so the
-            signature block sits flush at the very bottom (bounded only
-            by the container's safe-area padding) — no trailing spacer
-            after it, so nothing pulls it back up off the bottom edge. */}
-        <div className="flex-1" />
+        {/* gap c — loader → bottom signature. The one big flexible run:
+            absorbs most of any extra tall-screen space, so everything
+            above stays grouped while the bottom block still anchors low. */}
+        <div className="min-h-[1rem] flex-[2]" aria-hidden="true" />
 
-        <div className="flex flex-col items-center gap-2 text-center">
+        {/* BOTTOM — designed/developed credit + signature, anchored at
+            the very bottom (bounded only by the container's safe-area
+            padding below). */}
+        <div className="flex shrink-0 flex-col items-center gap-2 text-center">
           <p className="text-[clamp(0.55rem,2.4vw,0.7rem)] tracking-[0.25em] text-foreground/40">{SIGNATURE_LABEL}</p>
           {!signatureFailed && (
             <img
