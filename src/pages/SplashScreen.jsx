@@ -66,10 +66,10 @@ const SIGNATURE_LABEL = 'DESIGNED & DEVELOPED BY';
 // lines → hero settle → underline draw, ~1.4s of keyframes) to finish
 // at least once, so a very fast device doesn't cut the motion design
 // off mid-way. Starts counting only once the background is visible.
-const MIN_ENTRANCE_MS = 1500;
+const MIN_ENTRANCE_MS = 2200;
 // Brief pause at 100% so the bar's completion is actually seen before
 // handoff, instead of hitting 100 and instantly vanishing.
-const SETTLE_MS = 350;
+const SETTLE_MS = 450;
 // If the background image genuinely never resolves (very slow/broken
 // connection), don't hold the native splash hostage forever — show
 // the gradient fallback and proceed.
@@ -146,7 +146,7 @@ export default function SplashScreen({ onFinish }) {
         exiting ? 'opacity-0' : 'opacity-100'
       }`}
       style={{
-        paddingTop: 'max(2rem, env(safe-area-inset-top))',
+        paddingTop: 'max(2.75rem, env(safe-area-inset-top))',
         paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))',
       }}
     >
@@ -169,7 +169,7 @@ export default function SplashScreen({ onFinish }) {
         {/* Headline → Logo → "Serving Madhubani" badge share one equal,
             responsive gap so all three read as evenly, deliberately spaced. */}
         <div className="flex w-full flex-col items-center gap-[clamp(1.5rem,4.5vh,2.75rem)]">
-          <div className="text-center">
+          <div className="mt-2 text-center">
             <p className="animate-fade-slide-down text-[clamp(0.6rem,2.8vw,0.75rem)] font-semibold tracking-[0.35em] text-foreground/70">
               {HEADLINE_TOP}
             </p>
@@ -179,11 +179,22 @@ export default function SplashScreen({ onFinish }) {
             >
               {HEADLINE_ACCENT}
             </p>
-            <span
+            {/* Smile-shaped curve (not a straight underline) — bows gently
+                downward at the center, mirroring the brand mark's curve. */}
+            <svg
               aria-hidden="true"
-              className="animate-underline-draw mx-auto mt-2 block h-[3px] w-20 rounded-full bg-primary"
+              viewBox="0 0 200 24"
+              className="animate-curve-draw mx-auto mt-2 h-4 w-24 text-primary"
               style={{ animationDelay: '450ms' }}
-            />
+            >
+              <path
+                d="M6 6 Q100 30 194 6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="7"
+                strokeLinecap="round"
+              />
+            </svg>
           </div>
 
           <div className="relative flex w-full max-w-xs items-center justify-center">
@@ -233,24 +244,23 @@ export default function SplashScreen({ onFinish }) {
           </p>
         </div>
 
-        {/* Pushes the signature block toward the lower-middle area — a
-            heavier flex-grow above than below so it settles below center
-            without being glued to the very bottom edge. */}
-        <div className="flex-[2]" />
+        {/* One flexible spacer soaks up all remaining space, so the
+            signature block sits flush at the very bottom (bounded only
+            by the container's safe-area padding) — no trailing spacer
+            after it, so nothing pulls it back up off the bottom edge. */}
+        <div className="flex-1" />
 
-        <div className="flex flex-col items-center gap-3 text-center">
-          <p className="text-[clamp(0.5rem,2.2vw,0.6rem)] tracking-[0.25em] text-foreground/40">{SIGNATURE_LABEL}</p>
+        <div className="flex flex-col items-center gap-2 text-center">
+          <p className="text-[clamp(0.55rem,2.4vw,0.7rem)] tracking-[0.25em] text-foreground/40">{SIGNATURE_LABEL}</p>
           {!signatureFailed && (
             <img
               src="/satyam-signature.png"
               alt=""
-              className="h-[clamp(2.5rem,8vh,3.75rem)] w-auto object-contain opacity-80"
+              className="h-[clamp(3.5rem,11vh,5.5rem)] w-auto object-contain opacity-90"
               onError={() => setSignatureFailed(true)}
             />
           )}
         </div>
-
-        <div className="flex-1" />
       </div>
     </div>
   );
