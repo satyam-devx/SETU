@@ -51,15 +51,14 @@
 // distributed proportionally across those spacers, so the RELATIVE
 // spacing between groups holds on both short and tall screens instead
 // of all slack piling up in one place:
-//   - gap "a" (top → hero) and gap "b" (hero → pill) carry equal
-//     weight (flex-1 each), so the hero logo settles roughly centered
-//     between the heading above and the pill below on any screen
-//     height — not nudged by a few fixed pixels.
+//   - gap "a" (top → hero) and gap "b" (hero → pill) carry slightly
+//     more weight than before (1.15 and 1.05), gently lowering the
+//     upper composition without hardcoded pixel nudges.
 //   - the pill → loader gap stays a small, fixed, non-flexible margin,
 //     since those two read as one cluster, not two separate groups.
-//   - the final gap (flex-[2]) absorbs most of any leftover tall-screen
-//     space, since that's the one place the design wants a big
-//     flexible run before the bottom-anchored signature block.
+//   - the final gap (flex-[1.8]) still absorbs most of any leftover
+//     tall-screen space, while allowing the upper composition to sit a
+//     little lower before the bottom-anchored signature block.
 // Each spacer keeps a small min-height so nothing can collapse to a
 // literal zero-gap overlap on very short screens. dvh + safe-area
 // insets + clamp()'d type sizes handle the rest. Orientation lock is
@@ -88,10 +87,10 @@ const MIN_ENTRANCE_MS = 2200;
 // the same tick, so the bar's last fill visually got cut off mid-
 // transition instead of ever being seen at rest. Kept small on purpose:
 // this should read as "smoother", never as an added wait.
-const PRE_EXIT_DELAY_MS = 150;
+const PRE_EXIT_DELAY_MS = 240;
 // Brief pause at 100% so the bar's completion is actually seen before
-// handoff, instead of hitting 100 and instantly vanishing.
-const SETTLE_MS = 500;
+// handoff, with a tiny extra breath to soften the previous abrupt finish.
+const SETTLE_MS = 560;
 // If the background image genuinely never resolves (very slow/broken
 // connection), don't hold the native splash hostage forever — show
 // the gradient fallback and proceed.
@@ -172,11 +171,11 @@ export default function SplashScreen({ onFinish }) {
 
   return (
     <div
-      className={`relative flex min-h-[100dvh] flex-col items-center overflow-hidden bg-gradient-to-b from-background via-background to-secondary/10 px-6 transition-opacity duration-[350ms] ${
+      className={`relative flex min-h-[100dvh] flex-col items-center overflow-hidden bg-gradient-to-b from-background via-background to-secondary/10 px-6 transition-opacity duration-[420ms] ${
         exiting ? 'opacity-0' : 'opacity-100'
       }`}
       style={{
-        paddingTop: 'max(2.75rem, env(safe-area-inset-top))',
+        paddingTop: 'max(3rem, env(safe-area-inset-top))',
         paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))',
       }}
     >
@@ -194,7 +193,7 @@ export default function SplashScreen({ onFinish }) {
 
       {/* Nothing below paints until the background is ready — this is
           what stops the "white background, elements pop in later" bug. */}
-      <div className={`flex w-full flex-1 flex-col items-center transition-opacity duration-200 ${contentVisible ? 'opacity-100' : 'opacity-0'}`}>
+      <div className={`flex min-h-0 w-full flex-1 flex-col items-center transition-opacity duration-200 ${contentVisible ? 'opacity-100' : 'opacity-0'}`}>
 
         {/* TOP — headline */}
         <div className="mt-2 shrink-0 text-center">
@@ -226,7 +225,7 @@ export default function SplashScreen({ onFinish }) {
         </div>
 
         {/* gap a — top → hero (flexible, balanced with gap b) */}
-        <div className="min-h-[0.75rem] flex-1" aria-hidden="true" />
+        <div className="min-h-[0.75rem] flex-[1.15]" aria-hidden="true" />
 
         {/* CENTER HERO — logo + speed lines */}
         <div className="relative flex w-full max-w-xs shrink-0 items-center justify-center">
@@ -252,7 +251,7 @@ export default function SplashScreen({ onFinish }) {
         </div>
 
         {/* gap b — hero → serving-area pill (flexible, balanced with gap a) */}
-        <div className="min-h-[0.75rem] flex-1" aria-hidden="true" />
+        <div className="min-h-[0.75rem] flex-[1.05]" aria-hidden="true" />
 
         {/* MIDDLE-LOWER — "Serving Madhubani" pill. Subtle rounded pill,
             saffron pin with a gentle continuous pulse (alive, not
@@ -285,7 +284,7 @@ export default function SplashScreen({ onFinish }) {
         {/* gap c — loader → bottom signature. The one big flexible run:
             absorbs most of any extra tall-screen space, so everything
             above stays grouped while the bottom block still anchors low. */}
-        <div className="min-h-[1rem] flex-[2]" aria-hidden="true" />
+        <div className="min-h-[1rem] flex-[1.8]" aria-hidden="true" />
 
         {/* BOTTOM — designed/developed credit + signature, anchored at
             the very bottom (bounded only by the container's safe-area
@@ -296,7 +295,7 @@ export default function SplashScreen({ onFinish }) {
             <img
               src="/satyam-signature.png"
               alt=""
-              className="h-[clamp(3.5rem,11vh,5.5rem)] w-auto object-contain opacity-90"
+              className="h-[clamp(4.2rem,13.5vh,6.8rem)] w-auto object-contain opacity-90"
               onError={() => setSignatureFailed(true)}
             />
           )}
