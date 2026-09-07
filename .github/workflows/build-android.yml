@@ -61,15 +61,6 @@ jobs:
       - name: Sync web assets + plugins into the native project
         run: npx cap sync android
 
-      # Restore the fixed debug keystore so debug APKs remain signed with
-      # the same key across builds. This allows a new APK to be installed
-      # over an existing installation instead of being treated as a
-      # differently-signed application.
-      - name: Restore fixed debug keystore
-        run: |
-          mkdir -p ~/.android
-          printf '%s' "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | tr -d '[:space:]' | base64 -d > ~/.android/debug.keystore
-
       - name: Grant gradlew execute permission
         run: chmod +x android/gradlew
 
