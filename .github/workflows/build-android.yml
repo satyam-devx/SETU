@@ -45,6 +45,13 @@ jobs:
       - name: Generate native Android project
         run: npx cap add android
 
+      # android/ is regenerated from scratch above, so this native fix
+      # (kills the OS-splash -> blank-white -> app-splash flash) has to
+      # be re-applied every run rather than committed once. See the
+      # comment header in the script for the root cause.
+      - name: Patch native splash seam (kill white-flash)
+        run: node scripts/patch-android-native.mjs
+
       # Must come AFTER `cap add android` — it writes generated icons into
       # android/app/src/main/res/..., which doesn't exist until the step
       # above creates it. Reads the source logo from assets/logo.png.
@@ -54,6 +61,10 @@ jobs:
       - name: Sync web assets + plugins into the native project
         run: npx cap sync android
 
+      # Restore the fixed debug keystore so debug APKs remain signed with
+      # the same key across builds. This allows a new APK to be installed
+      # over an existing installation instead of being treated as a
+      # differently-signed application.
       - name: Restore fixed debug keystore
         run: |
           mkdir -p ~/.android
