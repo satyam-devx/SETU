@@ -278,7 +278,7 @@ export default function CustomerAddresses() {
   // ── Set default ────────────────────────────────────────────
   const handleSetDefault = async (id) => {
     setBusyId(id);
-    const { error: err } = await setDefaultAddress(id);
+    const { error: err } = await setDefaultAddress(id, user?.id);
     if (!err) {
       setAddresses(prev => prev.map(a => ({ ...a, isDefault: a.id === id })));
     } else {

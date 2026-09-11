@@ -9,12 +9,13 @@ import { useStore } from '@/lib/store';
 import { useCart } from '@/lib/cartContext';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { getOrderById, getProducts } from '@/lib/api';
+import Img from '@/components/shared/Img';
 
 export default function CustomerReorder() {
   const { orderId } = useParams();
   const navigate    = useNavigate();
   const { state }   = useStore();
-  const { addItem, clearCart } = useCart();
+  const { addItem } = useCart();
 
   const [added, setAdded]           = useState(false);
   const [unavailable, setUnavailable] = useState([]);
@@ -85,7 +86,11 @@ export default function CustomerReorder() {
   const someAvailable = enrichedItems.some(i => i.inStock);
 
   const handleAddAll = () => {
-    clearCart();
+    // `addItem` already enforces single-vendor carts (it clears any
+    // different-vendor cart automatically and warns via the global
+    // banner) — clearing here unconditionally used to also wipe out
+    // items already in the cart from this SAME vendor instead of
+    // merging with them, losing quantity the user had already set.
     const missing = [];
     enrichedItems.forEach(item => {
       if (item.product && item.inStock) {
@@ -145,7 +150,7 @@ export default function CustomerReorder() {
             <Card key={i} className="p-3 border-border flex items-center gap-3">
               {item.imageUrl && (
                 <div className="w-12 h-12 rounded-lg bg-muted shrink-0 overflow-hidden">
-                  <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                  <Img src={item.imageUrl} alt={item.name} width={48} height={48} className="w-full h-full object-cover" />
                 </div>
               )}
               <div className="flex-1 min-w-0">

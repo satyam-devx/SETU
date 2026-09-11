@@ -57,7 +57,13 @@ export default function CustomerWallet() {
   // ── Razorpay top-up ───────────────────────────────────────
   const handleTopup = async () => {
     const n = parseInt(amount, 10);
-    if (!n || n < 10) return;
+    if (!n || n < 10) {
+      // Used to just silently do nothing here — the button looked
+      // enabled and clickable but tapping it with, say, "5" or a
+      // non-numeric value produced no feedback at all.
+      setError('Please enter a valid amount of at least ₹10.');
+      return;
+    }
 
     setTopping(true);
     setError(null);
@@ -202,7 +208,7 @@ export default function CustomerWallet() {
 
           {!loadingTxns && transactions.length > 0 && (
             <div className="space-y-2">
-              {transactions.slice(0, 10).map(t => {
+              {transactions.map(t => {
                 const isCredit = t.type === 'credit';
                 const date     = t.created_at
                   ? new Date(t.created_at).toLocaleDateString('en-IN', { dateStyle: 'medium' })
@@ -226,7 +232,7 @@ export default function CustomerWallet() {
                     </div>
                     <div className="text-right shrink-0">
                       <p className={`text-sm font-bold ${isCredit ? 'text-green-600' : 'text-red-600'}`}>
-                        {isCredit ? '+' : '-'}₹{t.amount.toLocaleString('en-IN')}
+                        {isCredit ? '+' : '-'}₹{(t.amount ?? 0).toLocaleString('en-IN')}
                       </p>
                       <Badge
                         variant="outline"

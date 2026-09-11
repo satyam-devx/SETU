@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Star, ShoppingCart, Heart, Share2, Plus, Minus, Loader2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, ShoppingCart, Share2, Plus, Minus, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { useCart } from '@/lib/cartContext';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { getProductById } from '@/lib/api';
+import Img from '@/components/shared/Img';
+import { toast } from '@/components/ui/use-toast';
 
 // ── Loading skeleton ──────────────────────────────────────
 function ProductSkeleton() {
@@ -71,19 +73,40 @@ export default function CustomerProductDetail() {
     setTimeout(() => setAdded(false), 2000);
   };
 
+  const handleShare = async () => {
+    const shareData = {
+      title: name,
+      text: `${name} — ₹${price} on SETU`,
+      url: window.location.href,
+    };
+    if (navigator.share) {
+      try { await navigator.share(shareData); } catch { /* user cancelled — not an error */ }
+      return;
+    }
+    // Browsers without the Web Share API (most desktop browsers): copy
+    // the link instead of silently doing nothing.
+    try {
+      await navigator.clipboard.writeText(shareData.url);
+      toast({ title: 'Link copied', description: 'Product link copied to clipboard.' });
+    } catch {
+      toast({ title: 'Could not share', description: 'Please copy the link from your address bar.', variant: 'destructive' });
+    }
+  };
+
   return (
     <div className="pb-24">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-3">
         <Link to="/customer" className="p-1 -ml-1"><ArrowLeft className="w-5 h-5" /></Link>
         <span className="font-semibold text-sm flex-1 truncate">{name}</span>
-        <Button variant="ghost" size="icon"><Share2 className="w-4 h-4" /></Button>
-        <Button variant="ghost" size="icon"><Heart className="w-4 h-4" /></Button>
+        <Button variant="ghost" size="icon" onClick={handleShare} aria-label="Share this product">
+          <Share2 className="w-4 h-4" />
+        </Button>
       </div>
 
       {/* Image */}
       <div className="h-64 bg-muted">
-        <img src={image} alt={name} className="w-full h-full object-cover" />
+        <Img src={image} alt={name} width={640} height={256} className="w-full h-full object-cover" />
       </div>
 
       {/* Details */}
@@ -101,11 +124,6 @@ export default function CustomerProductDetail() {
           <div className="flex items-baseline gap-2 mt-2">
             <span className="text-2xl font-bold">₹{price}</span>
             {mrp > price && <span className="text-sm text-muted-foreground line-through">₹{mrp}</span>}
-          </div>
-          <div className="flex items-center gap-1 mt-1">
-            <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-            <span className="text-sm font-medium">4.2</span>
-            <span className="text-xs text-muted-foreground">(128 reviews)</span>
           </div>
         </div>
 
@@ -139,17 +157,30 @@ export default function CustomerProductDetail() {
         <div>
           <h3 className="text-sm font-semibold mb-1">Availability</h3>
           <p className="text-sm text-muted-foreground">{stock} units in stock · Per {unit}</p>
+          {stock > 0 && stock <= 5 && (
+            <p className="text-xs text-amber-600 font-medium mt-1">Only {stock} left — order soon</p>
+          )}
         </div>
       </div>
 
       {/* Bottom Bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-background border-t border-border px-4 py-3 flex items-center gap-3">
         <div className="flex items-center gap-2 border border-border rounded-lg">
-          <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="p-2">
+          <button
+            onClick={() => setQuantity(q => Math.max(1, q - 1))}
+            className="p-2 disabled:opacity-30"
+            disabled={quantity <= 1}
+            aria-label="Decrease quantity"
+          >
             <Minus className="w-4 h-4" />
           </button>
           <span className="w-6 text-center text-sm font-semibold">{quantity}</span>
-          <button onClick={() => setQuantity(q => q + 1)} className="p-2">
+          <button
+            onClick={() => setQuantity(q => Math.min(q + 1, Math.max(stock, 1)))}
+            className="p-2 disabled:opacity-30"
+            disabled={quantity >= stock}
+            aria-label="Increase quantity"
+          >
             <Plus className="w-4 h-4" />
           </button>
         </div>

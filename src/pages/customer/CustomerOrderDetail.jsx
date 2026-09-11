@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  CheckCircle, Clock, Package, Bike, MapPin, Phone,
+  CheckCircle, Clock, Package, Bike, MapPin,
   AlertTriangle, Copy, MessageSquare, RefreshCw, X, Loader2, AlertCircle
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -12,8 +12,9 @@ import AppHeader from '@/components/shared/AppHeader';
 import OrderTrackingMap from '@/components/maps/OrderTrackingMap';
 import { useRealtimeOrder } from '@/hooks/useRealtimeOrders';
 import { useStore, canTransition, ORDER_STATUS } from '@/lib/store';
+import { useAuth } from '@/lib/AuthContext';
 import { useDataFetch } from '@/hooks/useDataFetch';
-import { getOrderById, rateOrder, updateOrderStatus, cancelOrderWithRefund } from '@/lib/api';
+import { getOrderById, rateOrder, cancelOrderWithRefund } from '@/lib/api';
 
 // ── Timeline config per status ──────────────────────────
 const TIMELINE = {
@@ -115,6 +116,7 @@ export default function CustomerOrderDetail() {
   const { orderId }  = useParams();
   const navigate     = useNavigate();
   const { state, dispatch } = useStore();
+  const { user } = useAuth();
 
   // 1. Check global store first (hydrated by CustomerOrders)
   const storeOrder = state.orders.find(o => o.id === orderId);
@@ -138,8 +140,10 @@ export default function CustomerOrderDetail() {
   const [rating,          setRating]          = useState(0);
   const [ratingComment,   setRatingComment]   = useState('');
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
+  const [ratingError,     setRatingError]     = useState(null);
   const [cancelling,      setCancelling]      = useState(false);
   const [cancelReason,    setCancelReason]    = useState('');
+  const [cancelError,     setCancelError]     = useState(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [copied,          setCopied]          = useState(false);
   const [actionLoading,   setActionLoading]   = useState(false);
@@ -177,19 +181,39 @@ export default function CustomerOrderDetail() {
   const handleCancel = async () => {
     if (!cancelReason.trim()) return;
     setCancelling(true);
-    dispatch({ type: 'ORDER_CANCEL', payload: { orderId: order.id, reason: cancelReason } });
-    // Atomically cancels order AND issues wallet refund if payment was captured
-    await cancelOrderWithRefund(order.id, user?.id, 'customer', cancelReason);
+    setCancelError(null);
+    // Wait for the server to actually confirm the cancellation before
+    // reflecting it locally — this used to dispatch the optimistic
+    // ORDER_CANCEL update FIRST and only then call the real API (which
+    // also referenced an undefined `user` variable, since this
+    // component never called useAuth() — so every cancel attempt threw
+    // immediately after the UI had already flipped to "Cancelled",
+    // leaving the order looking cancelled locally while the order was
+    // untouched on the server).
+    const { error } = await cancelOrderWithRefund(order.id, user?.id, 'customer', cancelReason);
     setCancelling(false);
+    if (error) {
+      setCancelError(error.message || 'Could not cancel this order. Please try again.');
+      return;
+    }
+    dispatch({ type: 'ORDER_CANCEL', payload: { orderId: order.id, reason: cancelReason } });
     setShowCancelModal(false);
   };
 
   const handleRating = async () => {
     if (rating === 0) return;
     setActionLoading(true);
-    dispatch({ type: 'ORDER_RATE', payload: { orderId: order.id, vendorRating: rating, riderRating: rating, comment: ratingComment } });
-    await rateOrder({ orderId: order.id, vendorRating: rating, riderRating: rating, comment: ratingComment });
+    setRatingError(null);
+    const { error } = await rateOrder({ orderId: order.id, vendorRating: rating, riderRating: rating, comment: ratingComment });
     setActionLoading(false);
+    if (error) {
+      // Used to unconditionally show "Thanks for rating!" even when the
+      // save failed, so a rating that never actually reached the server
+      // looked identical to a successful one.
+      setRatingError(error.message || 'Could not submit your rating. Please try again.');
+      return;
+    }
+    dispatch({ type: 'ORDER_RATE', payload: { orderId: order.id, vendorRating: rating, riderRating: rating, comment: ratingComment } });
     setRatingSubmitted(true);
   };
 
@@ -270,9 +294,6 @@ export default function CustomerOrderDetail() {
               <p className="text-sm font-semibold">{riderName}</p>
               <p className="text-xs text-muted-foreground">Your delivery rider</p>
             </div>
-            <Button size="icon" variant="outline" className="h-9 w-9">
-              <Phone className="w-4 h-4" />
-            </Button>
           </div>
         )}
         {cancelReason2 && (
@@ -392,6 +413,11 @@ export default function CustomerOrderDetail() {
             >
               {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit Rating'}
             </Button>
+            {ratingError && (
+              <p className="text-xs text-destructive mt-2 flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {ratingError}
+              </p>
+            )}
           </Card>
         </div>
       )}
@@ -414,7 +440,7 @@ export default function CustomerOrderDetail() {
           <Button
             variant="outline"
             className="w-full text-destructive border-destructive/30 text-xs"
-            onClick={() => setShowCancelModal(true)}
+            onClick={() => { setCancelError(null); setShowCancelModal(true); }}
           >
             <AlertTriangle className="w-3 h-3 mr-2" /> Cancel Order
           </Button>
@@ -453,6 +479,11 @@ export default function CustomerOrderDetail() {
               value={cancelReason}
               onChange={e => setCancelReason(e.target.value)}
             />
+            {cancelError && (
+              <p className="text-xs text-destructive mb-3 flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {cancelError}
+              </p>
+            )}
             <div className="flex gap-2">
               <Button variant="outline" className="flex-1" onClick={() => setShowCancelModal(false)}>
                 Keep Order

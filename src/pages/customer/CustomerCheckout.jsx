@@ -144,6 +144,19 @@ export default function CustomerCheckout() {
     getFeeConfig().then(({ data }) => { if (data) setFeeCfg((prev) => ({ ...prev, ...data })); });
   }, []);
 
+  // Guard against reaching Checkout with nothing to check out — e.g. the
+  // cart was already cleared by a completed order and the user hits the
+  // browser "back" button from the order-detail page. Previously this
+  // rendered a confusing near-blank checkout (₹0 summary, disabled button,
+  // no explanation) instead of sending them somewhere useful.
+  useEffect(() => {
+    if (items.length === 0 && !placed) {
+      navigate('/customer/cart', { replace: true });
+    }
+  }, [items.length, placed, navigate]);
+
+  if (items.length === 0 && !placed) return null;
+
   const handlePlaceOrder = async () => {
     if (!vendor.id) {
       setError('Cannot determine vendor. Please clear cart and try again.');
@@ -188,23 +201,37 @@ export default function CustomerCheckout() {
 
       // 2. Handle payment
       if (payMethod === 'upi') {
-        const rzpResult = await initiatePayment({
-          amount:        serverTotal,
-          orderId:       order.id,
-          customerId:    user.id,
-          customerName:  profile?.name,
-          customerPhone: profile?.phone,
-        });
+        try {
+          const rzpResult = await initiatePayment({
+            amount:        serverTotal,
+            orderId:       order.id,
+            customerId:    user.id,
+            customerName:  profile?.name,
+            customerPhone: profile?.phone,
+          });
 
-        if (rzpResult.error) throw new Error(rzpResult.error);
-        if (rzpResult.cancelled) {
-          // Use atomic cancel (no refund needed — payment never captured)
-          await cancelOrderWithRefund(order.id, user.id, 'customer', 'Payment cancelled by user');
-          setPlacing(false);
-          return;
+          if (rzpResult.error)     throw new Error(rzpResult.error);
+          if (rzpResult.cancelled) {
+            // Use atomic cancel (no refund needed — payment never captured)
+            await cancelOrderWithRefund(order.id, user.id, 'customer', 'Payment cancelled by user');
+            setPlacing(false);
+            return;
+          }
+          // Webhook confirms payment → order status + payment_status updated server-side.
+          // DO NOT set payment_status from here — the guard trigger will reject it.
+        } catch (payErr) {
+          // Any UPI failure — SDK/script didn't load, the create-order edge
+          // function errored, or Razorpay's own "payment.failed" event —
+          // used to leave the order `create_order` had already committed
+          // sitting there uncancelled forever. Worse, since the cart was
+          // only cleared on eventual success, tapping "Place Order" again
+          // created a SECOND order on top of it — a vendor could end up
+          // with several duplicate pending orders from one failed
+          // checkout attempt. Cancel this one before surfacing the error
+          // so a retry starts clean.
+          await cancelOrderWithRefund(order.id, user.id, 'customer', 'Payment failed').catch(() => {});
+          throw payErr;
         }
-        // Webhook confirms payment → order status + payment_status updated server-side.
-        // DO NOT set payment_status from here — the guard trigger will reject it.
 
       } else if (payMethod === 'wallet') {
         // Single atomic RPC: charges order.total, confirms order, credits escrow.

@@ -77,11 +77,16 @@ export default function CustomerCredit() {
   // ── Apply for credit ──────────────────────────────────────
   const handleApply = async () => {
     if (!applyAmt) return;
+    const amt = parseInt(applyAmt, 10);
+    if (!amt || amt <= 0) {
+      setError('Please enter a valid amount.');
+      return;
+    }
     setApplying(true);
     setError(null);
     const { data, error: apiError } = await CreditAPI.applyCredit(
       user.id,
-      parseInt(applyAmt, 10),
+      amt,
       applyPurpose
     );
     setApplying(false);
@@ -98,11 +103,28 @@ export default function CustomerCredit() {
   // ── Repay via Razorpay ────────────────────────────────────
   const handleRepay = async () => {
     if (!repayAmt) return;
+    const amt = parseInt(repayAmt, 10);
+    if (!amt || amt <= 0) {
+      setError('Please enter a valid repayment amount.');
+      return;
+    }
+    // Repaying more than is actually owed used to be allowed silently —
+    // there was no credit account required at all to reach this panel,
+    // so a customer could "repay" against a real Razorpay charge with
+    // nothing on the other end to apply it to.
+    if (!account || outstanding <= 0) {
+      setError('You have no outstanding credit to repay.');
+      return;
+    }
+    if (amt > outstanding) {
+      setError(`You only owe ₹${outstanding.toLocaleString('en-IN')} — enter an amount up to that.`);
+      return;
+    }
     setRepaying(true);
     setError(null);
     try {
       const rzpResult = await initiatePayment({
-        amount:        parseInt(repayAmt, 10),
+        amount:        amt,
         customerId:    user.id,
         customerName:  profile?.name,
         customerPhone: profile?.phone,
@@ -215,6 +237,7 @@ export default function CustomerCredit() {
           <Button
             variant="outline"
             className="h-11 gap-2"
+            disabled={!account || outstanding <= 0}
             onClick={() => { setShowRepay(s => !s); setShowApply(false); }}
           >
             <ArrowDownLeft className="w-4 h-4" /> Repay
@@ -267,9 +290,22 @@ export default function CustomerCredit() {
         {/* Repay panel */}
         {showRepay && (
           <Card className="p-4 border-accent/30 bg-accent/5">
-            <h3 className="font-semibold text-sm mb-3">Repay Credit</h3>
+            <h3 className="font-semibold text-sm mb-1">Repay Credit</h3>
+            <p className="text-xs text-muted-foreground mb-3">
+              You owe ₹{outstanding.toLocaleString('en-IN')}
+            </p>
             <div className="flex gap-2 flex-wrap mb-3">
-              {REPAY_AMOUNTS.map(a => (
+              <button
+                onClick={() => setRepayAmt(String(outstanding))}
+                className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-colors ${
+                  repayAmt === String(outstanding)
+                    ? 'bg-accent text-white border-accent'
+                    : 'border-accent/40 bg-card text-accent'
+                }`}
+              >
+                Pay Full (₹{outstanding.toLocaleString('en-IN')})
+              </button>
+              {REPAY_AMOUNTS.filter(a => a < outstanding).map(a => (
                 <button
                   key={a}
                   onClick={() => setRepayAmt(String(a))}
@@ -361,7 +397,7 @@ export default function CustomerCredit() {
                     </div>
                     <div className="text-right shrink-0">
                       <p className={`text-sm font-bold ${isCredit ? 'text-green-600' : 'text-red-600'}`}>
-                        {isCredit ? '+' : '-'}₹{t.amount.toLocaleString('en-IN')}
+                        {isCredit ? '+' : '-'}₹{(t.amount ?? 0).toLocaleString('en-IN')}
                       </p>
                       <Badge variant="outline" className="text-[9px]">
                         {t.status ?? 'completed'}

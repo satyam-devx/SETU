@@ -162,11 +162,19 @@ export default function CustomerSchemes() {
                     </div>
                   )}
                   {!scheme.applied && (
-                    <Button className="w-full h-8 text-xs gap-1" asChild>
-                      <a href={scheme.apply_url ?? '#'} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="w-3 h-3" /> Apply / Learn More
-                      </a>
-                    </Button>
+                    scheme.apply_url ? (
+                      <Button className="w-full h-8 text-xs gap-1" asChild>
+                        <a href={scheme.apply_url} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="w-3 h-3" /> Apply / Learn More
+                        </a>
+                      </Button>
+                    ) : (
+                      // No apply_url on record — used to fall back to href="#",
+                      // a dead link that looked identical to a working one.
+                      <p className="text-xs text-muted-foreground text-center py-1.5">
+                        Application link not available yet — check back soon.
+                      </p>
+                    )
                   )}
                 </div>
               )}

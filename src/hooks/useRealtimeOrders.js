@@ -22,6 +22,7 @@ import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/AuthContext';
+import { NotificationAPI } from '@/lib/api';
 
 // ── useRealtimeOrders ─────────────────────────────────────
 /**
@@ -203,6 +204,27 @@ export function useRealtimeNotifications() {
   const { dispatch } = useStore();
   const dispatchRef  = useRef(dispatch);
   dispatchRef.current = dispatch;
+
+  // ── Initial history fetch ──────────────────────────────
+  // This hook only ever wired up a realtime INSERT listener — it never
+  // loaded any notification that existed before the tab opened. In
+  // production (non-demo) the store starts with `notifications: []`,
+  // so a customer who, say, got their "Order delivered" notification
+  // while the app was closed would never see it here at all: the
+  // Notifications page would look empty (or only show whatever arrived
+  // during the current session) even though real history exists in the
+  // database. A separate, fuller hook (hooks/useRealtimeNotifications.js)
+  // already did this fetch+hydrate correctly, but nothing ever called
+  // it — every layout (Customer/Vendor/Rider) calls this one instead.
+  useEffect(() => {
+    if (!isSupabaseConfigured || !user) return;
+    let mounted = true;
+    NotificationAPI.getAll(user.id).then(({ data, error }) => {
+      if (!mounted || error || !data) return;
+      dispatchRef.current({ type: 'HYDRATE_NOTIFICATIONS', payload: { notifications: data } });
+    });
+    return () => { mounted = false; };
+  }, [user]);
 
   useEffect(() => {
     if (!isSupabaseConfigured || !user) return;

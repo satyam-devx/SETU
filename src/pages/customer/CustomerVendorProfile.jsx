@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { getVendorById } from '@/lib/api';
+import Img from '@/components/shared/Img';
 
 // ── Skeleton ──────────────────────────────────────────────
 function VendorSkeleton() {
@@ -60,10 +61,12 @@ export default function CustomerVendorProfile() {
   const deliveryRadius = vendor.delivery_radius ?? vendor.deliveryRadius ?? 5;
   const minOrder       = vendor.min_order    ?? vendor.minOrder ?? 50;
 
-  // Products may be nested (from the select join) or absent
-  const vendorProducts = (vendor.products ?? [])
-    .filter(p => p.is_available !== false)
-    .slice(0, 6);
+  // Products may be nested (from the select join) or absent. Was
+  // capped at 6 with no way to see the rest of a vendor's catalog —
+  // raised the cap and note the remainder instead of hiding it outright.
+  const availableProducts = (vendor.products ?? []).filter(p => p.is_available !== false);
+  const vendorProducts    = availableProducts.slice(0, 20);
+  const hiddenCount       = availableProducts.length - vendorProducts.length;
 
   return (
     <div className="pb-20">
@@ -73,7 +76,7 @@ export default function CustomerVendorProfile() {
       </div>
 
       <div className="h-40 bg-muted">
-        <img src={image} alt={name} className="w-full h-full object-cover" />
+        <Img src={image} alt={name} width={640} height={160} className="w-full h-full object-cover" />
       </div>
 
       <div className="px-4 py-4 space-y-4">
@@ -129,7 +132,7 @@ export default function CustomerVendorProfile() {
                   <Link key={pid} to={`/customer/product/${pid}`}>
                     <Card className="overflow-hidden border-border">
                       <div className="h-24 bg-muted">
-                        <img src={pimg} alt={pname} className="w-full h-full object-cover" />
+                        <Img src={pimg} alt={pname} width={200} height={96} className="w-full h-full object-cover" />
                       </div>
                       <div className="p-2">
                         <p className="text-xs font-semibold line-clamp-1">{pname}</p>
@@ -140,6 +143,11 @@ export default function CustomerVendorProfile() {
                 );
               })}
             </div>
+            {hiddenCount > 0 && (
+              <p className="text-xs text-muted-foreground text-center mt-3">
+                +{hiddenCount} more product{hiddenCount === 1 ? '' : 's'} from this vendor — search to find them
+              </p>
+            )}
           </div>
         ) : (
           <Card className="p-4 border-border text-center">

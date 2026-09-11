@@ -421,6 +421,20 @@ function setuReducer(state, action) {
       };
     }
 
+    case 'VENDOR_START_PREPARING': {
+      const { orderId } = action.payload;
+      return {
+        ...state,
+        orders: state.orders.map(o =>
+          o.id === orderId ? {
+            ...o,
+            status:  ORDER_STATUS.PREPARING,
+            _source: 'optimistic',
+          } : o
+        ),
+      };
+    }
+
     case 'VENDOR_MARK_READY': {
       const { orderId } = action.payload;
       return {

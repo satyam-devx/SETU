@@ -16,12 +16,20 @@ const SCORE_TIERS = [
   { min: 850, max: 999, label: 'Platinum', color: 'text-purple-600', bg: 'bg-purple-100' },
 ];
 
+// Describes HOW each factor is weighted, not asserted facts about any
+// specific customer — the per-factor scores/descriptions below used to
+// be flat hardcoded numbers ("12 orders, 0 cancellations", "All
+// payments on time") shown identically to every customer regardless of
+// their real order history, which is definitively false for most users
+// (e.g. a brand-new customer with zero orders still saw "12 orders").
+// Only Trust Score itself and KYC status are real per-user data
+// (state.currentUser); a genuine order/payment/engagement/dispute
+// breakdown would need new backend aggregation this pass doesn't build.
 const SCORE_FACTORS = [
-  { label: 'Order History',          contribution: 35, score: 90, description: '12 orders, 0 cancellations' },
-  { label: 'Payment Behaviour',      contribution: 25, score: 95, description: 'All payments on time' },
-  { label: 'Platform Engagement',    contribution: 20, score: 75, description: 'Moderate activity' },
-  { label: 'Community Standing',     contribution: 10, score: 80, description: 'No disputes raised' },
-  { label: 'KYC Completeness',       contribution: 10, score: 100,description: 'Aadhaar verified' },
+  { label: 'Order History',          contribution: 35, description: 'Completed orders and cancellation rate' },
+  { label: 'Payment Behaviour',      contribution: 25, description: 'On-time payments and repayments' },
+  { label: 'Platform Engagement',    contribution: 20, description: 'How regularly you use SETU' },
+  { label: 'Community Standing',     contribution: 10, description: 'Disputes and fraud reports on your account' },
 ];
 
 const PERKS = [
@@ -34,6 +42,7 @@ const PERKS = [
 export default function CustomerTrust() {
   const { state }  = useStore();
   const score      = state.currentUser.setuScore;
+  const isVerified = state.currentUser.isVerified;
   const tier       = SCORE_TIERS.find(t => score >= t.min && score <= t.max) || SCORE_TIERS[0];
   const nextTier   = SCORE_TIERS[SCORE_TIERS.findIndex(t => t.label === tier.label) + 1];
   const pctToNext  = nextTier ? Math.round(((score - tier.min) / (nextTier.min - tier.min)) * 100) : 100;
@@ -69,22 +78,34 @@ export default function CustomerTrust() {
         {/* Score factors */}
         <Card className="p-4 border-border">
           <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-primary" /> Score Breakdown
+            <TrendingUp className="w-4 h-4 text-primary" /> What Affects Your Score
           </h3>
           <div className="space-y-3">
             {SCORE_FACTORS.map(f => (
-              <div key={f.label}>
-                <div className="flex items-center justify-between mb-0.5">
-                  <div>
-                    <span className="text-xs font-medium">{f.label}</span>
-                    <span className="text-[10px] text-muted-foreground ml-1">({f.contribution}% weight)</span>
-                  </div>
-                  <span className="text-xs font-bold text-green-600">{f.score}/100</span>
+              <div key={f.label} className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-xs font-medium">{f.label}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">{f.description}</p>
                 </div>
-                <Progress value={f.score} className="h-1.5" />
-                <p className="text-[10px] text-muted-foreground mt-0.5">{f.description}</p>
+                <span className="text-[10px] text-muted-foreground shrink-0">{f.contribution}% weight</span>
               </div>
             ))}
+            {/* The one factor with real per-user data available here */}
+            <div className="flex items-center justify-between gap-2 pt-1 border-t border-border">
+              <div className="flex items-center gap-2">
+                {isVerified
+                  ? <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />
+                  : <Lock className="w-4 h-4 text-muted-foreground shrink-0" />
+                }
+                <div>
+                  <p className="text-xs font-medium">KYC Completeness</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    {isVerified ? 'Verified' : 'Not verified yet'}
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] text-muted-foreground shrink-0">10% weight</span>
+            </div>
           </div>
         </Card>
 

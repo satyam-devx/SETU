@@ -10,6 +10,7 @@ import StatCard from '@/components/shared/StatCard';
 import { AdminAPI } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { toast } from '@/components/ui/use-toast';
 
 function fmtTime(iso) {
   if (!iso) return '—';
@@ -81,7 +82,11 @@ export default function AdminCash() {
     setActing(depositId);
     const { error } = await AdminAPI.confirmCODDeposit(depositId, user.id);
     if (error) {
-      alert('Failed to confirm deposit. Please try again.');
+      toast({
+        title: 'Could not confirm deposit',
+        description: 'Failed to confirm deposit. Please try again.',
+        variant: 'destructive',
+      });
     } else {
       setDeposits(ds => ds.map(d =>
         d.id === depositId

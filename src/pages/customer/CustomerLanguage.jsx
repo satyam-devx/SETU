@@ -3,6 +3,7 @@ import { Check, Globe, Mic } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
+import { toast } from '@/components/ui/use-toast';
 
 // ── Language definitions ────────────────────────────────────────
 const LANGUAGES = [
@@ -199,7 +200,11 @@ export default function CustomerLanguage() {
   // ── Listen handler ────────────────────────────────────────────
   const handleListen = (lang) => {
     if (!('speechSynthesis' in window)) {
-      alert('Text-to-speech is not supported on this browser.');
+      toast({
+        title: 'Not supported',
+        description: 'Text-to-speech is not supported on this browser.',
+        variant: 'destructive',
+      });
       return;
     }
     setSpeaking(lang.code);

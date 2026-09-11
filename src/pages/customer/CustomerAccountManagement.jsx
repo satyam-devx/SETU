@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { User, Shield, Download, Trash2, AlertTriangle, Smartphone, Key, ChevronRight } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,21 @@ import { useAuth } from '@/lib/AuthContext';
 
 export default function CustomerAccountManagement() {
   const { profile, user } = useAuth();
+  const navigate = useNavigate();
   const phone = profile?.phone || user?.phone || '';
+
+  // "Change Phone Number", "Download My Data", and "Delete My Account"
+  // had no onClick at all — three fully-styled, confidently-worded
+  // buttons (one right under a paragraph explaining exactly what
+  // deletion does) that did nothing when tapped. None of these have
+  // self-service backend support yet (no number-change/re-verification
+  // flow, no data-export job, no account-deletion pipeline), so rather
+  // than fake it, route them to the one thing that IS real and does
+  // reach a human: a support ticket, pre-filled so the customer doesn't
+  // have to explain the request type themselves.
+  const requestViaSupport = (subject) => {
+    navigate('/customer/support', { state: { prefillSubject: subject } });
+  };
 
   return (
     <div className="pb-20">
@@ -63,14 +77,22 @@ export default function CustomerAccountManagement() {
           <h3 className="font-semibold text-sm mb-2 flex items-center gap-2">
             <Key className="w-4 h-4 text-primary" /> Security
           </h3>
-          <Button variant="outline" className="w-full justify-start text-sm gap-3">
+          <Button
+            variant="outline"
+            className="w-full justify-start text-sm gap-3"
+            onClick={() => requestViaSupport('Request: Change phone number')}
+          >
             <Smartphone className="w-4 h-4 text-muted-foreground" /> Change Phone Number
           </Button>
         </Card>
 
         <Card className="p-4 border-border">
           <h3 className="font-semibold text-sm mb-2">Data Export</h3>
-          <Button variant="outline" className="w-full justify-start text-sm gap-3 mb-2">
+          <Button
+            variant="outline"
+            className="w-full justify-start text-sm gap-3 mb-2"
+            onClick={() => requestViaSupport('Request: Export my data')}
+          >
             <Download className="w-4 h-4 text-muted-foreground" /> Download My Data
           </Button>
           <p className="text-[10px] text-muted-foreground">
@@ -86,7 +108,11 @@ export default function CustomerAccountManagement() {
             Once you delete your account, there is no going back. All your data including orders,
             wallet balance, and SETU Credit history will be permanently removed.
           </p>
-          <Button variant="destructive" className="w-full gap-2">
+          <Button
+            variant="destructive"
+            className="w-full gap-2"
+            onClick={() => requestViaSupport('Request: Delete my account')}
+          >
             <Trash2 className="w-4 h-4" /> Delete My Account
           </Button>
         </Card>

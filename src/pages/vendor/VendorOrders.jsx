@@ -11,6 +11,7 @@ import { useStore } from '@/lib/store';
 import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
 import { VendorAPI } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
+import { toast } from '@/components/ui/use-toast';
 
 const VENDOR_ID = 'vn1'; // Phase 3: replace with vendor profile from auth
 
@@ -86,15 +87,34 @@ export default function VendorOrders() {
 
     // 2. Persist to DB
     try {
+      let result;
       if (actionType === 'VENDOR_CONFIRM_ORDER') {
-        await VendorAPI.confirmOrder(orderId);
+        result = await VendorAPI.confirmOrder(orderId);
+      } else if (actionType === 'VENDOR_START_PREPARING') {
+        result = await VendorAPI.startPreparing(orderId);
       } else if (actionType === 'VENDOR_REJECT_ORDER') {
-        await VendorAPI.rejectOrder(orderId, extra.reason ?? 'Out of stock');
+        result = await VendorAPI.rejectOrder(orderId, extra.reason ?? 'Out of stock');
       } else if (actionType === 'VENDOR_MARK_READY') {
-        await VendorAPI.markReady(orderId);
+        result = await VendorAPI.markReady(orderId);
+      }
+      // These three methods didn't exist at all until this fix, so a
+      // failure here previously threw, was swallowed by the catch below,
+      // and left the optimistic update above as the only "confirmation"
+      // the vendor ever saw — the order looked accepted/rejected/ready
+      // on screen while staying untouched (still 'pending') in the
+      // database. Re-sync from the server and say so plainly instead.
+      if (result?.error) {
+        toast({
+          title: "Couldn't update order",
+          description: result.error.message || 'Please try again.',
+          variant: 'destructive',
+        });
+        refetch();
       }
     } catch (e) {
-      console.error('[VendorOrders] action failed, reverting may be needed:', e);
+      console.error('[VendorOrders] action failed:', e);
+      toast({ title: "Couldn't update order", description: 'Please try again.', variant: 'destructive' });
+      refetch();
     } finally {
       setActing(null);
     }
@@ -246,7 +266,21 @@ export default function VendorOrders() {
                     </>
                   )}
 
-                  {(order.status === 'confirmed' || order.status === 'preparing') && (
+                  {order.status === 'confirmed' && (
+                    <Button
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={acting === order.id + 'VENDOR_START_PREPARING'}
+                      onClick={() => act('VENDOR_START_PREPARING', order.id)}
+                    >
+                      <Package className="w-3 h-3 mr-1" />
+                      {acting === order.id + 'VENDOR_START_PREPARING' ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : 'Start Preparing'}
+                    </Button>
+                  )}
+
+                  {order.status === 'preparing' && (
                     <Button
                       size="sm"
                       className="h-7 text-xs"

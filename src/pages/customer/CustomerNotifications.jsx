@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
 import { useStore } from '@/lib/store';
+import { useAuth } from '@/lib/AuthContext';
+import { NotificationAPI } from '@/lib/api';
 
 const typeIcon = { order: ShoppingBag, credit: Wallet, promo: Tag, scheme: Info, system: Bell };
 const typeColor = {
@@ -17,10 +19,23 @@ const typeColor = {
 
 export default function CustomerNotifications() {
   const { state, dispatch } = useStore();
+  const { user } = useAuth();
   const { notifications, unreadCount } = { notifications: state.notifications, unreadCount: state.unreadCount };
 
-  const markRead = (id) => dispatch({ type: 'NOTIFICATION_READ', payload: { id } });
-  const markAll  = () => dispatch({ type: 'NOTIFICATIONS_READ_ALL' });
+  // These used to only dispatch to local reducer state — the read flag
+  // never reached the database, so a notification marked "read" here
+  // would come back as unread the next time notifications were
+  // re-fetched (a fresh session, another device). Persist first, then
+  // reflect it locally; both fire immediately for a responsive UI, but
+  // the persisted call is what makes it stick.
+  const markRead = (id) => {
+    dispatch({ type: 'NOTIFICATION_READ', payload: { id } });
+    if (user?.id) NotificationAPI.markRead(id);
+  };
+  const markAll = () => {
+    dispatch({ type: 'NOTIFICATIONS_READ_ALL' });
+    if (user?.id) NotificationAPI.markAllRead(user.id);
+  };
 
   return (
     <div className="pb-6">

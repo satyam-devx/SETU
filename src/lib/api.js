@@ -494,17 +494,29 @@ export async function updateAddress(addressId, updates) {
   );
 }
 
-export async function setDefaultAddress(addressId) {
-  return safeQuery(
-    () => supabase
-      .from('customer_addresses')
-      .update({ is_default: true })
-      .eq('id', addressId)
-      .select()
-      .single(),
-    null,
-    'setDefaultAddress'
-  );
+export async function setDefaultAddress(addressId, userId) {
+  // A secure `set_default_address(p_user_id, p_address_id)` RPC exists
+  // specifically to atomically unset the previous default before setting
+  // the new one (and was hardened twice — an ownership check, then a
+  // search_path fix — see migrations 016 and 057). This function used
+  // to bypass it entirely with a raw `.update({is_default:true})` that
+  // only ever touched the ONE row being promoted, never clearing the
+  // previous default — so a customer could end up with two or more
+  // addresses simultaneously marked "default", and which one checkout
+  // actually used would come down to arbitrary row order.
+  if (!isSupabaseConfigured) return ok(null);
+  try {
+    const { data: { user } = {} } = await supabase.auth.getUser();
+    const { data, error } = await supabase.rpc('set_default_address', {
+      p_user_id:    userId ?? user?.id,
+      p_address_id: addressId,
+    });
+    if (error) return err(error, 'setDefaultAddress');
+    if (data?.success === false) return err({ message: data.error ?? 'Could not set default address' }, 'setDefaultAddress');
+    return ok(data);
+  } catch (e) {
+    return err(e, 'setDefaultAddress');
+  }
 }
 
 export async function deleteAddress(addressId) {
@@ -768,16 +780,44 @@ export const CreditAPI = {
 };
 
 export const FraudAPI = {
-  report: async (payload) => safeQuery(
-    () => supabase.from('support_tickets').insert({
-      ...payload,
-      subject: `Fraud Report: ${payload.type || 'unknown'}`,
+  // Used to insert `{fraudType, description, orderId}` straight into
+  // support_tickets, but that table has no fraudType/description/
+  // camelCase-orderId columns — only subject, a messages jsonb array,
+  // and order_number text (migration 052) — and never included the
+  // reporter's user_id at all, so even a successful insert would have
+  // created an untraceable, unowned ticket the customer could never
+  // find again in "Your Tickets". On top of that the one real call
+  // site used a different method name (reportFraud) than what was
+  // exported here (report), so it threw before any of that even
+  // mattered — fraud reporting could not have worked in this shape.
+  reportFraud: async (userId, { fraudType, description, orderId } = {}) => {
+    const { data, error } = await createSupportTicket({
+      user_id:  userId,
+      subject:  `Fraud Report: ${fraudType || 'Unspecified'}`,
+      messages: [{
+        from: 'customer',
+        text: description,
+        time: new Date().toLocaleTimeString('en-IN', { timeStyle: 'short' }),
+      }],
+      status:   'open',
       priority: 'high',
-    }).select().single(),
-    null,
-    'FraudAPI.report'
-  ),
+      ...(orderId ? { order_number: orderId } : {}),
+    });
+    if (error) return err(error, 'FraudAPI.reportFraud');
+    return ok({ ticketId: data?.id, ...data });
+  },
 };
+
+// `update_order_status` (the RPC updateOrderStatus calls) returns
+// {error: '...'} as normal *data* on an invalid transition/permission
+// check, not as a transport-level error — safeQuery only catches the
+// latter. Callers that don't also check `data.error` treat a rejected
+// transition as a silent success.
+function unwrapStatusResult({ data, error }) {
+  if (error) return { data: null, error };
+  if (data?.error) return { data: null, error: { message: data.error } };
+  return { data, error: null };
+}
 
 export const VendorAPI = {
   getOrders:       (vendorId, opts) => getOrdersByVendor(vendorId, opts),
@@ -787,6 +827,26 @@ export const VendorAPI = {
   deleteProduct:   (id)             => deleteProduct(id),
   getProfile:      (ownerId)        => getVendorByOwnerId(ownerId),
   updateProfile:   (data)           => upsertVendorProfile(data),
+
+  // These four are the only order-lifecycle actions VendorOrders.jsx
+  // actually calls, but none of confirmOrder/rejectOrder/markReady ever
+  // existed on this object — every "Accept", "Reject", and "Mark Ready"
+  // tap threw a TypeError immediately. It was caught (VendorOrders.jsx
+  // wraps the call in try/catch) so it didn't crash the page, but the
+  // optimistic UI update had already made the order LOOK confirmed/
+  // rejected/ready while nothing was ever persisted — the real order
+  // stayed 'pending' in the database forever. No vendor could ever
+  // actually move an order through its lifecycle.
+  confirmOrder: async (orderId) => unwrapStatusResult(await updateOrderStatus(orderId, 'confirmed')),
+  startPreparing: async (orderId) => unwrapStatusResult(await updateOrderStatus(orderId, 'preparing')),
+  markReady: async (orderId) => unwrapStatusResult(await updateOrderStatus(orderId, 'ready')),
+  rejectOrder: async (orderId, reason) => {
+    // A rejected order may already be paid for (UPI/wallet) — use the
+    // same atomic cancel+auto-refund path checkout and customer
+    // cancellation use, rather than a raw status flip with no refund.
+    const { data: { user } = {} } = await supabase.auth.getUser();
+    return cancelOrderWithRefund(orderId, user?.id, 'vendor', reason);
+  },
 };
 
 // ── Rider COD Deposit ─────────────────────────────────────

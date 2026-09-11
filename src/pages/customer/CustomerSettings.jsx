@@ -59,8 +59,15 @@ const sections = [
     title: 'Privacy',
     icon: Lock,
     items: [
-      { type: 'toggle', label: 'Share data for recommendations', defaultVal: true  },
-      { type: 'toggle', label: 'Show profile to vendors',        defaultVal: false },
+      // `key` ties these to the same localStorage-backed preference the
+      // Data & Privacy screen's toggles read/write (different wording,
+      // same underlying setting) — see CustomerDataPrivacy.jsx. Without
+      // it, toggling "Show profile to vendors" here and then opening
+      // Data & Privacy showed "Share profile with vendors" reset back
+      // to its own separate hardcoded default, as if two unrelated
+      // switches happened to describe the same thing.
+      { type: 'toggle', label: 'Share data for recommendations', key: 'shareForRecommendations', defaultVal: true  },
+      { type: 'toggle', label: 'Show profile to vendors',        key: 'shareProfileWithVendors', defaultVal: false },
       { type: 'link',   label: 'Data & Privacy Policy',  sublabel: 'DPDP Act 2023 compliant', path: '/customer/data-privacy', icon: FileText },
     ],
   },
@@ -78,6 +85,37 @@ const sections = [
 export default function CustomerSettings() {
   const { signOut } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
+
+  // ── Toggle persistence ─────────────────────────────────────
+  // These were bare `<Switch defaultChecked={...} />` — fully
+  // uncontrolled with no onCheckedChange at all, so toggling one felt
+  // like it worked (the switch visibly flips) but nothing was actually
+  // recorded anywhere: a remount (navigating away and back) silently
+  // reset every one of them to its hardcoded default. Persisting to
+  // localStorage at least makes the on-screen state honest and stable
+  // across visits. Note: this is device-local only — there is no
+  // backend table for per-user notification/privacy preferences yet,
+  // so these still don't suppress anything server-side (e.g. turning
+  // off "Scheme Updates" doesn't yet stop the server from sending
+  // them). That's a real backend feature, not a UI bug, and is out of
+  // scope here.
+  const STORAGE_KEY = 'setu:settings:toggles';
+  const [toggleState, setToggleState] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      return saved && typeof saved === 'object' ? saved : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const setToggle = (key, val) => {
+    setToggleState(prev => {
+      const next = { ...prev, [key]: val };
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* storage unavailable — keep in-memory only */ }
+      return next;
+    });
+  };
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -99,10 +137,14 @@ export default function CustomerSettings() {
               <div className="space-y-2">
                 {section.items.map((item, i) => {
                   if (item.type === 'toggle') {
+                    const storeKey = item.key ?? item.label;
                     return (
                       <div key={i} className="flex items-center justify-between py-1">
                         <span className="text-sm">{item.label}</span>
-                        <Switch defaultChecked={item.defaultVal} />
+                        <Switch
+                          checked={toggleState[storeKey] ?? item.defaultVal}
+                          onCheckedChange={(val) => setToggle(storeKey, val)}
+                        />
                       </div>
                     );
                   }
@@ -139,9 +181,12 @@ export default function CustomerSettings() {
 
         {/* Danger zone */}
         <div className="space-y-2">
-          <button className="flex items-center gap-2 text-destructive text-sm font-medium py-2 w-full">
+          <Link
+            to="/customer/account"
+            className="flex items-center gap-2 text-destructive text-sm font-medium py-2 w-full"
+          >
             <Trash2 className="w-4 h-4" /> Delete My Account
-          </button>
+          </Link>
           <Button
             variant="ghost"
             className="w-full justify-start gap-3 text-destructive hover:text-destructive hover:bg-destructive/5 px-0"

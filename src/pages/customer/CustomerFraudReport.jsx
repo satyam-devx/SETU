@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import AppHeader from '@/components/shared/AppHeader';
+import { useAuth } from '@/lib/AuthContext';
 import { FraudAPI } from '@/lib/api';
 
 const FRAUD_TYPES = [
@@ -19,23 +20,38 @@ const FRAUD_TYPES = [
 ];
 
 export default function CustomerFraudReport() {
+  const { user } = useAuth();
   const [fraudType, setFraudType] = useState('');
   const [description, setDescription] = useState('');
   const [orderId, setOrderId]     = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted]   = useState(false);
+  const [submitError, setSubmitError] = useState(null);
   const [ticketId, setTicketId]     = useState('');
 
   const handleSubmit = () => {
     if (!fraudType || !description.trim()) return;
     setSubmitting(true);
-    FraudAPI.reportFraud({ fraudType, description, orderId }).then(({ data }) => {
+    setSubmitError(null);
+    FraudAPI.reportFraud(user?.id, { fraudType, description, orderId }).then(({ data, error }) => {
       setSubmitting(false);
       if (data) {
         setTicketId(data.ticketId);
         setSubmitted(true);
+      } else {
+        // Used to do nothing at all here — the button would just go
+        // back to normal with zero feedback, for a form specifically
+        // about fraud and feeling unsafe. Someone could easily read
+        // silence as "it went through" and not follow up on a real
+        // safety issue.
+        setSubmitError(error?.message || "Couldn't submit your report. Please try again or use the emergency contacts below.");
       }
     });
+  };
+
+  const handleCall = () => { window.location.href = 'tel:+918001234567'; };
+  const handleWhatsApp = () => {
+    window.open('https://wa.me/918001234567?text=Hi%2C%20I%20need%20to%20report%20a%20fraud%2Fsafety%20issue%20on%20SETU.', '_blank');
   };
 
   if (submitted) {
@@ -109,6 +125,9 @@ export default function CustomerFraudReport() {
             <Send className="w-4 h-4" />
             {submitting ? 'Submitting...' : 'Submit Report'}
           </Button>
+          {submitError && (
+            <p className="text-xs text-destructive text-center">{submitError}</p>
+          )}
         </Card>
 
         <Card className="p-4 border-border">
@@ -119,8 +138,8 @@ export default function CustomerFraudReport() {
             If you feel unsafe or need immediate help, contact us directly.
           </p>
           <div className="flex gap-2">
-            <Button variant="outline" className="flex-1 text-xs">Call SETU Helpline</Button>
-            <Button variant="outline" className="flex-1 text-xs">WhatsApp Support</Button>
+            <Button variant="outline" className="flex-1 text-xs" onClick={handleCall}>Call SETU Helpline</Button>
+            <Button variant="outline" className="flex-1 text-xs" onClick={handleWhatsApp}>WhatsApp Support</Button>
           </div>
         </Card>
       </div>

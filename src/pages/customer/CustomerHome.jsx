@@ -18,7 +18,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Search, Mic, MapPin, ChevronRight, Star, Bell,
-  Plus, ShoppingCart, RefreshCw,
+  Plus, ShoppingCart, RefreshCw, Loader2, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useVillage } from '@/lib/village';
@@ -33,22 +33,33 @@ import {
   BannerSkeleton, CategorySkeleton, VendorCardSkeleton, ProductCardSkeleton,
 } from '@/components/shared/SkeletonCard';
 import EmptyState from '@/components/shared/EmptyState';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
 import { formatCurrency, timeAgo } from '@/lib/utils';
 
 // ── Banners (Constitution: localised seasonal content) ────
+// Links use `q` (free-text search), not `category` — these are seasonal
+// marketing themes, not real category rows, and matching them to a
+// category id/name that doesn't exist in the categories table would
+// silently return an empty result page. The Chhath banner has no
+// reliable text match (no "festival"/"pooja" category or product
+// naming convention exists), so it points at unfiltered search rather
+// than guessing one.
 const BANNERS = [
   {
     id: 1, bg: 'from-primary to-primary/70',
     title: 'Chhath Festival Sale',
     subtitle: 'Up to 30% off on pooja essentials',
-    link: '/customer/search?category=Festival',
+    link: '/customer/search',
     cta: 'Shop Now',
   },
   {
     id: 2, bg: 'from-secondary to-secondary/70',
     title: 'Fresh Makhana Season',
     subtitle: 'Premium quality from Madhepur farms',
-    link: '/customer/search?category=Makhana',
+    link: '/customer/search?q=Makhana',
     cta: 'Explore',
   },
   {
@@ -173,11 +184,44 @@ function ProductCard({ product }) {
 export default function CustomerHome() {
   const navigate      = useNavigate();
   const { state }     = useStore();
-  const { village }   = useVillage();
-  const { user }      = useAuth();
+  const { village, villages: allVillages, loading: villageLoading } = useVillage();
+  const { user, updateProfile } = useAuth();
   const { cartCount } = useCart();
   const [query, setQuery]           = useState('');
   const [bannerIdx, setBannerIdx]   = useState(0);
+
+  // ── Change-village dialog ──────────────────────────────
+  // Backs the "Delivering to <village>" button below. Wired to the
+  // same `updateProfile()` path onboarding/CustomerProfile use, so
+  // VillageProvider (which now derives `village` from `profile.
+  // village_id`) picks it up everywhere immediately — no separate
+  // village-context setter needed here.
+  const [villageDialogOpen, setVillageDialogOpen] = useState(false);
+  const [selectedVillageId, setSelectedVillageId] = useState(null);
+  const [villageSaving, setVillageSaving]         = useState(false);
+  const [villageError, setVillageError]           = useState('');
+
+  const openVillageDialog = () => {
+    setSelectedVillageId(village?.id || null);
+    setVillageError('');
+    setVillageDialogOpen(true);
+  };
+
+  const handleConfirmVillage = async () => {
+    if (!selectedVillageId || selectedVillageId === village?.id) {
+      setVillageDialogOpen(false);
+      return;
+    }
+    setVillageSaving(true);
+    setVillageError('');
+    const { error } = await updateProfile({ village_id: selectedVillageId });
+    setVillageSaving(false);
+    if (error) {
+      setVillageError(error.message || 'Could not change your village. Please try again.');
+      return;
+    }
+    setVillageDialogOpen(false);
+  };
 
   // Realtime subscriptions are handled by CustomerLayout (parent).
   // Do not add useRealtimeOrders or useRealtimeNotifications here —
@@ -267,7 +311,7 @@ export default function CustomerHome() {
       {/* ── Top bar ─────────────────────────────────── */}
       <div className="px-4 pt-4 pb-2 flex items-center justify-between">
         <button
-          onClick={() => navigate('/customer/location')}
+          onClick={openVillageDialog}
           className="flex items-center gap-2 min-w-0 flex-1 min-h-[44px]"
           aria-label="Change delivery location"
         >
@@ -275,7 +319,8 @@ export default function CustomerHome() {
           <div className="min-w-0 text-left">
             <p className="text-[10px] text-muted-foreground">Delivering to</p>
             <p className="text-sm font-semibold text-foreground truncate">
-              {village?.name || 'Select village'}, {village?.district || ''}
+              {village?.name || (villageLoading ? 'Loading…' : 'Select village')}
+              {village?.district ? `, ${village.district}` : ''}
             </p>
           </div>
           <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -397,7 +442,7 @@ export default function CustomerHome() {
             {(categories || []).slice(0, 10).map(cat => (
               <Link
                 key={cat.id}
-                to={`/customer/search?category=${cat.name}`}
+                to={`/customer/search?category=${cat.id}`}
                 role="listitem"
                 className="flex flex-col items-center gap-1 p-2 rounded-xl active:bg-muted transition-colors"
               >
@@ -489,17 +534,77 @@ export default function CustomerHome() {
       )}
 
       {/* ── Referral CTA ─────────────────────────────── */}
+      {/* Text kept consistent with CustomerReferral.jsx (Pass 5 fix):
+          that screen never shows a ₹100 figure or any fabricated
+          earnings since no referral backend exists yet — this teaser
+          used to promise "Refer & Earn ₹100" and land the user on a
+          screen that then contradicted it with "coming soon". */}
       <div className="px-4 mb-4">
         <Link to="/customer/referral" className="block">
           <div className="setu-card p-4 border-primary/20 bg-primary/5 flex items-center justify-between">
             <div>
-              <p className="text-sm font-bold">Refer & Earn ₹100</p>
-              <p className="text-xs text-muted-foreground">Invite friends, get wallet credit</p>
+              <p className="text-sm font-bold">Refer & Earn</p>
+              <p className="text-xs text-muted-foreground">Invite friends — coming soon</p>
             </div>
             <ChevronRight className="w-5 h-5 text-primary" aria-hidden="true" />
           </div>
         </Link>
       </div>
+
+      {/* ── Change-village dialog ─────────────────────── */}
+      <Dialog open={villageDialogOpen} onOpenChange={(open) => !villageSaving && setVillageDialogOpen(open)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Change Delivery Village</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-2 py-2 max-h-72 overflow-y-auto">
+            {!allVillages?.length ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              allVillages.map(v => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => setSelectedVillageId(v.id)}
+                  className={`w-full text-left p-3 rounded-xl border transition-colors flex items-center justify-between ${
+                    selectedVillageId === v.id
+                      ? 'border-primary bg-primary/5'
+                      : 'border-border hover:bg-muted/50'
+                  }`}
+                >
+                  <div>
+                    <p className="text-sm font-medium">{v.name}</p>
+                    <p className="text-xs text-muted-foreground">{v.block}{v.district ? `, ${v.district}` : ''}</p>
+                  </div>
+                  {selectedVillageId === v.id && (
+                    <CheckCircle2 className="w-4 h-4 text-primary shrink-0" aria-hidden="true" />
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+
+          {villageError && (
+            <p className="text-xs text-destructive flex items-center gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {villageError}
+            </p>
+          )}
+
+          <DialogFooter>
+            <Button
+              className="w-full gap-2"
+              onClick={handleConfirmVillage}
+              disabled={villageSaving || !selectedVillageId}
+            >
+              {villageSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              Confirm Village
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

@@ -35,7 +35,7 @@ const MENU_ITEMS = [
   { label: 'My Trust Score',     icon: Star,           path: '/customer/trust',         desc: 'SETU Score · Silver Tier' },
   { label: 'Government Schemes', icon: FileText,       path: '/customer/schemes',       desc: 'Eligible schemes near you' },
   { label: 'Voice Assistant',    icon: Bell,           path: '/customer/voice',         desc: 'Bolkar kharido · बोलकर खरीदो' },
-  { label: 'Refer & Earn',       icon: Gift,           path: '/customer/referral',      desc: 'Invite friends, earn ₹100' },
+  { label: 'Refer & Earn',       icon: Gift,           path: '/customer/referral',      desc: 'Invite friends — coming soon' },
   { label: 'Notifications',      icon: Bell,           path: '/customer/notifications', desc: 'Manage notification preferences' },
   { label: 'Help & Support',     icon: HeadphonesIcon, path: '/customer/support',       desc: 'Get help with your orders' },
   { label: 'Settings',           icon: Settings,       path: '/customer/settings',      desc: 'Language, privacy, offline mode' },

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Phone, MessageSquare, Send, X, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
@@ -45,8 +46,9 @@ async function appendCustomerReply(ticketId, text) {
 
 // ── Ticket card ────────────────────────────────────────────────
 function TicketCard({ ticket, onReplySubmit }) {
-  const [reply,    setReply]    = useState('');
-  const [sending,  setSending]  = useState(false);
+  const [reply,     setReply]     = useState('');
+  const [sending,   setSending]   = useState(false);
+  const [sendError, setSendError] = useState(null);
   const [localMsgs, setLocalMsgs] = useState(ticket.messages ?? []);
   const inputRef = useRef(null);
 
@@ -57,20 +59,21 @@ function TicketCard({ ticket, onReplySubmit }) {
     const text = reply.trim();
     if (!text || sending || isResolved) return;
     setSending(true);
+    setSendError(null);
     const { data: updated, error } = await appendCustomerReply(ticket.id, text);
     setSending(false);
     if (!error && updated) {
       setLocalMsgs(updated.messages ?? []);
       if (onReplySubmit) onReplySubmit(ticket.id, updated);
+      setReply('');
     } else {
-      // Optimistic update on error
-      setLocalMsgs(prev => [...prev, {
-        from: 'customer',
-        text,
-        time: new Date().toLocaleTimeString('en-IN', { timeStyle: 'short' }),
-      }]);
+      // Used to optimistically show the message as sent even when the
+      // save failed — the customer would see their reply appear and
+      // assume support received it, while nothing had actually reached
+      // the server. Keep the draft in the input so it isn't lost, and
+      // say plainly that it didn't go through.
+      setSendError("Couldn't send — check your connection and try again.");
     }
-    setReply('');
   };
 
   return (
@@ -105,6 +108,12 @@ function TicketCard({ ticket, onReplySubmit }) {
         </div>
       )}
 
+      {sendError && (
+        <p className="text-xs text-red-500 mb-2 flex items-center gap-1.5">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {sendError}
+        </p>
+      )}
+
       {/* Reply input — hidden when resolved */}
       {!isResolved && (
         <div className="flex items-center gap-2">
@@ -133,8 +142,8 @@ function TicketCard({ ticket, onReplySubmit }) {
 }
 
 // ── New Ticket Modal ───────────────────────────────────────────
-function NewTicketModal({ onClose, onSubmit, submitting, error }) {
-  const [subject,     setSubject]     = useState('');
+function NewTicketModal({ onClose, onSubmit, submitting, error, initialSubject = '' }) {
+  const [subject,     setSubject]     = useState(initialSubject);
   const [orderNumber, setOrderNumber] = useState('');
   const [description, setDescription] = useState('');
 
@@ -212,21 +221,56 @@ function NewTicketModal({ onClose, onSubmit, submitting, error }) {
 // ── Main page ──────────────────────────────────────────────────
 export default function CustomerSupport() {
   const { user } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const [tickets,     setTickets]     = useState([]);
   const [loading,     setLoading]     = useState(true);
+  const [loadError,   setLoadError]   = useState(null);
   const [showModal,   setShowModal]   = useState(false);
   const [submitting,  setSubmitting]  = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [submitted,   setSubmitted]   = useState(false);
 
-  // Load tickets
+  // Account Management routes here for requests with no self-service
+  // flow yet (delete account, export data, change phone) with a
+  // subject pre-filled via navigation state — open straight to the
+  // ticket form instead of leaving the customer to find "+ New Ticket"
+  // and retype what they already told the previous screen.
+  const prefillSubject = location.state?.prefillSubject ?? '';
   useEffect(() => {
+    if (prefillSubject) {
+      setShowModal(true);
+      // Clear it from history state so navigating back here later
+      // (or refreshing) doesn't keep forcing the modal back open.
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillSubject]);
+
+  // Load tickets
+  const loadTickets = () => {
     if (!user) { setLoading(false); return; }
+    setLoading(true);
+    setLoadError(null);
     getSupportTickets(user.id).then(({ data, error }) => {
-      if (!error) setTickets(data ?? []);
+      if (error) {
+        // Used to fall through silently here, leaving `tickets` at its
+        // empty default — a failed fetch and "you truly have no
+        // tickets" looked identical, so a customer whose ticket load
+        // failed just saw "No tickets yet" with no way to tell
+        // something had gone wrong or to retry.
+        setLoadError(error.message || 'Could not load your tickets.');
+      } else {
+        setTickets(data ?? []);
+      }
       setLoading(false);
     });
+  };
+
+  useEffect(() => {
+    loadTickets();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   // Handle ticket reply update (keep local state fresh)
@@ -351,13 +395,23 @@ export default function CustomerSupport() {
               </div>
             )}
 
-            {!loading && tickets.length === 0 && (
+            {!loading && loadError && (
+              <div className="bg-white rounded-2xl border border-red-100 p-6 text-center space-y-2">
+                <AlertCircle className="w-6 h-6 text-red-400 mx-auto" />
+                <p className="text-sm text-gray-500">{loadError}</p>
+                <button onClick={loadTickets} className="text-xs text-orange-500 font-semibold underline">
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {!loading && !loadError && tickets.length === 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center">
                 <p className="text-sm text-gray-400">No tickets yet. Tap "+ New Ticket" if you need help.</p>
               </div>
             )}
 
-            {!loading && tickets.length > 0 && (
+            {!loading && !loadError && tickets.length > 0 && (
               <div className="space-y-3">
                 {tickets.map(ticket => (
                   <TicketCard
@@ -380,6 +434,7 @@ export default function CustomerSupport() {
           onSubmit={handleSubmitTicket}
           submitting={submitting}
           error={submitError}
+          initialSubject={prefillSubject}
         />
       )}
     </>

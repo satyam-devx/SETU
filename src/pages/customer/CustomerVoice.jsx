@@ -105,6 +105,18 @@ export default function CustomerVoice() {
     setTranscript('');
     setState('listening');
 
+    // `onend` used to check `state === 'listening'` to decide whether it
+    // needs to clean up — but that `state` is captured from THIS render's
+    // closure, i.e. whatever it was *before* the `setState('listening')`
+    // above takes effect, so it could never actually equal 'listening'.
+    // In practice this meant tapping the mic again to cancel — the most
+    // common way to reach onend without onresult/onerror firing first —
+    // left the UI permanently stuck showing "Listening..." with the
+    // pulse animation still running, since the fallback cleanup below
+    // was unreachable dead code. Track "already handled" with a ref
+    // instead of comparing against stale state.
+    let handled = false;
+
     let growing = true;
     animRef.current = setInterval(() => {
       setPulseSize(p => {
@@ -121,6 +133,7 @@ export default function CustomerVoice() {
     recognition.maxAlternatives = 1;
 
     recognition.onresult = (event) => {
+      handled = true;
       const spoken = event.results?.[0]?.[0]?.transcript || '';
       recognitionRef.current = null;
       stopPulse();
@@ -134,6 +147,7 @@ export default function CustomerVoice() {
     };
 
     recognition.onerror = (event) => {
+      handled = true;
       recognitionRef.current = null;
       stopPulse();
       if (!mountedRef.current) return;
@@ -149,13 +163,13 @@ export default function CustomerVoice() {
     };
 
     recognition.onend = () => {
-      // If onresult/onerror already handled this session, recognitionRef
-      // has been cleared and state has already moved on — nothing to do.
+      // If onresult/onerror already ran, they've already cleaned up and
+      // moved state on — nothing more to do. Otherwise (most commonly:
+      // the user tapped the mic again to cancel) do it here.
       recognitionRef.current = null;
-      if (mountedRef.current && state === 'listening') {
-        stopPulse();
-        setState('idle');
-      }
+      if (handled) return;
+      stopPulse();
+      if (mountedRef.current) setState('idle');
     };
 
     try {

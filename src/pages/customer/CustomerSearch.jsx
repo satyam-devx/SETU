@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { Search, Mic, X, Star, SlidersHorizontal, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -24,7 +24,8 @@ function useDebounce(value, delay = 350) {
 
 export default function CustomerSearch() {
   const [params] = useSearchParams();
-  const [query,            setQuery]            = useState('');
+  const navigate = useNavigate();
+  const [query,            setQuery]            = useState(params.get('q') || '');
   const [selectedCategory, setSelectedCategory] = useState(params.get('category') || 'all');
   const [maxPrice,         setMaxPrice]         = useState(1000);
   const [sortBy,           setSortBy]           = useState('popular');
@@ -41,20 +42,27 @@ export default function CustomerSearch() {
   const cats = categories ?? [];
 
   // ── Fetch products with ilike search ──────────────────────
+  // `selectedCategory` normally holds a category id (from CustomerHome's
+  // category tiles / the filter chips below), but also accepts an exact
+  // category name so any future caller that links here with a readable
+  // name (rather than an id) still filters correctly instead of silently
+  // matching nothing.
+  const selectedCategoryName = selectedCategory !== 'all'
+    ? (cats.find(c => c.id === selectedCategory || c.name === selectedCategory)?.name ?? undefined)
+    : undefined;
+
   const {
     data: rawProducts,
     isLoading: productsLoading,
   } = useDataFetch(
     () => getProducts({
       search:   debouncedQuery || undefined,
-      category: selectedCategory !== 'all'
-        ? (cats.find(c => c.id === selectedCategory)?.name ?? undefined)
-        : undefined,
+      category: selectedCategoryName,
       limit: 60,
     }),
-    [debouncedQuery, selectedCategory],
+    [debouncedQuery, selectedCategoryName],
     {
-      cacheKey: `search:products:${debouncedQuery}:${selectedCategory}`,
+      cacheKey: `search:products:${debouncedQuery}:${selectedCategoryName ?? 'all'}`,
       staleTime: 15_000,
     }
   );
@@ -113,7 +121,13 @@ export default function CustomerSearch() {
               </button>
             )}
           </div>
-          <Button variant="ghost" size="icon" className="shrink-0 text-primary" aria-label="Voice search">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 text-primary"
+            aria-label="Voice search"
+            onClick={() => navigate('/customer/voice')}
+          >
             <Mic className="w-5 h-5" />
           </Button>
         </div>

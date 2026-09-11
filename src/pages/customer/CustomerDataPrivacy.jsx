@@ -1,11 +1,47 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Shield, Download, Eye, Trash2, Lock, Activity, Smartphone, MapPin, AlertTriangle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import AppHeader from '@/components/shared/AppHeader';
 
+// Same localStorage-backed store CustomerSettings.jsx's Privacy toggles
+// use (see that file for why) — "Personalised recommendations" here and
+// "Share data for recommendations" there are the same underlying
+// preference worded differently, and used to be two entirely separate,
+// unsynced switches.
+const STORAGE_KEY = 'setu:settings:toggles';
+function readToggles() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    return saved && typeof saved === 'object' ? saved : {};
+  } catch {
+    return {};
+  }
+}
+
 export default function CustomerDataPrivacy() {
+  const navigate = useNavigate();
+  const [toggleState, setToggleState] = useState(readToggles);
+
+  const setToggle = (key, val) => {
+    setToggleState(prev => {
+      const next = { ...prev, [key]: val };
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
+      return next;
+    });
+  };
+
+  // "Download My Data" and "Request Data Deletion" had no onClick at
+  // all — for a screen specifically about DPDP Act rights, two of the
+  // three rights it lists (export, deletion) did nothing when tapped.
+  // Neither has self-service backend support yet, so route to the same
+  // real, working support-ticket flow Account Management uses rather
+  // than leave a confident-looking dead button.
+  const requestViaSupport = (subject) => {
+    navigate('/customer/support', { state: { prefillSubject: subject } });
+  };
   return (
     <div className="pb-20">
       <AppHeader title="Data & Privacy" subtitle="DPDP Act 2023 Compliant" showBack />
@@ -58,15 +94,24 @@ export default function CustomerDataPrivacy() {
           <div className="space-y-3">
             <div className="flex items-center justify-between py-1">
               <span className="text-sm">Personalised recommendations</span>
-              <Switch defaultChecked />
+              <Switch
+                checked={toggleState.shareForRecommendations ?? true}
+                onCheckedChange={(val) => setToggle('shareForRecommendations', val)}
+              />
             </div>
             <div className="flex items-center justify-between py-1">
               <span className="text-sm">Share profile with vendors</span>
-              <Switch />
+              <Switch
+                checked={toggleState.shareProfileWithVendors ?? false}
+                onCheckedChange={(val) => setToggle('shareProfileWithVendors', val)}
+              />
             </div>
             <div className="flex items-center justify-between py-1">
               <span className="text-sm">Location-based services</span>
-              <Switch defaultChecked />
+              <Switch
+                checked={toggleState.locationServices ?? true}
+                onCheckedChange={(val) => setToggle('locationServices', val)}
+              />
             </div>
           </div>
         </Card>
@@ -74,10 +119,18 @@ export default function CustomerDataPrivacy() {
         <Card className="p-4 border-border">
           <h3 className="font-semibold text-sm mb-3">Your Rights</h3>
           <div className="space-y-2">
-            <Button variant="outline" className="w-full justify-start text-sm gap-3">
+            <Button
+              variant="outline"
+              className="w-full justify-start text-sm gap-3"
+              onClick={() => requestViaSupport('Request: Export my data')}
+            >
               <Download className="w-4 h-4 text-muted-foreground" /> Download My Data
             </Button>
-            <Button variant="outline" className="w-full justify-start text-sm gap-3">
+            <Button
+              variant="outline"
+              className="w-full justify-start text-sm gap-3"
+              onClick={() => requestViaSupport('Request: Delete my data')}
+            >
               <Trash2 className="w-4 h-4 text-destructive" /> Request Data Deletion
             </Button>
           </div>

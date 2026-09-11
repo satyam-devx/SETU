@@ -218,7 +218,20 @@ export function AuthProvider({ children }) {
 
   // ── updateProfile ─────────────────────────────────────
   const updateProfile = useCallback(async (updates) => {
-    if (!user || !isSupabaseConfigured) return { error: null };
+    if (!user) return { error: null };
+    if (!isSupabaseConfigured) {
+      // Demo mode: there's no backend row to persist to, but every other
+      // demo-mode "write" in the app (cart, orders, wallet) fakes success
+      // AND reflects the change in local state for the rest of the
+      // session — this one silently no-op'd instead, so CustomerProfile's
+      // "Edit Profile" dialog would show "Profile updated successfully"
+      // while the name/village on screen quietly reverted to the demo
+      // defaults. Merge into the in-memory demo profile so the edit
+      // actually sticks for the session, consistent with the rest of
+      // the app's demo-mode convention.
+      setProfile(prev => ({ ...(prev || {}), ...updates }));
+      return { error: null };
+    }
     const { error } = await supabase
       .from('profiles')
       .update({ ...updates, updated_at: new Date().toISOString() })

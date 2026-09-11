@@ -8,7 +8,7 @@
 //  - Pagination-ready (load more)
 //  - Accessible tabs with ARIA
 // ═══════════════════════════════════════════════════════════
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ShoppingBag, Search } from 'lucide-react';
 import AppHeader from '@/components/shared/AppHeader';
@@ -58,12 +58,47 @@ export default function CustomerOrders() {
     { cacheKey: `orders-customer-${user?.id}`, enabled: !!user?.id }
   );
 
+  // ── Pagination ──────────────────────────────────────────────
+  // getOrdersByCustomer already supports page/limit server-side, but
+  // nothing ever called it with page > 0 — a customer with more than
+  // one page of history (the default limit is 20) had older orders
+  // silently invisible with no indication they existed.
+  const PAGE_SIZE = 20;
+  const [extraOrders, setExtraOrders] = useState([]);
+  const [page,        setPage]        = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore,     setHasMore]     = useState(false);
+
+  useEffect(() => {
+    setExtraOrders([]);
+    setPage(0);
+    setHasMore((dbOrders?.length ?? 0) >= PAGE_SIZE);
+  }, [dbOrders]);
+
+  const handleLoadMore = async () => {
+    if (loadingMore || !hasMore || !user?.id) return;
+    setLoadingMore(true);
+    const nextPage = page + 1;
+    const { data, error: pageError } = await getOrdersByCustomer(user.id, { page: nextPage, limit: PAGE_SIZE });
+    setLoadingMore(false);
+    if (pageError || !data) return;
+    setExtraOrders(prev => [...prev, ...data]);
+    setPage(nextPage);
+    setHasMore(data.length >= PAGE_SIZE);
+  };
+
   // Merge: prefer DB orders + any realtime-added orders from store
   const storeOrders = state.orders.filter(o =>
     user?.id && (o.customerId === user.id || o.customer_id === user.id)
   );
-  const allOrders = dbOrders?.length ? dbOrders : storeOrders;
+  const combinedDbOrders = dbOrders?.length ? [...dbOrders, ...extraOrders] : dbOrders;
+  const allOrders = combinedDbOrders?.length ? combinedDbOrders : storeOrders;
   const filtered  = filterOrders(allOrders, tab, query);
+  // "Load More" only makes sense browsing the full unfiltered history —
+  // search/tab-filtering only ever look at what's been paged in so far,
+  // so surfacing it there would be misleading (as if searching fetched
+  // more, when it's just filtering the current page).
+  const canLoadMore = hasMore && tab === 'all' && !query.trim();
 
   const EMPTY_MESSAGES = {
     all:       { title: 'No orders yet',    desc: 'Start shopping to see your orders here' },
@@ -185,6 +220,17 @@ export default function CustomerOrders() {
                 </Link>
               );
             })}
+            {canLoadMore && (
+              <div className="px-4 py-4">
+                <button
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="w-full text-sm font-medium text-primary border border-primary/30 rounded-xl py-2.5 disabled:opacity-50"
+                >
+                  {loadingMore ? 'Loading…' : 'Load More Orders'}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
