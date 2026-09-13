@@ -1,1 +1,0 @@
-import{xt as e}from"./index-KmmWqCVR.js";var t=class extends e{async show(e){}async hide(e){}};export{t as SplashScreenWeb};
