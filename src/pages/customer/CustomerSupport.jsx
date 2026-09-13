@@ -12,7 +12,7 @@ function StatusBadge({ status }) {
     open:        { label: 'Open',        cls: 'bg-amber-50  text-amber-600  border-amber-200'  },
     in_progress: { label: 'In Progress', cls: 'bg-blue-50   text-blue-600   border-blue-200'   },
     resolved:    { label: 'Resolved',    cls: 'bg-green-50  text-green-600  border-green-200'  },
-    closed:      { label: 'Closed',      cls: 'bg-gray-100  text-gray-500   border-gray-200'   },
+    closed:      { label: 'Closed',      cls: 'bg-muted  text-muted-foreground   border-border'   },
   };
   const { label, cls } = cfg[status] ?? cfg.open;
   return (
@@ -77,29 +77,29 @@ function TicketCard({ ticket, onReplySubmit }) {
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+    <div className="bg-card rounded-2xl border border-border shadow-sm p-4">
       {/* Header */}
       <div className="flex items-start justify-between gap-3 mb-2">
-        <p className="text-sm font-bold text-gray-900 leading-tight">{ticket.subject}</p>
+        <p className="text-sm font-bold text-foreground leading-tight">{ticket.subject}</p>
         <StatusBadge status={ticket.status} />
       </div>
 
       {/* Order reference */}
       {orderLabel && (
-        <p className="text-xs text-gray-400 mb-3">Order: {orderLabel}</p>
+        <p className="text-xs text-muted-foreground mb-3">Order: {orderLabel}</p>
       )}
 
       {/* Messages */}
       {localMsgs.length > 0 && (
-        <div className="bg-gray-50 rounded-xl p-3 mb-3 space-y-2">
+        <div className="bg-muted/50 rounded-xl p-3 mb-3 space-y-2">
           {localMsgs.map((msg, i) => {
             const isCustomer = msg.from === 'customer';
             return (
               <p key={i} className="text-sm leading-relaxed">
-                <span className={`font-semibold ${isCustomer ? 'text-gray-900' : 'text-orange-500'}`}>
+                <span className={`font-semibold ${isCustomer ? 'text-foreground' : 'text-primary'}`}>
                   {isCustomer ? 'Customer: ' : 'Support: '}
                 </span>
-                <span className={isCustomer ? 'text-gray-700' : 'text-orange-500'}>
+                <span className={isCustomer ? 'text-foreground' : 'text-primary'}>
                   {msg.text}
                 </span>
               </p>
@@ -119,20 +119,22 @@ function TicketCard({ ticket, onReplySubmit }) {
         <div className="flex items-center gap-2">
           <input
             ref={inputRef}
+            aria-label={`Reply to ${ticket.subject}`}
             value={reply}
             onChange={e => setReply(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
             placeholder="Reply..."
-            className="flex-1 px-4 py-2.5 rounded-full border border-gray-200 bg-gray-50 text-sm outline-none focus:border-orange-400 focus:bg-white transition-colors"
+            className="flex-1 px-4 py-2.5 rounded-full border border-border bg-muted/50 text-sm outline-none focus:border-primary/50 focus:bg-card transition-colors"
           />
           <button
             onClick={handleSend}
             disabled={!reply.trim() || sending}
-            className="w-11 h-11 rounded-full bg-orange-500 flex items-center justify-center shrink-0 disabled:opacity-40 active:scale-95 transition-all"
+            aria-label="Send reply"
+            className="w-11 h-11 rounded-full bg-primary flex items-center justify-center shrink-0 disabled:opacity-40 active:scale-95 transition-all"
           >
             {sending
-              ? <Loader2 className="w-4 h-4 text-white animate-spin" />
-              : <Send className="w-4 h-4 text-white" />
+              ? <Loader2 className="w-4 h-4 text-primary-foreground animate-spin" />
+              : <Send className="w-4 h-4 text-primary-foreground" />
             }
           </button>
         </div>
@@ -159,43 +161,47 @@ function NewTicketModal({ onClose, onSubmit, submitting, error, initialSubject =
 
       {/* Sheet */}
       <div
-        className="relative bg-white rounded-t-3xl p-6 pb-10 z-10"
+        className="relative bg-card rounded-t-3xl p-6 pb-10 z-10"
         onClick={e => e.stopPropagation()}
       >
         {/* Close button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600"
+          className="absolute top-4 right-4 touch-target flex items-center justify-center text-muted-foreground hover:text-muted-foreground"
+          aria-label="Close"
         >
-          <X className="w-5 h-5" />
+          <X className="w-5 h-5" aria-hidden="true" />
         </button>
 
-        <h2 className="text-lg font-bold text-gray-900 text-center mb-5">
+        <h2 className="text-lg font-bold text-foreground text-center mb-5">
           Create Support Ticket
         </h2>
 
         <div className="space-y-3">
           <input
             autoFocus
+            aria-label="Subject"
             placeholder="Subject"
             value={subject}
             onChange={e => setSubject(e.target.value)}
-            className="w-full px-4 py-3 rounded-2xl border-2 border-orange-400 bg-white text-sm outline-none placeholder-gray-400"
+            className="w-full px-4 py-3 rounded-2xl border-2 border-primary/50 bg-card text-sm outline-none placeholder:text-muted-foreground"
           />
 
           <input
+            aria-label="Order number (optional)"
             placeholder="Order Number (optional)"
             value={orderNumber}
             onChange={e => setOrderNumber(e.target.value)}
-            className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-white text-sm outline-none focus:border-orange-400 transition-colors placeholder-gray-400"
+            className="w-full px-4 py-3 rounded-2xl border border-border bg-card text-sm outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground"
           />
 
           <textarea
+            aria-label="Describe your issue"
             placeholder="Describe your issue..."
             value={description}
             onChange={e => setDescription(e.target.value)}
             rows={5}
-            className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-white text-sm outline-none focus:border-orange-400 transition-colors placeholder-gray-400 resize-none"
+            className="w-full px-4 py-3 rounded-2xl border border-border bg-card text-sm outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground resize-none"
           />
 
           {error && (
@@ -208,7 +214,7 @@ function NewTicketModal({ onClose, onSubmit, submitting, error, initialSubject =
           <button
             onClick={handleSubmit}
             disabled={!subject.trim() || !description.trim() || submitting}
-            className="w-full py-4 rounded-2xl bg-orange-500 text-white text-sm font-semibold disabled:opacity-50 active:scale-[0.98] transition-all"
+            className="w-full py-4 rounded-2xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50 active:scale-[0.98] transition-all"
           >
             {submitting ? 'Submitting…' : 'Submit Ticket'}
           </button>
@@ -280,6 +286,13 @@ export default function CustomerSupport() {
 
   // Submit new ticket
   const handleSubmitTicket = async ({ subject, orderNumber, description }) => {
+    // Re-entry guard: the trigger button is already disabled while
+    // submitting is true, but that disabled state only takes effect on
+    // React's next render — a fast double-tap (common on the lower-end
+    // Android hardware this app targets) can fire this handler twice
+    // before that happens. Guard here too rather than rely on the
+    // button alone.
+    if (submitting) return;
     if (!user) return;
     setSubmitting(true);
     setSubmitError(null);
@@ -334,14 +347,14 @@ export default function CustomerSupport() {
 
   return (
     <>
-      <div className="pb-6 bg-gray-50 min-h-screen">
+      <div className="pb-6 bg-muted/50 min-h-screen">
         <AppHeader
           title="Help & Support"
           showBack
           rightAction={
             <button
               onClick={() => { setShowModal(true); setSubmitError(null); }}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-orange-500 text-white text-xs font-semibold active:scale-95 transition-all"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-primary text-primary-foreground text-xs font-semibold active:scale-95 transition-all"
             >
               <span className="text-base leading-none">+</span> New Ticket
             </button>
@@ -364,50 +377,50 @@ export default function CustomerSupport() {
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={handleCall}
-              className="bg-white rounded-2xl border border-gray-100 shadow-sm py-5 flex flex-col items-center gap-2 active:scale-95 transition-all"
+              className="bg-card rounded-2xl border border-border shadow-sm py-5 flex flex-col items-center gap-2 active:scale-95 transition-all"
             >
-              <Phone className="w-7 h-7 text-orange-500" />
+              <Phone className="w-7 h-7 text-primary" />
               <div className="text-center">
-                <p className="text-sm font-semibold text-gray-900">Call Support</p>
-                <p className="text-xs text-gray-400 mt-0.5">9am - 6pm</p>
+                <p className="text-sm font-semibold text-foreground">Call Support</p>
+                <p className="text-xs text-muted-foreground mt-0.5">9am - 6pm</p>
               </div>
             </button>
 
             <button
               onClick={handleWhatsApp}
-              className="bg-white rounded-2xl border border-gray-100 shadow-sm py-5 flex flex-col items-center gap-2 active:scale-95 transition-all"
+              className="bg-card rounded-2xl border border-border shadow-sm py-5 flex flex-col items-center gap-2 active:scale-95 transition-all"
             >
               <MessageSquare className="w-7 h-7 text-green-500" />
               <div className="text-center">
-                <p className="text-sm font-semibold text-gray-900">WhatsApp</p>
-                <p className="text-xs text-gray-400 mt-0.5">24/7 support</p>
+                <p className="text-sm font-semibold text-foreground">WhatsApp</p>
+                <p className="text-xs text-muted-foreground mt-0.5">24/7 support</p>
               </div>
             </button>
           </div>
 
           {/* Tickets section */}
           <div>
-            <h2 className="text-base font-bold text-gray-900 mb-3">Your Tickets</h2>
+            <h2 className="text-base font-bold text-foreground mb-3">Your Tickets</h2>
 
             {loading && (
               <div className="flex justify-center py-8">
-                <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
               </div>
             )}
 
             {!loading && loadError && (
-              <div className="bg-white rounded-2xl border border-red-100 p-6 text-center space-y-2">
+              <div className="bg-card rounded-2xl border border-red-100 p-6 text-center space-y-2">
                 <AlertCircle className="w-6 h-6 text-red-400 mx-auto" />
-                <p className="text-sm text-gray-500">{loadError}</p>
-                <button onClick={loadTickets} className="text-xs text-orange-500 font-semibold underline">
+                <p className="text-sm text-muted-foreground">{loadError}</p>
+                <button onClick={loadTickets} className="text-xs text-primary font-semibold underline">
                   Retry
                 </button>
               </div>
             )}
 
             {!loading && !loadError && tickets.length === 0 && (
-              <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center">
-                <p className="text-sm text-gray-400">No tickets yet. Tap "+ New Ticket" if you need help.</p>
+              <div className="bg-card rounded-2xl border border-border p-6 text-center">
+                <p className="text-sm text-muted-foreground">No tickets yet. Tap "+ New Ticket" if you need help.</p>
               </div>
             )}
 

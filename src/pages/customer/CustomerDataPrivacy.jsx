@@ -97,6 +97,7 @@ export default function CustomerDataPrivacy() {
               <Switch
                 checked={toggleState.shareForRecommendations ?? true}
                 onCheckedChange={(val) => setToggle('shareForRecommendations', val)}
+                aria-label="Personalised recommendations"
               />
             </div>
             <div className="flex items-center justify-between py-1">
@@ -104,6 +105,7 @@ export default function CustomerDataPrivacy() {
               <Switch
                 checked={toggleState.shareProfileWithVendors ?? false}
                 onCheckedChange={(val) => setToggle('shareProfileWithVendors', val)}
+                aria-label="Share profile with vendors"
               />
             </div>
             <div className="flex items-center justify-between py-1">
@@ -111,6 +113,7 @@ export default function CustomerDataPrivacy() {
               <Switch
                 checked={toggleState.locationServices ?? true}
                 onCheckedChange={(val) => setToggle('locationServices', val)}
+                aria-label="Location-based services"
               />
             </div>
           </div>

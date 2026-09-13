@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft, Star, Search, Loader2, AlertCircle } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Star, Search, AlertCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -8,6 +8,7 @@ import { useDataFetch } from '@/hooks/useDataFetch';
 import { getVendors } from '@/lib/api';
 import { useVillage } from '@/lib/village';
 import Img from '@/components/shared/Img';
+import { smartGoBack } from '@/lib/utils';
 
 function VendorsSkeleton() {
   return (
@@ -20,6 +21,7 @@ function VendorsSkeleton() {
 }
 
 export default function CustomerVendors() {
+  const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const { village } = useVillage();
 
@@ -40,7 +42,13 @@ export default function CustomerVendors() {
     <div className="pb-20">
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3 space-y-2">
         <div className="flex items-center gap-3">
-          <Link to="/customer" className="p-1 -ml-1"><ArrowLeft className="w-5 h-5" /></Link>
+          <button
+            onClick={() => smartGoBack(navigate)}
+            className="touch-target -ml-2 flex items-center justify-center shrink-0 rounded-lg hover:bg-muted transition-colors"
+            aria-label="Go back"
+          >
+            <ArrowLeft className="w-5 h-5" aria-hidden="true" />
+          </button>
           <span className="font-semibold text-sm flex-1">All Vendors</span>
         </div>
         <div className="relative">

@@ -19,7 +19,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { useStore } from '@/lib/store';
 import { getOrdersByCustomer } from '@/lib/api';
-import { formatCurrency, formatDateTime, timeAgo } from '@/lib/utils';
+import { formatCurrency, timeAgo } from '@/lib/utils';
 
 const TABS = [
   { id: 'all',       label: 'All' },

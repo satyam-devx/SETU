@@ -1,8 +1,7 @@
 import React from 'react';
-import { Bell, ShoppingBag, Wallet, Tag, Info, CheckCheck } from 'lucide-react';
+import { Bell, ShoppingBag, Wallet, Tag, Info, CheckCheck, AlertCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/AuthContext';
@@ -37,6 +36,16 @@ export default function CustomerNotifications() {
     if (user?.id) NotificationAPI.markAllRead(user.id);
   };
 
+  const handleRetry = async () => {
+    if (!user?.id) return;
+    const { data, error } = await NotificationAPI.getAll(user.id);
+    if (error || !data) {
+      dispatch({ type: 'NOTIFICATIONS_LOAD_ERROR', payload: { message: error?.message } });
+    } else {
+      dispatch({ type: 'HYDRATE_NOTIFICATIONS', payload: { notifications: data } });
+    }
+  };
+
   return (
     <div className="pb-6">
       <AppHeader
@@ -52,7 +61,15 @@ export default function CustomerNotifications() {
         }
       />
       <div className="px-4 py-3 space-y-2">
-        {notifications.length === 0 ? (
+        {notifications.length === 0 && state.notificationsError ? (
+          <Card className="p-8 border-destructive/20 text-center space-y-2">
+            <AlertCircle className="w-8 h-8 text-destructive mx-auto" />
+            <p className="text-sm text-muted-foreground">Could not load your notifications.</p>
+            <button onClick={handleRetry} className="text-xs text-primary font-semibold underline">
+              Retry
+            </button>
+          </Card>
+        ) : notifications.length === 0 ? (
           <Card className="p-8 border-border text-center">
             <Bell className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
             <p className="text-sm text-muted-foreground">No notifications yet</p>

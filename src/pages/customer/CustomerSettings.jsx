@@ -144,6 +144,7 @@ export default function CustomerSettings() {
                         <Switch
                           checked={toggleState[storeKey] ?? item.defaultVal}
                           onCheckedChange={(val) => setToggle(storeKey, val)}
+                          aria-label={item.label}
                         />
                       </div>
                     );

@@ -10,20 +10,22 @@ const EMPTY_FORM = { label: 'Home', address: '', landmark: '' };
 // ── Address form (inline, shown below existing cards) ───────────
 function AddressForm({ form, setForm, onCancel, onSave, saving, error, title = 'New Address' }) {
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-      <p className="text-sm font-bold text-gray-900 mb-4">{title}</p>
+    <div className="bg-card rounded-2xl border border-border shadow-sm p-4">
+      <p className="text-sm font-bold text-foreground mb-4">{title}</p>
 
       {/* Label chips */}
-      <div className="flex gap-2 mb-4">
+      <p id="address-label-group" className="sr-only">Address label</p>
+      <div className="flex gap-2 mb-4" role="group" aria-labelledby="address-label-group">
         {LABELS.map(l => (
           <button
             key={l}
             type="button"
             onClick={() => setForm(f => ({ ...f, label: l }))}
+            aria-pressed={form.label === l}
             className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-all ${
               form.label === l
-                ? 'bg-orange-500 text-white border-orange-500'
-                : 'bg-white text-gray-700 border-gray-200'
+                ? 'bg-primary text-primary-foreground border-primary'
+                : 'bg-card text-foreground border-border'
             }`}
           >
             {l}
@@ -32,29 +34,31 @@ function AddressForm({ form, setForm, onCancel, onSave, saving, error, title = '
       </div>
 
       {/* Full address */}
-      <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-        Full Address <span className="text-orange-500">*</span>
+      <label htmlFor="address-full" className="block text-xs font-semibold text-foreground mb-1.5">
+        Full Address <span className="text-primary">*</span>
       </label>
       <input
+        id="address-full"
         placeholder="House no., street, area"
         value={form.address}
         maxLength={250}
         onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
-        className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-white text-sm outline-none focus:border-orange-400 transition-colors placeholder-gray-400 mb-3"
+        className="w-full px-4 py-3 rounded-2xl border border-border bg-card text-sm outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground mb-3"
       />
 
       {/* Landmark */}
-      <label className="block text-xs font-semibold text-gray-700 mb-1.5">Landmark</label>
+      <label htmlFor="address-landmark" className="block text-xs font-semibold text-foreground mb-1.5">Landmark</label>
       <input
+        id="address-landmark"
         placeholder="e.g. Near temple"
         value={form.landmark}
         maxLength={120}
         onChange={e => setForm(f => ({ ...f, landmark: e.target.value }))}
-        className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-white text-sm outline-none focus:border-orange-400 transition-colors placeholder-gray-400 mb-4"
+        className="w-full px-4 py-3 rounded-2xl border border-border bg-card text-sm outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground mb-4"
       />
 
       {error && (
-        <div className="flex items-center gap-1.5 text-red-500 mb-3">
+        <div className="flex items-center gap-1.5 text-destructive mb-3">
           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
           <p className="text-xs">{error}</p>
         </div>
@@ -65,14 +69,14 @@ function AddressForm({ form, setForm, onCancel, onSave, saving, error, title = '
         <button
           onClick={onCancel}
           disabled={saving}
-          className="flex-1 py-3 rounded-2xl border border-gray-200 text-sm font-semibold text-gray-700 bg-white active:scale-[0.98] transition-all"
+          className="flex-1 py-3 rounded-2xl border border-border text-sm font-semibold text-foreground bg-card active:scale-[0.98] transition-all"
         >
           Cancel
         </button>
         <button
           onClick={onSave}
           disabled={saving || !form.address.trim()}
-          className="flex-[2] py-3 rounded-2xl bg-orange-500 text-white text-sm font-semibold disabled:opacity-40 active:scale-[0.98] transition-all"
+          className="flex-[2] py-3 rounded-2xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-40 active:scale-[0.98] transition-all"
         >
           {saving
             ? <Loader2 className="w-4 h-4 animate-spin mx-auto" />
@@ -91,30 +95,30 @@ function AddressCard({ addr, onEdit, onDelete, onSetDefault, busy }) {
   return (
     <div className={`rounded-2xl border-2 p-4 transition-all ${
       addr.isDefault
-        ? 'border-orange-300 bg-orange-50'
-        : 'border-gray-100 bg-white shadow-sm'
+        ? 'border-primary/30 bg-primary/5'
+        : 'border-border bg-card shadow-sm'
     }`}>
       <div className="flex items-start gap-3">
         {/* Pin icon */}
         <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
-          addr.isDefault ? 'bg-orange-100' : 'bg-orange-50'
+          addr.isDefault ? 'bg-primary/15' : 'bg-primary/5'
         }`}>
-          <MapPin className="w-5 h-5 text-orange-500" />
+          <MapPin className="w-5 h-5 text-primary" />
         </div>
 
         {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
-            <p className="text-sm font-bold text-gray-900">{addr.label}</p>
+            <p className="text-sm font-bold text-foreground">{addr.label}</p>
             {addr.isDefault && (
-              <span className="text-xs font-semibold text-orange-500 bg-orange-100 px-2.5 py-0.5 rounded-full">
+              <span className="text-xs font-semibold text-primary bg-primary/15 px-2.5 py-0.5 rounded-full">
                 Default
               </span>
             )}
           </div>
-          <p className="text-sm text-gray-500 leading-relaxed">{addr.address}</p>
+          <p className="text-sm text-muted-foreground leading-relaxed">{addr.address}</p>
           {addr.landmark && (
-            <p className="text-xs text-gray-400 mt-0.5">Near: {addr.landmark}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Near: {addr.landmark}</p>
           )}
         </div>
 
@@ -122,7 +126,7 @@ function AddressCard({ addr, onEdit, onDelete, onSetDefault, busy }) {
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => onEdit(addr)}
-            className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-700 transition-colors"
+            className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
             aria-label={`Edit ${addr.label}`}
           >
             <Pencil className="w-4 h-4" />
@@ -130,7 +134,7 @@ function AddressCard({ addr, onEdit, onDelete, onSetDefault, busy }) {
           <button
             onClick={() => setConfirmDelete(true)}
             disabled={busy}
-            className="w-8 h-8 flex items-center justify-center text-red-400 hover:text-red-600 transition-colors disabled:opacity-40"
+            className="w-8 h-8 flex items-center justify-center text-destructive/70 hover:text-destructive transition-colors disabled:opacity-40"
             aria-label={`Delete ${addr.label}`}
           >
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
@@ -140,18 +144,18 @@ function AddressCard({ addr, onEdit, onDelete, onSetDefault, busy }) {
 
       {/* Delete confirm */}
       {confirmDelete && (
-        <div className="mt-3 p-3 rounded-xl border border-red-100 bg-red-50">
-          <p className="text-xs font-medium text-gray-800 mb-2">Delete this address?</p>
+        <div className="mt-3 p-3 rounded-xl border border-destructive/20 bg-destructive/10">
+          <p className="text-xs font-medium text-foreground mb-2">Delete this address?</p>
           <div className="flex gap-2">
             <button
               onClick={() => setConfirmDelete(false)}
-              className="flex-1 py-1.5 rounded-xl border border-gray-200 text-xs font-medium bg-white"
+              className="flex-1 py-1.5 rounded-xl border border-border text-xs font-medium bg-card"
             >
               Cancel
             </button>
             <button
               onClick={() => { setConfirmDelete(false); onDelete(addr.id); }}
-              className="flex-1 py-1.5 rounded-xl bg-red-500 text-white text-xs font-medium"
+              className="flex-1 py-1.5 rounded-xl bg-destructive text-destructive-foreground text-xs font-medium"
             >
               Delete
             </button>
@@ -164,11 +168,11 @@ function AddressCard({ addr, onEdit, onDelete, onSetDefault, busy }) {
         <button
           onClick={() => onSetDefault(addr.id)}
           disabled={busy}
-          className="mt-3 w-full py-2.5 rounded-2xl border border-gray-200 bg-white text-sm font-medium text-gray-700 flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-40"
+          className="mt-3 w-full py-2.5 rounded-2xl border border-border bg-card text-sm font-medium text-foreground flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-40"
         >
           {busy
             ? <Loader2 className="w-4 h-4 animate-spin" />
-            : <CheckCircle className="w-4 h-4 text-gray-500" />
+            : <CheckCircle className="w-4 h-4 text-muted-foreground" />
           }
           Set as Default
         </button>
@@ -235,6 +239,13 @@ export default function CustomerAddresses() {
 
   // ── Save ───────────────────────────────────────────────────
   const handleSave = async () => {
+    // Re-entry guard: the trigger button is already disabled while
+    // saving is true, but that disabled state only takes effect on
+    // React's next render — a fast double-tap (common on the lower-end
+    // Android hardware this app targets) can fire this handler twice
+    // before that happens. Guard here too rather than rely on the
+    // button alone.
+    if (saving) return;
     if (!form.address.trim()) { setFormError('Full address is required'); return; }
     if (!user?.id) { setFormError('You must be signed in'); return; }
     setSaving(true);
@@ -307,17 +318,17 @@ export default function CustomerAddresses() {
   };
 
   return (
-    <div className="pb-6 bg-gray-50 min-h-screen">
+    <div className="pb-6 bg-muted/50 min-h-screen">
       <AppHeader title="My Addresses" showBack />
 
       <div className="px-4 pt-4 space-y-3">
 
         {/* Error banner */}
         {error && (
-          <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-2xl px-4 py-3">
-            <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
-            <p className="text-xs text-red-600 flex-1">{error}</p>
-            <button onClick={load} className="text-xs text-red-500 font-medium underline">Retry</button>
+          <div className="flex items-center gap-2 bg-destructive/10 border border-destructive/20 rounded-2xl px-4 py-3">
+            <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
+            <p className="text-xs text-destructive flex-1">{error}</p>
+            <button onClick={load} className="text-xs text-destructive font-medium underline">Retry</button>
           </div>
         )}
 
@@ -325,13 +336,13 @@ export default function CustomerAddresses() {
         {loading && (
           <>
             {[0, 1].map(i => (
-              <div key={i} className="bg-white rounded-2xl border border-gray-100 p-4 animate-pulse">
+              <div key={i} className="bg-card rounded-2xl border border-border p-4 animate-pulse">
                 <div className="flex items-start gap-3">
-                  <div className="w-11 h-11 rounded-2xl bg-gray-100 shrink-0" />
+                  <div className="w-11 h-11 rounded-2xl bg-muted shrink-0" />
                   <div className="flex-1 space-y-2 pt-1">
-                    <div className="h-3.5 w-16 bg-gray-100 rounded-full" />
-                    <div className="h-3 w-40 bg-gray-100 rounded-full" />
-                    <div className="h-3 w-28 bg-gray-100 rounded-full" />
+                    <div className="h-3.5 w-16 bg-muted rounded-full" />
+                    <div className="h-3 w-40 bg-muted rounded-full" />
+                    <div className="h-3 w-28 bg-muted rounded-full" />
                   </div>
                 </div>
               </div>
@@ -341,15 +352,15 @@ export default function CustomerAddresses() {
 
         {/* Empty state */}
         {!loading && addresses.length === 0 && formMode !== 'new' && (
-          <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center shadow-sm">
-            <div className="w-14 h-14 rounded-full bg-orange-50 flex items-center justify-center mx-auto mb-3">
-              <MapPin className="w-7 h-7 text-orange-400" />
+          <div className="bg-card rounded-2xl border border-border p-8 text-center shadow-sm">
+            <div className="w-14 h-14 rounded-full bg-primary/5 flex items-center justify-center mx-auto mb-3">
+              <MapPin className="w-7 h-7 text-primary/70" />
             </div>
-            <p className="text-sm font-semibold text-gray-800 mb-1">No saved addresses</p>
-            <p className="text-xs text-gray-400 mb-4">Add a delivery address so vendors know where to deliver.</p>
+            <p className="text-sm font-semibold text-foreground mb-1">No saved addresses</p>
+            <p className="text-xs text-muted-foreground mb-4">Add a delivery address so vendors know where to deliver.</p>
             <button
               onClick={openAdd}
-              className="px-6 py-2.5 rounded-full bg-orange-500 text-white text-sm font-semibold"
+              className="px-6 py-2.5 rounded-full bg-primary text-primary-foreground text-sm font-semibold"
             >
               + Add Address
             </button>
@@ -397,7 +408,7 @@ export default function CustomerAddresses() {
         {!loading && formMode === null && addresses.length > 0 && (
           <button
             onClick={openAdd}
-            className="w-full py-4 rounded-2xl border-2 border-dashed border-gray-200 bg-white text-sm font-semibold text-gray-700 flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+            className="w-full py-4 rounded-2xl border-2 border-dashed border-border bg-card text-sm font-semibold text-foreground flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
           >
             <Plus className="w-4 h-4" /> Add New Address
           </button>

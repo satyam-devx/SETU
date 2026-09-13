@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, ShoppingCart, Share2, Plus, Minus, Loader2, AlertCircle } from 'lucide-react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, ShoppingCart, Share2, Plus, Minus, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
@@ -9,6 +9,7 @@ import { useDataFetch } from '@/hooks/useDataFetch';
 import { getProductById } from '@/lib/api';
 import Img from '@/components/shared/Img';
 import { toast } from '@/components/ui/use-toast';
+import { smartGoBack } from '@/lib/utils';
 
 // ── Loading skeleton ──────────────────────────────────────
 function ProductSkeleton() {
@@ -28,6 +29,7 @@ function ProductSkeleton() {
 
 export default function CustomerProductDetail() {
   const { productId } = useParams();
+  const navigate = useNavigate();
   const { addItem } = useCart();
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
@@ -97,7 +99,13 @@ export default function CustomerProductDetail() {
     <div className="pb-24">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-3">
-        <Link to="/customer" className="p-1 -ml-1"><ArrowLeft className="w-5 h-5" /></Link>
+        <button
+          onClick={() => smartGoBack(navigate)}
+          className="touch-target -ml-2 flex items-center justify-center shrink-0 rounded-lg hover:bg-muted transition-colors"
+          aria-label="Go back"
+        >
+          <ArrowLeft className="w-5 h-5" aria-hidden="true" />
+        </button>
         <span className="font-semibold text-sm flex-1 truncate">{name}</span>
         <Button variant="ghost" size="icon" onClick={handleShare} aria-label="Share this product">
           <Share2 className="w-4 h-4" />

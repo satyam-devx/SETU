@@ -152,3 +152,19 @@ export const storage = {
     try { localStorage.removeItem(key); } catch {}
   },
 };
+
+// ── Smart back navigation ────────────────────────────────
+// Several customer screens (Vendors, Vendor Profile, Product Detail,
+// Search) hardcoded their back/close control straight to `/customer`
+// (Home) regardless of where the user actually came from — so tapping
+// back from a product reached via Search, or via a vendor's page,
+// dropped the user at Home instead of back to those results, losing
+// their place. Mirrors AppHeader's own back-button logic so every
+// custom header in the app behaves the same way.
+export function smartGoBack(navigate, fallback = '/customer') {
+  if (typeof window !== 'undefined' && window.history.length > 1) {
+    navigate(-1);
+  } else {
+    navigate(fallback);
+  }
+}

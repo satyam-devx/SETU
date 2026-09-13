@@ -37,7 +37,7 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import { formatCurrency, timeAgo } from '@/lib/utils';
+import { formatCurrency } from '@/lib/utils';
 
 // ── Banners (Constitution: localised seasonal content) ────
 // Links use `q` (free-text search), not `category` — these are seasonal
@@ -208,6 +208,7 @@ export default function CustomerHome() {
   };
 
   const handleConfirmVillage = async () => {
+    if (villageSaving) return; // re-entry guard
     if (!selectedVillageId || selectedVillageId === village?.id) {
       setVillageDialogOpen(false);
       return;
@@ -253,11 +254,17 @@ export default function CustomerHome() {
     () => getCategories(),
     [], { cacheKey: 'categories' }
   );
-  const { data: vendors, isLoading: vendorsLoading }     = useDataFetch(
+  const {
+    data: vendors, isLoading: vendorsLoading,
+    error: vendorsError, refetch: refetchVendors,
+  } = useDataFetch(
     () => getVendors({ villageId: village?.id }),
     [village?.id], { cacheKey: `vendors-${village?.id}` }
   );
-  const { data: products, isLoading: productsLoading }   = useDataFetch(
+  const {
+    data: products, isLoading: productsLoading,
+    error: productsError, refetch: refetchProducts,
+  } = useDataFetch(
     () => getProducts({ limit: 6 }),
     [], { cacheKey: 'home-products' }
   );
@@ -468,6 +475,12 @@ export default function CustomerHome() {
           <div className="scroll-strip px-4" aria-busy="true">
             {[1,2,3].map(i => <VendorCardSkeleton key={i} />)}
           </div>
+        ) : vendorsError ? (
+          <div className="px-4 flex flex-col items-center gap-2 py-6">
+            <AlertCircle className="w-6 h-6 text-destructive" aria-hidden="true" />
+            <p className="text-xs text-muted-foreground text-center">Could not load vendors.</p>
+            <button onClick={refetchVendors} className="text-xs text-primary font-semibold underline">Retry</button>
+          </div>
         ) : !vendors?.length ? (
           <EmptyState
             emoji="🏪"
@@ -496,6 +509,12 @@ export default function CustomerHome() {
         {productsLoading ? (
           <div className="grid grid-cols-2 gap-3" aria-busy="true">
             {[1,2,3,4].map(i => <ProductCardSkeleton key={i} />)}
+          </div>
+        ) : productsError ? (
+          <div className="flex flex-col items-center gap-2 py-6">
+            <AlertCircle className="w-6 h-6 text-destructive" aria-hidden="true" />
+            <p className="text-xs text-muted-foreground text-center">Could not load products.</p>
+            <button onClick={refetchProducts} className="text-xs text-primary font-semibold underline">Retry</button>
           </div>
         ) : !products?.length ? (
           <EmptyState emoji="🛒" title="No products yet" size="sm" />

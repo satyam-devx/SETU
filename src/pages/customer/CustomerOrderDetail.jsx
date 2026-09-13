@@ -122,7 +122,10 @@ export default function CustomerOrderDetail() {
   const storeOrder = state.orders.find(o => o.id === orderId);
 
   // 2. Fetch from DB only when not in store
-  const { data: fetchedOrder, isLoading: fetchLoading } = useDataFetch(
+  const {
+    data: fetchedOrder, isLoading: fetchLoading,
+    error: fetchError, refetch: refetchOrder,
+  } = useDataFetch(
     () => getOrderById(orderId),
     [orderId],
     { cacheKey: `order:${orderId}`, enabled: !storeOrder && !!orderId }
@@ -151,9 +154,21 @@ export default function CustomerOrderDetail() {
   if (isLoading) return <OrderSkeleton />;
 
   if (!order) {
+    // Used to say "Order not found" unconditionally — indistinguishable
+    // from a genuinely failed fetch (network error, RLS issue), which
+    // just needs a retry rather than sending the customer away.
+    if (fetchError) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center gap-3 px-6 text-center">
+          <AlertCircle className="w-10 h-10 text-destructive" aria-hidden="true" />
+          <p className="text-sm text-muted-foreground">Could not load this order.</p>
+          <Button onClick={refetchOrder}>Retry</Button>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-3 px-6 text-center">
-        <AlertCircle className="w-10 h-10 text-muted-foreground" />
+        <AlertCircle className="w-10 h-10 text-muted-foreground" aria-hidden="true" />
         <p className="text-sm text-muted-foreground">Order not found.</p>
         <Button onClick={() => navigate('/customer/orders')}>Back to Orders</Button>
       </div>
@@ -179,6 +194,13 @@ export default function CustomerOrderDetail() {
   const timeline  = TIMELINE[order.status] ?? TIMELINE.pending;
 
   const handleCancel = async () => {
+    // Re-entry guard: the trigger button is already disabled while
+    // cancelling is true, but that disabled state only takes effect on
+    // React's next render — a fast double-tap (common on the lower-end
+    // Android hardware this app targets) can fire this handler twice
+    // before that happens. Guard here too rather than rely on the
+    // button alone.
+    if (cancelling) return;
     if (!cancelReason.trim()) return;
     setCancelling(true);
     setCancelError(null);
@@ -201,6 +223,13 @@ export default function CustomerOrderDetail() {
   };
 
   const handleRating = async () => {
+    // Re-entry guard: the trigger button is already disabled while
+    // actionLoading is true, but that disabled state only takes effect on
+    // React's next render — a fast double-tap (common on the lower-end
+    // Android hardware this app targets) can fire this handler twice
+    // before that happens. Guard here too rather than rely on the
+    // button alone.
+    if (actionLoading) return;
     if (rating === 0) return;
     setActionLoading(true);
     setRatingError(null);
@@ -383,6 +412,18 @@ export default function CustomerOrderDetail() {
           <p className="text-xs text-muted-foreground">{order.village}</p>
         </Card>
       </div>
+
+      {(order.deliveryAddress ?? order.delivery_address) && (
+        <div className="px-4 mb-4">
+          <Card className="p-3 border-border flex items-start gap-2">
+            <MapPin className="w-4 h-4 text-primary shrink-0 mt-0.5" aria-hidden="true" />
+            <div className="min-w-0">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">Delivered to</p>
+              <p className="text-sm">{order.deliveryAddress ?? order.delivery_address}</p>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* Rating (post-delivery) */}
       {order.status === 'delivered' && !ratingSubmitted && !isRated && (

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Mic, X, Star, SlidersHorizontal, Loader2 } from 'lucide-react';
+import { Search, Mic, X, Star, SlidersHorizontal, Loader2, AlertCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,7 @@ import EmptyState from '@/components/shared/EmptyState';
 import Img from '@/components/shared/Img';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { getCategories, getProducts, getVendors } from '@/lib/api';
+import { smartGoBack } from '@/lib/utils';
 
 // ── Debounce hook ──────────────────────────────────────────
 function useDebounce(value, delay = 350) {
@@ -54,6 +55,8 @@ export default function CustomerSearch() {
   const {
     data: rawProducts,
     isLoading: productsLoading,
+    error: productsError,
+    refetch: refetchProducts,
   } = useDataFetch(
     () => getProducts({
       search:   debouncedQuery || undefined,
@@ -71,6 +74,8 @@ export default function CustomerSearch() {
   const {
     data: rawVendors,
     isLoading: vendorsLoading,
+    error: vendorsError,
+    refetch: refetchVendors,
   } = useDataFetch(
     () => getVendors({ limit: 40 }),
     [],
@@ -103,9 +108,13 @@ export default function CustomerSearch() {
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background px-4 py-3 border-b border-border space-y-2">
         <div className="flex items-center gap-2">
-          <Link to="/customer" className="shrink-0" aria-label="Close search">
-            <X className="w-5 h-5 text-muted-foreground" />
-          </Link>
+          <button
+            onClick={() => smartGoBack(navigate)}
+            className="touch-target -ml-2 flex items-center justify-center shrink-0 rounded-lg hover:bg-muted transition-colors"
+            aria-label="Close search"
+          >
+            <X className="w-5 h-5 text-muted-foreground" aria-hidden="true" />
+          </button>
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -116,8 +125,12 @@ export default function CustomerSearch() {
               onChange={e => setQuery(e.target.value)}
             />
             {query && (
-              <button onClick={() => setQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2">
-                <X className="w-4 h-4 text-muted-foreground" />
+              <button
+                onClick={() => setQuery('')}
+                className="absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center"
+                aria-label="Clear search"
+              >
+                <X className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
               </button>
             )}
           </div>
@@ -220,7 +233,13 @@ export default function CustomerSearch() {
       {/* Results */}
       <div className="px-4 py-3">
         {viewMode === 'products' && (
-          !isSearching && products.length === 0
+          !isSearching && productsError
+            ? <div className="flex flex-col items-center gap-2 py-8">
+                <AlertCircle className="w-6 h-6 text-destructive" />
+                <p className="text-xs text-muted-foreground text-center">Could not load products. Please try again.</p>
+                <button onClick={refetchProducts} className="text-xs text-primary font-semibold underline">Retry</button>
+              </div>
+          : !isSearching && products.length === 0
             ? <EmptyState icon={Search} title="No products found" description="Try a different search or remove filters" />
             : <div className="grid grid-cols-2 gap-3">
                 {products.map(p => {
@@ -258,7 +277,13 @@ export default function CustomerSearch() {
         )}
 
         {viewMode === 'vendors' && (
-          !isSearching && vendors.length === 0
+          !isSearching && vendorsError
+            ? <div className="flex flex-col items-center gap-2 py-8">
+                <AlertCircle className="w-6 h-6 text-destructive" />
+                <p className="text-xs text-muted-foreground text-center">Could not load vendors. Please try again.</p>
+                <button onClick={refetchVendors} className="text-xs text-primary font-semibold underline">Retry</button>
+              </div>
+          : !isSearching && vendors.length === 0
             ? <EmptyState icon={Search} title="No vendors found" description="Try a different search" />
             : <div className="space-y-3">
                 {vendors.map(v => {

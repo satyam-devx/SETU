@@ -83,6 +83,13 @@ export default function CustomerProfile() {
   };
 
   const handleSaveProfile = async () => {
+    // Re-entry guard: the trigger button is already disabled while
+    // saving is true, but that disabled state only takes effect on
+    // React's next render — a fast double-tap (common on the lower-end
+    // Android hardware this app targets) can fire this handler twice
+    // before that happens. Guard here too rather than rely on the
+    // button alone.
+    if (saving) return;
     if (!form.name.trim()) {
       setFormError('Full name is required');
       return;
@@ -261,8 +268,9 @@ export default function CustomerProfile() {
 
           <div className="space-y-4 py-2">
             <div>
-              <Label className="text-xs mb-1 block">Full Name *</Label>
+              <Label htmlFor="profile-name" className="text-xs mb-1 block">Full Name *</Label>
               <Input
+                id="profile-name"
                 value={form.name}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                 maxLength={60}
@@ -271,8 +279,8 @@ export default function CustomerProfile() {
             </div>
 
             <div>
-              <Label className="text-xs mb-1 block">Phone Number</Label>
-              <Input value={phone ? formatPhone(phone) : 'Not set'} disabled />
+              <Label htmlFor="profile-phone" className="text-xs mb-1 block">Phone Number</Label>
+              <Input id="profile-phone" value={phone ? formatPhone(phone) : 'Not set'} disabled />
               <Link
                 to="/customer/account"
                 className="text-xs text-primary font-medium mt-1 inline-block"
@@ -283,7 +291,7 @@ export default function CustomerProfile() {
             </div>
 
             <div>
-              <Label className="text-xs mb-1 block">Village</Label>
+              <Label htmlFor="profile-village" className="text-xs mb-1 block">Village</Label>
               {vilLoading ? (
                 <div className="h-10 flex items-center px-3 border border-border rounded-xl">
                   <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
@@ -293,7 +301,7 @@ export default function CustomerProfile() {
                   value={form.villageId || undefined}
                   onValueChange={v => setForm(f => ({ ...f, villageId: v }))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="profile-village">
                     <SelectValue placeholder="Select your village" />
                   </SelectTrigger>
                   <SelectContent>
@@ -308,12 +316,12 @@ export default function CustomerProfile() {
             {selectedVillage && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-xs mb-1 block">District</Label>
-                  <Input value={selectedVillage.district} disabled />
+                  <Label htmlFor="profile-district" className="text-xs mb-1 block">District</Label>
+                  <Input id="profile-district" value={selectedVillage.district} disabled />
                 </div>
                 <div>
-                  <Label className="text-xs mb-1 block">State</Label>
-                  <Input value={selectedVillage.state} disabled />
+                  <Label htmlFor="profile-state" className="text-xs mb-1 block">State</Label>
+                  <Input id="profile-state" value={selectedVillage.state} disabled />
                 </div>
               </div>
             )}

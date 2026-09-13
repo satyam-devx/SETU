@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
 import { getWallet, getWalletTransactions } from '@/lib/api';
@@ -56,6 +57,13 @@ export default function CustomerWallet() {
 
   // ── Razorpay top-up ───────────────────────────────────────
   const handleTopup = async () => {
+    // Re-entry guard: the trigger button is already disabled while
+    // topping is true, but that disabled state only takes effect on
+    // React's next render — a fast double-tap (common on the lower-end
+    // Android hardware this app targets) can fire this handler twice
+    // before that happens. Guard here too rather than rely on the
+    // button alone.
+    if (topping) return;
     const n = parseInt(amount, 10);
     if (!n || n < 10) {
       // Used to just silently do nothing here — the button looked
@@ -99,7 +107,7 @@ export default function CustomerWallet() {
 
   return (
     <div className="pb-6">
-      <AppHeader title="SETU Wallet" showBack />
+      <AppHeader title="SETU Wallet" />
       <div className="px-4 py-4 space-y-4">
 
         {/* Global error */}
@@ -169,8 +177,10 @@ export default function CustomerWallet() {
             </div>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                <Label htmlFor="wallet-topup-amount" className="sr-only">Top-up amount</Label>
+                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" aria-hidden="true" />
                 <Input
+                  id="wallet-topup-amount"
                   type="number"
                   placeholder="Enter amount"
                   className="pl-8"

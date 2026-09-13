@@ -24,7 +24,10 @@ export default function CustomerReorder() {
   const storeOrder = state.orders.find(o => o.id === orderId);
 
   // 2. If not in store, fetch from DB — enabled only when missing
-  const { data: fetchedOrder, isLoading: orderLoading } = useDataFetch(
+  const {
+    data: fetchedOrder, isLoading: orderLoading,
+    error: orderError, refetch: refetchOrder,
+  } = useDataFetch(
     () => getOrderById(orderId),
     [orderId],
     {
@@ -37,7 +40,10 @@ export default function CustomerReorder() {
 
   // 3. Once we have the order's vendor, fetch live product stock for that vendor
   const vendorId = order?.vendor_id ?? order?.vendorId;
-  const { data: liveProducts, isLoading: productsLoading } = useDataFetch(
+  const {
+    data: liveProducts, isLoading: productsLoading,
+    error: productsError, refetch: refetchProducts,
+  } = useDataFetch(
     () => getProducts({ vendorId }),
     [vendorId],
     {
@@ -58,9 +64,20 @@ export default function CustomerReorder() {
   }
 
   if (!order) {
+    // Distinguish a genuine fetch failure (retry-able) from the order
+    // truly not existing — same fix as CustomerOrderDetail.jsx.
+    if (orderError) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center gap-3 px-6 text-center">
+          <AlertCircle className="w-10 h-10 text-destructive" aria-hidden="true" />
+          <p className="text-sm text-muted-foreground">Could not load this order.</p>
+          <Button onClick={refetchOrder}>Retry</Button>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-3 px-6 text-center">
-        <AlertCircle className="w-10 h-10 text-muted-foreground" />
+        <AlertCircle className="w-10 h-10 text-muted-foreground" aria-hidden="true" />
         <p className="text-sm text-muted-foreground">Original order not found.</p>
         <Button onClick={() => navigate('/customer/orders')}>Back to Orders</Button>
       </div>
@@ -144,6 +161,23 @@ export default function CustomerReorder() {
             {createdAt ? new Date(createdAt).toLocaleDateString('en-IN') : '—'}
           </p>
         </Card>
+
+        {productsError && (
+          // Without this, a failed stock check silently looked identical
+          // to "the vendor has none of these in stock" (enrichedItems
+          // falls back to treating every item as unavailable) — worth
+          // being explicit that it's a load failure, not a real stock
+          // reality, since it changes what the customer should do next.
+          <div className="flex items-center justify-between gap-2 bg-destructive/10 border border-destructive/20 rounded-2xl px-4 py-3">
+            <p className="text-xs text-destructive flex items-center gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              Could not check current stock — availability below may be inaccurate.
+            </p>
+            <button onClick={refetchProducts} className="text-xs text-primary font-semibold shrink-0 underline">
+              Retry
+            </button>
+          </div>
+        )}
 
         <div className="space-y-2">
           {enrichedItems.map((item, i) => (

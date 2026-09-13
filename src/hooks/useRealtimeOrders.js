@@ -220,7 +220,15 @@ export function useRealtimeNotifications() {
     if (!isSupabaseConfigured || !user) return;
     let mounted = true;
     NotificationAPI.getAll(user.id).then(({ data, error }) => {
-      if (!mounted || error || !data) return;
+      if (!mounted) return;
+      if (error || !data) {
+        // Used to be silently swallowed — a failed history fetch left
+        // the customer looking at an empty "No notifications" screen
+        // indistinguishable from genuinely having none, with no way to
+        // tell something had gone wrong or to retry.
+        dispatchRef.current({ type: 'NOTIFICATIONS_LOAD_ERROR', payload: { message: error?.message } });
+        return;
+      }
       dispatchRef.current({ type: 'HYDRATE_NOTIFICATIONS', payload: { notifications: data } });
     });
     return () => { mounted = false; };

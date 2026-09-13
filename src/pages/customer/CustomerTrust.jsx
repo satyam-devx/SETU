@@ -1,9 +1,8 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Shield, Star, TrendingUp, CheckCircle, Lock, Gift, ChevronRight } from 'lucide-react';
+import { Star, TrendingUp, CheckCircle, Lock, Gift, ChevronRight } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import AppHeader from '@/components/shared/AppHeader';
 import { useStore } from '@/lib/store';

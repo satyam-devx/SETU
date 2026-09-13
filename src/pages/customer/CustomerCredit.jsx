@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
 import { CreditAPI } from '@/lib/api';
@@ -76,6 +77,13 @@ export default function CustomerCredit() {
 
   // ── Apply for credit ──────────────────────────────────────
   const handleApply = async () => {
+    // Re-entry guard: the trigger button is already disabled while
+    // applying is true, but that disabled state only takes effect on
+    // React's next render — a fast double-tap (common on the lower-end
+    // Android hardware this app targets) can fire this handler twice
+    // before that happens. Guard here too rather than rely on the
+    // button alone.
+    if (applying) return;
     if (!applyAmt) return;
     const amt = parseInt(applyAmt, 10);
     if (!amt || amt <= 0) {
@@ -102,6 +110,13 @@ export default function CustomerCredit() {
 
   // ── Repay via Razorpay ────────────────────────────────────
   const handleRepay = async () => {
+    // Re-entry guard: the trigger button is already disabled while
+    // repaying is true, but that disabled state only takes effect on
+    // React's next render — a fast double-tap (common on the lower-end
+    // Android hardware this app targets) can fire this handler twice
+    // before that happens. Guard here too rather than rely on the
+    // button alone.
+    if (repaying) return;
     if (!repayAmt) return;
     const amt = parseInt(repayAmt, 10);
     if (!amt || amt <= 0) {
@@ -263,14 +278,18 @@ export default function CustomerCredit() {
                 </button>
               ))}
             </div>
+            <Label htmlFor="credit-apply-amount" className="sr-only">Credit amount</Label>
             <Input
+              id="credit-apply-amount"
               placeholder="Or enter amount"
               type="number"
               className="mb-2"
               value={applyAmt}
               onChange={e => setApplyAmt(e.target.value)}
             />
+            <Label htmlFor="credit-apply-purpose" className="sr-only">Purpose</Label>
             <Input
+              id="credit-apply-purpose"
               placeholder="Purpose (e.g. groceries, medicine)"
               className="mb-3"
               value={applyPurpose}
@@ -320,7 +339,9 @@ export default function CustomerCredit() {
               ))}
             </div>
             <div className="flex gap-2">
+              <Label htmlFor="credit-repay-amount" className="sr-only">Repayment amount</Label>
               <Input
+                id="credit-repay-amount"
                 placeholder="Amount"
                 type="number"
                 className="flex-1"

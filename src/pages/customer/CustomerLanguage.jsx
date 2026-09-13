@@ -69,15 +69,16 @@ function speakText(text, ttsLang) {
 // ── Preference toggle row ───────────────────────────────────────
 function PrefToggle({ label, description, checked, onToggle }) {
   return (
-    <div className="flex items-center justify-between p-4 bg-white rounded-2xl border border-gray-100 shadow-sm">
+    <div className="flex items-center justify-between p-4 bg-card rounded-2xl border border-border shadow-sm">
       <div className="flex-1 pr-4">
-        <p className="text-sm font-semibold text-gray-900">{label}</p>
-        <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{description}</p>
+        <p className="text-sm font-semibold text-foreground">{label}</p>
+        <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{description}</p>
       </div>
       <Switch
         checked={checked}
         onCheckedChange={onToggle}
-        className="data-[state=checked]:bg-orange-500 shrink-0"
+        aria-label={label}
+        className="data-[state=checked]:bg-primary shrink-0"
       />
     </div>
   );
@@ -100,29 +101,29 @@ function LangCard({ lang, selected, onSelect, speaking, onListen }) {
       }}
       className={`w-full text-left rounded-2xl border-2 p-4 transition-all cursor-pointer ${
         isSelected
-          ? 'border-orange-500 bg-orange-50'
-          : 'border-gray-100 bg-white shadow-sm'
+          ? 'border-primary bg-primary/5'
+          : 'border-border bg-card shadow-sm'
       }`}
     >
       {/* Header row */}
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-bold text-gray-900">{lang.name}</span>
-          <span className="text-sm text-gray-500">({lang.english})</span>
+          <span className="text-2xl font-bold text-foreground">{lang.name}</span>
+          <span className="text-sm text-muted-foreground">({lang.english})</span>
         </div>
         {isSelected && (
-          <div className="w-6 h-6 rounded-full border-2 border-orange-500 flex items-center justify-center bg-white shrink-0">
-            <Check className="w-3.5 h-3.5 text-orange-500 stroke-[2.5]" />
+          <div className="w-6 h-6 rounded-full border-2 border-primary flex items-center justify-center bg-card shrink-0">
+            <Check className="w-3.5 h-3.5 text-primary stroke-[2.5]" />
           </div>
         )}
       </div>
 
       {/* Region */}
-      <p className="text-xs text-gray-400 mb-3">{lang.region}</p>
+      <p className="text-xs text-muted-foreground mb-3">{lang.region}</p>
 
       {/* Sample sentence */}
-      <div className="bg-gray-50 rounded-xl px-3 py-2 mb-3">
-        <p className="text-sm italic text-gray-700">{lang.sample}</p>
+      <div className="bg-muted/50 rounded-xl px-3 py-2 mb-3">
+        <p className="text-sm italic text-foreground">{lang.sample}</p>
       </div>
 
       {/* Listen + Script badge row */}
@@ -134,8 +135,8 @@ function LangCard({ lang, selected, onSelect, speaking, onListen }) {
           onClick={() => onListen(lang)}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
             speaking === lang.code
-              ? 'border-orange-400 text-orange-600 bg-orange-50'
-              : 'border-gray-200 text-gray-600 bg-white hover:bg-gray-50'
+              ? 'border-primary/50 text-primary bg-primary/5'
+              : 'border-border text-muted-foreground bg-card hover:bg-muted/50'
           }`}
         >
           {/* Speaker icon */}
@@ -147,7 +148,7 @@ function LangCard({ lang, selected, onSelect, speaking, onListen }) {
           {speaking === lang.code ? 'Playing…' : 'Listen'}
         </button>
 
-        <span className="text-xs px-3 py-1.5 rounded-full bg-gray-100 text-gray-600 font-medium">
+        <span className="text-xs px-3 py-1.5 rounded-full bg-muted text-muted-foreground font-medium">
           {lang.script}
         </span>
       </div>
@@ -232,6 +233,7 @@ export default function CustomerLanguage() {
 
   // ── Save preferences ──────────────────────────────────────────
   const handleSave = async () => {
+    if (saving) return; // re-entry guard
     setSaving(true);
     setSaved(false);
     setError(null);
@@ -255,7 +257,7 @@ export default function CustomerLanguage() {
   };
 
   return (
-    <div className="pb-24 bg-gray-50 min-h-screen">
+    <div className="pb-24 bg-muted/50 min-h-screen">
       <AppHeader title="Language & Voice" subtitle="भाषा एवं आवाज़ सेटिंग" showBack />
 
       <div className="px-4 pt-4 space-y-5">
@@ -263,8 +265,8 @@ export default function CustomerLanguage() {
         {/* ── App Language ──────────────────────────────────── */}
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <Globe className="w-4 h-4 text-orange-500" />
-            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">App Language</h2>
+            <Globe className="w-4 h-4 text-primary" />
+            <h2 className="text-sm font-bold text-foreground uppercase tracking-wide">App Language</h2>
           </div>
 
           <div className="space-y-3">
@@ -284,8 +286,8 @@ export default function CustomerLanguage() {
         {/* ── Language Preferences ──────────────────────────── */}
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <Mic className="w-4 h-4 text-orange-500" />
-            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Language Preferences</h2>
+            <Mic className="w-4 h-4 text-primary" />
+            <h2 className="text-sm font-bold text-foreground uppercase tracking-wide">Language Preferences</h2>
           </div>
 
           <div className="space-y-2">
@@ -328,9 +330,9 @@ export default function CustomerLanguage() {
 
         {/* ── Maithili info card (only when Maithili selected) ── */}
         {language === 'mai' && (
-          <div className="rounded-2xl bg-gray-100 p-4">
-            <p className="text-sm font-bold text-gray-900 mb-2">About Maithili on SETU</p>
-            <p className="text-sm text-gray-600 leading-relaxed">
+          <div className="rounded-2xl bg-muted p-4">
+            <p className="text-sm font-bold text-foreground mb-2">About Maithili on SETU</p>
+            <p className="text-sm text-muted-foreground leading-relaxed">
               SETU is one of the few platforms with full Maithili language support. Maithili,
               spoken by over 34 million people in Bihar and Jharkhand, is recognized in Schedule 8
               of the Indian Constitution. We are committed to preserving and promoting it in digital
@@ -354,8 +356,8 @@ export default function CustomerLanguage() {
             saved
               ? 'bg-green-500'
               : saving
-              ? 'bg-orange-300 cursor-not-allowed'
-              : 'bg-orange-500 active:scale-[0.98]'
+              ? 'bg-primary/30 cursor-not-allowed'
+              : 'bg-primary active:scale-[0.98]'
           }`}
         >
           {saving ? 'Saving…' : saved ? '✓ Preferences Saved' : 'Save Preferences'}

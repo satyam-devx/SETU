@@ -30,6 +30,13 @@ export default function CustomerFraudReport() {
   const [ticketId, setTicketId]     = useState('');
 
   const handleSubmit = () => {
+    // Re-entry guard: the trigger button is already disabled while
+    // submitting is true, but that disabled state only takes effect on
+    // React's next render — a fast double-tap (common on the lower-end
+    // Android hardware this app targets) can fire this handler twice
+    // before that happens. Guard here too rather than rely on the
+    // button alone.
+    if (submitting) return;
     if (!fraudType || !description.trim()) return;
     setSubmitting(true);
     setSubmitError(null);
@@ -84,12 +91,13 @@ export default function CustomerFraudReport() {
 
         <Card className="p-4 border-border space-y-4">
           <div>
-            <Label className="text-xs mb-2 block font-medium">Type of Issue *</Label>
-            <div className="space-y-1.5">
+            <Label id="fraud-type-label" className="text-xs mb-2 block font-medium">Type of Issue *</Label>
+            <div className="space-y-1.5" role="group" aria-labelledby="fraud-type-label">
               {FRAUD_TYPES.map(type => (
                 <button
                   key={type}
                   onClick={() => setFraudType(type)}
+                  aria-pressed={fraudType === type}
                   className={`w-full text-left text-sm p-3 rounded-xl border transition-colors ${fraudType === type ? 'border-primary bg-primary/5 font-medium' : 'border-border hover:bg-muted/40'}`}
                 >
                   {type}
@@ -99,8 +107,9 @@ export default function CustomerFraudReport() {
           </div>
 
           <div>
-            <Label className="text-xs mb-1 block font-medium">Order ID (if applicable)</Label>
+            <Label htmlFor="fraud-order-id" className="text-xs mb-1 block font-medium">Order ID (if applicable)</Label>
             <Input
+              id="fraud-order-id"
               placeholder="e.g. SETU-2025-1042"
               value={orderId}
               onChange={e => setOrderId(e.target.value)}
@@ -108,8 +117,9 @@ export default function CustomerFraudReport() {
           </div>
 
           <div>
-            <Label className="text-xs mb-1 block font-medium">Describe what happened *</Label>
+            <Label htmlFor="fraud-description" className="text-xs mb-1 block font-medium">Describe what happened *</Label>
             <Textarea
+              id="fraud-description"
               placeholder="Please describe the incident in detail. Include dates, amounts, names if known..."
               className="h-28 text-sm"
               value={description}

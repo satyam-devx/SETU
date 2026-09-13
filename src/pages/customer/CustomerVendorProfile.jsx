@@ -1,5 +1,5 @@
 import React from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Star, MapPin, Clock, ShoppingBag, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { getVendorById } from '@/lib/api';
 import Img from '@/components/shared/Img';
+import { smartGoBack } from '@/lib/utils';
 
 // ── Skeleton ──────────────────────────────────────────────
 function VendorSkeleton() {
@@ -27,6 +28,7 @@ function VendorSkeleton() {
 
 export default function CustomerVendorProfile() {
   const { vendorId } = useParams();
+  const navigate = useNavigate();
 
   // getVendorById selects '*, products(*)' — products nested under vendor
   const { data: vendor, isLoading, error } = useDataFetch(
@@ -71,7 +73,13 @@ export default function CustomerVendorProfile() {
   return (
     <div className="pb-20">
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-3">
-        <Link to="/customer" className="p-1 -ml-1"><ArrowLeft className="w-5 h-5" /></Link>
+        <button
+          onClick={() => smartGoBack(navigate)}
+          className="touch-target -ml-2 flex items-center justify-center shrink-0 rounded-lg hover:bg-muted transition-colors"
+          aria-label="Go back"
+        >
+          <ArrowLeft className="w-5 h-5" aria-hidden="true" />
+        </button>
         <span className="font-semibold text-sm flex-1 truncate">{name}</span>
       </div>
 

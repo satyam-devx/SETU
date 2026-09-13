@@ -10,9 +10,9 @@
 //   - Existing actions unchanged
 // ═══════════════════════════════════════════════════════════
 
-import { createContext, useContext, useReducer, useEffect } from 'react';
+import { createContext, useContext, useReducer } from 'react';
 import React from 'react';
-import { ORDERS, RIDERS, VENDORS, PRODUCTS, NOTIFICATIONS, WALLET } from './mockData';
+import { RIDERS, NOTIFICATIONS, WALLET } from './mockData';
 import { isSupabaseConfigured } from './supabase';
 
 // Mock seed data must ONLY appear in demo mode (no Supabase configured).
@@ -57,6 +57,7 @@ const initialState = {
   orders:          [],
   riders:          DEMO ? RIDERS : [],
   notifications:   DEMO ? NOTIFICATIONS : [],
+  notificationsError: null,
   wallet:          DEMO ? WALLET : { balance: 0, setuCredits: 0 },
   currentUser:     null,
   riderOnline:     true,
@@ -230,12 +231,22 @@ function setuReducer(state, action) {
     case 'HYDRATE_NOTIFICATIONS': {
       const { notifications } = action.payload;
       const normNotifs = (notifications ?? []).map(normaliseNotification).filter(Boolean);
-      if (!normNotifs.length) return state;
+      if (!normNotifs.length) return { ...state, notificationsError: null };
       return {
         ...state,
         notifications: normNotifs,
         unreadCount:   normNotifs.filter(n => !n.isRead).length,
+        notificationsError: null,
       };
+    }
+
+    // A failed initial-history fetch used to be swallowed silently (see
+    // useRealtimeNotifications in useRealtimeOrders.js) — the customer
+    // just saw an empty "No notifications" screen indistinguishable
+    // from actually having none, with no way to tell something had gone
+    // wrong or to retry.
+    case 'NOTIFICATIONS_LOAD_ERROR': {
+      return { ...state, notificationsError: action.payload?.message || 'Could not load notifications.' };
     }
 
     case 'NOTIFICATION_RECEIVED': {

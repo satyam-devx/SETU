@@ -122,7 +122,7 @@ export default function CustomerSchemes() {
                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                       <Badge
                         className={`text-[9px] border-0 ${
-                          CATEGORY_COLORS[scheme.category] || 'bg-gray-100 text-gray-700'
+                          CATEGORY_COLORS[scheme.category] || 'bg-muted text-muted-foreground'
                         }`}
                       >
                         {scheme.category}
@@ -131,7 +131,7 @@ export default function CustomerSchemes() {
                         ? <Badge className="text-[9px] bg-green-100 text-green-700 border-0 flex items-center gap-1">
                             <CheckCircle className="w-2.5 h-2.5" /> Eligible
                           </Badge>
-                        : <Badge className="text-[9px] bg-gray-100 text-gray-600 border-0">
+                        : <Badge className="text-[9px] bg-muted text-muted-foreground border-0">
                             Check eligibility
                           </Badge>
                       }

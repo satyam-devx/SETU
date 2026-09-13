@@ -14,8 +14,9 @@ import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/AuthContext';
 import { useVillage } from '@/lib/village';
 import { useFeatureFlag } from '@/lib/featureFlags';
-import { OrderAPI, PaymentAPI, cancelOrderWithRefund, getFeeConfig, CouponAPI } from '@/lib/api';
+import { OrderAPI, PaymentAPI, cancelOrderWithRefund, getFeeConfig, CouponAPI, getAddresses } from '@/lib/api';
 import { loadRazorpayScript, initiatePayment } from '@/lib/payments';
+import { useDataFetch } from '@/hooks/useDataFetch';
 
 const PAY_METHODS = [
   { id: 'cod',    label: 'Cash on Delivery', sub: 'Pay when order arrives',    icon: CreditCard  },
@@ -62,6 +63,29 @@ export default function CustomerCheckout() {
   const { user, profile }                 = useAuth();
   const { village }                       = useVillage();
   const navigate                          = useNavigate();
+
+  // The delivery address card used to always show a hardcoded fake
+  // address ("House No. 12, Ward 3 · Near Shiv Temple") for every
+  // customer, and the order itself was created with
+  // `delivery_address: profile?.address` — a field that doesn't exist
+  // anywhere on the profiles table, so it was always undefined, falling
+  // through to just the village name at best. The customer's real,
+  // carefully-saved addresses (CustomerAddresses.jsx — label, full
+  // address, landmark, a chosen default) were never read here at all:
+  // every real order was placed with no usable delivery address.
+  const {
+    data: addresses,
+    isLoading: addressesLoading,
+    error: addressesError,
+    refetch: refetchAddresses,
+  } = useDataFetch(
+    () => getAddresses(user?.id),
+    [user?.id],
+    { cacheKey: `addresses:${user?.id}`, enabled: !!user?.id }
+  );
+  // getAddresses orders is_default first, so [0] is the default (or the
+  // only one, or the earliest-added if none is marked default).
+  const selectedAddress = addresses?.[0] ?? null;
 
   const [payMethod, setPayMethod] = useState('cod');
   const [useCredit, setUseCredit] = useState(false);
@@ -118,6 +142,7 @@ export default function CustomerCheckout() {
   const vendor = resolveVendor(items[0]);
 
   const applyCoupon = async () => {
+    if (couponBusy) return; // re-entry guard — see handlePlaceOrder above
     const code = couponCode.trim();
     if (!code) return;
     setCouponBusy(true);
@@ -158,8 +183,23 @@ export default function CustomerCheckout() {
   if (items.length === 0 && !placed) return null;
 
   const handlePlaceOrder = async () => {
+    // Re-entry guard: the trigger button is already disabled while
+    // placing is true, but that disabled state only takes effect on
+    // React's next render — a fast double-tap (common on the lower-end
+    // Android hardware this app targets) can fire this handler twice
+    // before that happens. Guard here too rather than rely on the
+    // button alone.
+    if (placing) return;
     if (!vendor.id) {
       setError('Cannot determine vendor. Please clear cart and try again.');
+      return;
+    }
+    if (!selectedAddress) {
+      // Previously this was never actually checked — an order could be
+      // placed with no real address on file at all (see the
+      // delivery_address fix above), leaving the vendor/rider nothing
+      // usable to deliver to.
+      setError('Please add a delivery address before placing your order.');
       return;
     }
 
@@ -187,10 +227,9 @@ export default function CustomerCheckout() {
         payment_method:   ({ cod: 'COD', upi: 'UPI', wallet: 'wallet' })[payMethod] ?? 'COD',
         use_credit:       useCredit,
         coupon_code:      appliedCode ?? null,
-        delivery_address: profile?.address
-          ?? profile?.village
-          ?? village?.name
-          ?? '',
+        delivery_address: selectedAddress
+          ? `${selectedAddress.address}${selectedAddress.landmark ? ', ' + selectedAddress.landmark : ''}`
+          : (profile?.village ?? village?.name ?? ''),
       };
 
       const { data: order, error: orderError } = await OrderAPI.create(orderPayload);
@@ -307,8 +346,12 @@ export default function CustomerCheckout() {
   return (
     <div className="pb-24 max-w-md mx-auto">
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-3">
-        <Link to="/customer/cart" className="p-1 -ml-1">
-          <ArrowLeft className="w-5 h-5" />
+        <Link
+          to="/customer/cart"
+          className="touch-target flex items-center justify-center -ml-2"
+          aria-label="Back to cart"
+        >
+          <ArrowLeft className="w-5 h-5" aria-hidden="true" />
         </Link>
         <span className="font-semibold text-sm">Checkout</span>
         <Shield className="w-4 h-4 text-green-600 ml-auto" />
@@ -325,14 +368,51 @@ export default function CustomerCheckout() {
 
         {/* Delivery Address */}
         <Card className="p-4 border-border">
-          <h3 className="font-semibold text-sm mb-2 flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-primary" /> Delivery Address
-          </h3>
-          <p className="text-sm">{profile?.address || 'House No. 12, Ward 3'}</p>
-          <p className="text-xs text-muted-foreground">
-            Near Shiv Temple · {village?.name ?? profile?.village ?? 'Village'}
-            {village?.district ? `, ${village.district}` : ''}
-          </p>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-semibold text-sm flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-primary" aria-hidden="true" /> Delivery Address
+            </h3>
+            {selectedAddress && (
+              <Link to="/customer/addresses" className="text-xs text-primary font-medium">Change</Link>
+            )}
+          </div>
+          {addressesLoading ? (
+            <div className="h-10 flex items-center">
+              <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" aria-hidden="true" />
+            </div>
+          ) : addressesError ? (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-destructive flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                Could not load your address.
+              </p>
+              <button onClick={refetchAddresses} className="text-xs text-primary font-semibold shrink-0 underline">
+                Retry
+              </button>
+            </div>
+          ) : selectedAddress ? (
+            <>
+              <p className="text-sm">
+                {selectedAddress.label && <Badge variant="outline" className="mr-1.5 text-[10px]">{selectedAddress.label}</Badge>}
+                {selectedAddress.address}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {selectedAddress.landmark ? `${selectedAddress.landmark} · ` : ''}
+                {village?.name ?? profile?.village ?? ''}
+                {village?.district ? `, ${village.district}` : ''}
+              </p>
+            </>
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-destructive flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                No delivery address saved yet.
+              </p>
+              <Link to="/customer/addresses" className="text-xs text-primary font-semibold shrink-0">
+                Add address
+              </Link>
+            </div>
+          )}
         </Card>
 
         {/* Vendor summary (derived from cart) */}
@@ -350,8 +430,8 @@ export default function CustomerCheckout() {
 
         {/* Payment Method */}
         <Card className="p-4 border-border">
-          <h3 className="font-semibold text-sm mb-3">Payment Method</h3>
-          <div className="space-y-2">
+          <h3 className="font-semibold text-sm mb-3" id="pay-method-label">Payment Method</h3>
+          <div className="space-y-2" role="radiogroup" aria-labelledby="pay-method-label">
             {payMethods.map(pm => {
               const isWallet = pm.id === 'wallet';
               const disabled = isWallet && !walletSufficient;
@@ -360,13 +440,15 @@ export default function CustomerCheckout() {
                   key={pm.id}
                   onClick={() => !disabled && setPayMethod(pm.id)}
                   disabled={disabled}
+                  role="radio"
+                  aria-checked={payMethod === pm.id}
                   className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-colors text-left
                     ${payMethod === pm.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/40'}
                     ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0
-                    ${payMethod === pm.id ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'}`}>
-                    <pm.icon className="w-4 h-4" />
+                    ${payMethod === pm.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                    <pm.icon className="w-4 h-4" aria-hidden="true" />
                   </div>
                   <div className="flex-1">
                     <p className="text-sm font-medium">{pm.label}</p>
@@ -376,7 +458,9 @@ export default function CustomerCheckout() {
                         : pm.sub}
                     </p>
                   </div>
-                  <div className={`w-4 h-4 rounded-full border-2 transition-colors
+                  <div
+                    aria-hidden="true"
+                    className={`w-4 h-4 rounded-full border-2 transition-colors shrink-0
                     ${payMethod === pm.id ? 'border-primary bg-primary' : 'border-border'}`} />
                 </button>
               );
@@ -391,7 +475,7 @@ export default function CustomerCheckout() {
               <p className="text-sm font-medium">Use SETU Credit</p>
               <p className="text-xs text-muted-foreground">Save ₹{creditDiscount.toFixed(0)} (10% off)</p>
             </div>
-            <Switch checked={useCredit} onCheckedChange={setUseCredit} />
+            <Switch checked={useCredit} onCheckedChange={setUseCredit} aria-label="Use SETU Credit" />
           </div>
         </Card>
 
@@ -414,6 +498,7 @@ export default function CustomerCheckout() {
             ) : (
               <div className="flex gap-2">
                 <Input
+                  aria-label="Coupon code"
                   placeholder="Enter coupon code"
                   value={couponCode}
                   onChange={e => setCouponCode(e.target.value.toUpperCase())}
@@ -477,7 +562,7 @@ export default function CustomerCheckout() {
         <Button
           className="w-full text-sm font-semibold h-12"
           onClick={handlePlaceOrder}
-          disabled={placing || items.length === 0}
+          disabled={placing || items.length === 0 || (!addressesLoading && !selectedAddress)}
         >
           {placing
             ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Processing...</>
