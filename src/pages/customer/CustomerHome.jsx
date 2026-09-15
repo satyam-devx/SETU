@@ -33,43 +33,19 @@ import {
   BannerSkeleton, CategorySkeleton, VendorCardSkeleton, ProductCardSkeleton,
 } from '@/components/shared/SkeletonCard';
 import EmptyState from '@/components/shared/EmptyState';
+import Img from '@/components/shared/Img';
+import BannerCard from '@/components/shared/BannerCard';
+import { useRealtimeBanners } from '@/hooks/useRealtimeBanners';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { formatCurrency } from '@/lib/utils';
 
-// ── Banners (Constitution: localised seasonal content) ────
-// Links use `q` (free-text search), not `category` — these are seasonal
-// marketing themes, not real category rows, and matching them to a
-// category id/name that doesn't exist in the categories table would
-// silently return an empty result page. The Chhath banner has no
-// reliable text match (no "festival"/"pooja" category or product
-// naming convention exists), so it points at unfiltered search rather
-// than guessing one.
-const BANNERS = [
-  {
-    id: 1, bg: 'from-primary to-primary/70',
-    title: 'Chhath Festival Sale',
-    subtitle: 'Up to 30% off on pooja essentials',
-    link: '/customer/search',
-    cta: 'Shop Now',
-  },
-  {
-    id: 2, bg: 'from-secondary to-secondary/70',
-    title: 'Fresh Makhana Season',
-    subtitle: 'Premium quality from Madhepur farms',
-    link: '/customer/search?q=Makhana',
-    cta: 'Explore',
-  },
-  {
-    id: 3, bg: 'from-setu-earth/90 to-setu-earth/60',
-    title: 'Free Delivery on ₹200+',
-    subtitle: 'Order more, save on delivery across SETU villages',
-    link: '/customer/search',
-    cta: 'Order Now',
-  },
-];
+// ── Banners now come from the `banners` table (see
+// useRealtimeBanners) — this hardcoded array was the actual reason
+// admin banner edits never reached customers: Home never queried the
+// database at all, realtime or otherwise.
 
 // ── VendorCard ────────────────────────────────────────────
 function VendorCard({ vendor }) {
@@ -273,13 +249,24 @@ export default function CustomerHome() {
     [], { cacheKey: 'schemes', staleTime: 300_000 }
   );
 
+  // ── Banners: real data + realtime (see useRealtimeBanners) ─────
+  const { banners, isLoading: bannersLoading, error: bannersError, refetch: refetchBanners } =
+    useRealtimeBanners(village?.id);
+
   // ── Banner auto-advance ───────────────────────────────
   useEffect(() => {
+    if (banners.length <= 1) return; // nothing to advance through
     const t = setInterval(() => {
-      setBannerIdx(i => (i + 1) % BANNERS.length);
+      setBannerIdx(i => (i + 1) % banners.length);
     }, 4000);
     return () => clearInterval(t);
-  }, []);
+  }, [banners.length]);
+
+  // Clamp the index if the list shrinks (a banner was deleted/deactivated
+  // via realtime) so it never points past the end of the array.
+  useEffect(() => {
+    if (bannerIdx >= banners.length && banners.length > 0) setBannerIdx(0);
+  }, [banners.length, bannerIdx]);
 
   // ── Search ────────────────────────────────────────────
   const handleSearchKey = useCallback((e) => {
@@ -288,7 +275,7 @@ export default function CustomerHome() {
     }
   }, [query, navigate]);
 
-  const activeBanner = BANNERS[bannerIdx];
+  const activeBanner = banners[bannerIdx] ?? null;
 
   return (
     <div className="pb-nav animate-fade-in" role="main" aria-label="SETU Home">
@@ -401,40 +388,68 @@ export default function CustomerHome() {
       )}
 
       {/* ── Banner carousel ──────────────────────────── */}
-      <div className="px-4 mb-4">
-        <Link to={activeBanner.link} className="block">
-          <div
-            className={`bg-gradient-to-r ${activeBanner.bg} rounded-2xl p-5 text-white relative overflow-hidden transition-all duration-500`}
-            style={{ minHeight: 110 }}
-          >
-            <div className="relative z-10">
-              <p className="text-[10px] font-semibold uppercase tracking-widest opacity-75">
-                Limited Offer
-              </p>
-              <h2 className="text-lg font-bold mt-0.5 leading-tight">{activeBanner.title}</h2>
-              <p className="text-xs opacity-90 mt-1">{activeBanner.subtitle}</p>
-              <span className="inline-block mt-3 bg-white/20 text-white text-xs font-medium px-4 py-1.5 rounded-lg">
-                {activeBanner.cta} →
-              </span>
-            </div>
-          </div>
-        </Link>
-        {/* Dots */}
-        <div className="flex justify-center gap-1 mt-1" role="tablist" aria-label="Banner">
-          {BANNERS.map((_, i) => (
-            <button
-              key={i}
-              role="tab"
-              aria-selected={bannerIdx === i}
-              onClick={() => setBannerIdx(i)}
-              className="w-8 h-11 flex items-center justify-center"
-              aria-label={`Banner ${i + 1}`}
-            >
-              <div className={`h-1.5 rounded-full transition-all ${bannerIdx === i ? 'w-4 bg-primary' : 'w-1.5 bg-muted-foreground/30'}`} />
-            </button>
-          ))}
+      {bannersLoading ? (
+        <div className="px-4 mb-4">
+          <div className="rounded-2xl bg-muted animate-pulse" style={{ height: 130 }} aria-busy="true" />
         </div>
-      </div>
+      ) : bannersError ? (
+        <div className="px-4 mb-4">
+          <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-4 flex items-center justify-between gap-2">
+            <p className="text-xs text-destructive">Could not load banners.</p>
+            <button onClick={refetchBanners} className="text-xs text-primary font-semibold underline shrink-0">Retry</button>
+          </div>
+        </div>
+      ) : activeBanner ? (
+        <div className="px-4 mb-4">
+          {/* Indicators live INSIDE this same relatively-positioned box
+              as the banner itself (bottom-right), not in separate
+              layout space below it, and stay anchored to it as the
+              page scrolls. */}
+          <div className="relative">
+            {activeBanner.link?.startsWith('http') ? (
+              // External URL — the admin form explicitly allows this
+              // (placeholder: "/customer/vendors or https://…"), but a
+              // React Router <Link> would mis-navigate it as an
+              // internal route rather than leaving the app.
+              <a href={activeBanner.link} target="_blank" rel="noopener noreferrer" className="block">
+                <BannerCard banner={activeBanner} className="min-h-[130px]" imageEager />
+              </a>
+            ) : activeBanner.link ? (
+              <Link to={activeBanner.link} className="block">
+                <BannerCard banner={activeBanner} className="min-h-[130px]" imageEager />
+              </Link>
+            ) : (
+              <BannerCard banner={activeBanner} className="min-h-[130px]" imageEager />
+            )}
+
+            {banners.length > 1 && (
+              <div
+                className="absolute bottom-3 right-4 flex items-center gap-1 z-20"
+                role="tablist"
+                aria-label="Banner"
+              >
+                {banners.map((_, i) => (
+                  <button
+                    key={i}
+                    role="tab"
+                    aria-selected={bannerIdx === i}
+                    onClick={() => setBannerIdx(i)}
+                    className="w-6 h-6 flex items-center justify-center"
+                    aria-label={`Banner ${i + 1} of ${banners.length}`}
+                  >
+                    <div
+                      className={`h-1.5 rounded-full transition-all bg-white ${
+                        bannerIdx === i ? 'w-4 opacity-100' : 'w-1.5 opacity-50'
+                      }`}
+                      style={{ boxShadow: '0 0 2px rgba(0,0,0,0.5)' }}
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {/* ── Categories ──────────────────────────────── */}
       <section className="px-4 mb-6" aria-labelledby="categories-title">
@@ -451,10 +466,21 @@ export default function CustomerHome() {
                 key={cat.id}
                 to={`/customer/search?category=${cat.id}`}
                 role="listitem"
-                className="flex flex-col items-center gap-1 p-2 rounded-xl active:bg-muted transition-colors"
+                className="flex flex-col items-center gap-1.5 p-1 rounded-xl active:bg-muted transition-colors"
               >
-                <div className="w-12 h-12 bg-muted rounded-2xl flex items-center justify-center text-xl" aria-hidden="true">
-                  {cat.icon || '🛒'}
+                <div className="w-14 h-14 rounded-2xl overflow-hidden border border-border/60 bg-muted shadow-sm">
+                  <Img
+                    src={cat.image_url}
+                    alt=""
+                    width={56}
+                    height={56}
+                    className="w-full h-full object-cover"
+                    fallback={
+                      <div className="w-14 h-14 flex items-center justify-center text-2xl bg-primary/5" aria-hidden="true">
+                        {cat.icon || '🛒'}
+                      </div>
+                    }
+                  />
                 </div>
                 <span className="text-[10px] text-center text-muted-foreground font-medium leading-tight line-clamp-2">
                   {cat.name.split(' ')[0]}

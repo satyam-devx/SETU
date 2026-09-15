@@ -198,7 +198,7 @@ export default function CustomerSearch() {
                 onClick={() => setSelectedCategory(cId)}
                 className={`text-xs px-3 py-1 rounded-full border whitespace-nowrap transition-colors shrink-0 ${
                   selectedCategory === cId
-                    ? 'bg-primary text-white border-primary'
+                    ? 'bg-primary text-primary-foreground border-primary'
                     : 'border-border bg-card'
                 }`}
               >

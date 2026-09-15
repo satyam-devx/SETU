@@ -1,36 +1,218 @@
 // ═══════════════════════════════════════════════════════════
 // SETU — AdminCategories
-// Full CRUD: sortable list, add/edit modal, emoji picker,
-// Hindi name field, is_active toggle.
+// Full CRUD: sortable list, add/edit modal with image upload
+// (device upload or URL), Hindi name field, is_active toggle.
 // Route: /admin/categories
 // ═══════════════════════════════════════════════════════════
-import React, { useState, useCallback } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Plus, Pencil, Trash2, GripVertical,
-  RefreshCw, Loader2, Tag
+  RefreshCw, Loader2, Tag, Upload, Link2, X, AlertCircle, ImageOff,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import AppHeader from '@/components/shared/AppHeader';
+import Img from '@/components/shared/Img';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { AdminAPI } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
+import { deleteStorageObject } from '@/lib/img';
 
-// Common emojis for category icons
-const EMOJI_PRESETS = [
-  '🛒','🥜','🥬','🥛','🐟','🍬','👕','📱','🌾','💊',
-  '🍚','🫙','🥩','🧴','🧹','🪔','🎓','🔧','⚡','🚿',
-  '🌸','🍎','🥦','🧀','🐔','🍰','👗','💻','🌻','🩺',
-  '🏠','🚗','✂️','🎨','📚','🌿','🐄','🥚','🧈','🫚',
-];
+const MAX_IMAGE_MB = 5;
+const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
-const EMPTY_FORM = { name: '', name_hindi: '', icon: '🛒', sort_order: 0, is_active: true };
+const EMPTY_FORM = { name: '', name_hindi: '', icon: '🛒', image_url: '', sort_order: 0, is_active: true };
+
+// ── Upload to Supabase Storage (category-images bucket) ────
+// Same pattern VendorAddProduct.jsx already established for
+// product-images — same bucket-per-entity, upload-then-getPublicUrl
+// shape, just a different (admin-only-write) bucket.
+async function uploadCategoryImage(file, onProgress) {
+  const ext      = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+  const filePath = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
+  // supabase-js v2's storage upload doesn't expose real byte progress
+  // over XHR; a short deterministic ramp gives honest "something is
+  // happening" feedback for what's usually a sub-second request rather
+  // than nothing changing on screen until it either finishes or errors.
+  onProgress?.(15);
+  const { data, error } = await supabase.storage
+    .from('category-images')
+    .upload(filePath, file, { upsert: false, contentType: file.type });
+  onProgress?.(90);
+
+  if (error) throw error;
+
+  const { data: { publicUrl } } = supabase.storage
+    .from('category-images')
+    .getPublicUrl(data.path);
+
+  onProgress?.(100);
+  return publicUrl;
+}
+
+// ── Category image field: upload from device OR paste a URL ────
+function CategoryImageField({ value, fallbackIcon, onChange, disabled }) {
+  const [mode, setMode]         = useState('upload'); // 'upload' | 'url'
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [err, setErr]           = useState(null);
+  const [urlBroken, setUrlBroken] = useState(false);
+  const fileRef = useRef(null);
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setErr(null);
+    if (!ACCEPTED_TYPES.includes(file.type)) {
+      setErr('Unsupported format — use JPG, PNG, WEBP, or GIF.');
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
+    if (file.size > MAX_IMAGE_MB * 1024 * 1024) {
+      setErr(`Image too large — max ${MAX_IMAGE_MB}MB.`);
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
+    setUploading(true);
+    setProgress(0);
+    try {
+      const previousUrl = value;
+      const url = await uploadCategoryImage(file, setProgress);
+      onChange(url);
+      // Best-effort: clean up the file this one replaces, if it was
+      // one of ours (never touches an externally-pasted URL).
+      if (previousUrl) deleteStorageObject(supabase, 'category-images', previousUrl);
+    } catch (e2) {
+      setErr(e2.message || 'Upload failed. Please try again.');
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  const handleRemove = () => {
+    if (value) deleteStorageObject(supabase, 'category-images', value);
+    onChange('');
+    setErr(null);
+    setUrlBroken(false);
+  };
+
+  const busy = uploading || disabled;
+
+  return (
+    <div>
+      <Label className="text-xs mb-1.5 block">Category Image</Label>
+
+      <div className="flex items-start gap-3">
+        {/* Preview */}
+        <div className="w-16 h-16 rounded-xl border border-border bg-muted overflow-hidden shrink-0 flex items-center justify-center">
+          {value && !urlBroken ? (
+            <img
+              src={value}
+              alt=""
+              className="w-full h-full object-cover"
+              onError={() => setUrlBroken(true)}
+              onLoad={() => setUrlBroken(false)}
+            />
+          ) : value && urlBroken ? (
+            <ImageOff className="w-5 h-5 text-muted-foreground" aria-label="Image failed to load" />
+          ) : (
+            <span className="text-2xl" aria-hidden="true">{fallbackIcon || '🛒'}</span>
+          )}
+        </div>
+
+        <div className="flex-1 min-w-0 space-y-2">
+          <Tabs value={mode} onValueChange={setMode}>
+            <TabsList className="h-8">
+              <TabsTrigger value="upload" className="text-xs h-6 gap-1" disabled={busy}>
+                <Upload className="w-3 h-3" /> Upload
+              </TabsTrigger>
+              <TabsTrigger value="url" className="text-xs h-6 gap-1" disabled={busy}>
+                <Link2 className="w-3 h-3" /> Image URL
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          {mode === 'upload' ? (
+            <div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept={ACCEPTED_TYPES.join(',')}
+                onChange={handleFile}
+                disabled={busy}
+                className="hidden"
+                id="category-image-file"
+              />
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs gap-1.5"
+                  disabled={busy}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                  {uploading ? 'Uploading…' : value ? 'Replace image' : 'Choose image'}
+                </Button>
+                {value && !uploading && (
+                  <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-destructive" onClick={handleRemove}>
+                    <X className="w-3.5 h-3.5 mr-1" /> Remove
+                  </Button>
+                )}
+              </div>
+              {uploading && <Progress value={progress} className="h-1 mt-2" />}
+              <p className="text-[10px] text-muted-foreground mt-1">JPG, PNG, WEBP or GIF · up to {MAX_IMAGE_MB}MB</p>
+            </div>
+          ) : (
+            <div>
+              <div className="flex items-center gap-2">
+                <Input
+                  className="h-8 text-xs flex-1"
+                  placeholder="https://…"
+                  defaultValue={value?.startsWith('http') ? value : ''}
+                  disabled={busy}
+                  onBlur={e => {
+                    const v = e.target.value.trim();
+                    if (v && v !== value && value) {
+                      // Switching to a different URL — clean up the
+                      // old one if it was ours (no-ops otherwise).
+                      deleteStorageObject(supabase, 'category-images', value);
+                    }
+                    setUrlBroken(false);
+                    onChange(v);
+                  }}
+                />
+                {value && (
+                  <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-destructive shrink-0" onClick={handleRemove}>
+                    <X className="w-3.5 h-3.5" />
+                  </Button>
+                )}
+              </div>
+              {urlBroken && (
+                <p className="text-[10px] text-destructive mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" /> This link doesn't look like a working image.
+                </p>
+              )}
+            </div>
+          )}
+
+          {err && <p className="text-[11px] text-destructive">{err}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function AdminCategories() {
   const [modal,    setModal]    = useState(null);   // null | 'add' | 'edit'
@@ -40,7 +222,6 @@ export default function AdminCategories() {
   const [deleting, setDeleting] = useState(null);   // id being deleted
   const [toggling, setToggling] = useState(null);   // id being toggled
   const [saveErr,  setSaveErr]  = useState(null);
-  const [showEmoji, setShowEmoji] = useState(false);
 
   const { data: cats, isLoading, error, refetch } = useDataFetch(
     () => AdminAPI.getAllCategories(),
@@ -56,7 +237,6 @@ export default function AdminCategories() {
     setForm({ ...EMPTY_FORM, sort_order: maxSort + 1 });
     setEditing(null);
     setSaveErr(null);
-    setShowEmoji(false);
     setModal('add');
   };
 
@@ -67,12 +247,12 @@ export default function AdminCategories() {
       name:        cat.name,
       name_hindi:  cat.name_hindi ?? '',
       icon:        cat.icon ?? '🛒',
+      image_url:   cat.image_url ?? '',
       sort_order:  cat.sort_order ?? 0,
       is_active:   cat.is_active ?? true,
     });
     setEditing(cat);
     setSaveErr(null);
-    setShowEmoji(false);
     setModal('edit');
   };
 
@@ -80,11 +260,11 @@ export default function AdminCategories() {
     setModal(null);
     setEditing(null);
     setSaveErr(null);
-    setShowEmoji(false);
   };
 
   // ── Save (add or edit) ──────────────────────────────────
   const handleSave = async () => {
+    if (saving) return; // re-entry guard
     if (!form.name.trim()) { setSaveErr('Category name is required'); return; }
     setSaving(true);
     setSaveErr(null);
@@ -93,6 +273,7 @@ export default function AdminCategories() {
       name:        form.name.trim(),
       name_hindi:  form.name_hindi.trim() || null,
       icon:        form.icon,
+      image_url:   form.image_url?.trim() || null,
       sort_order:  Number(form.sort_order) || 0,
       is_active:   form.is_active,
     };
@@ -206,9 +387,20 @@ export default function AdminCategories() {
                   >▼</button>
                 </div>
 
-                {/* Icon */}
-                <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-lg shrink-0">
-                  {cat.icon}
+                {/* Image (falls back to the legacy emoji icon, then a generic tag) */}
+                <div className="w-9 h-9 rounded-lg bg-primary/10 overflow-hidden shrink-0">
+                  <Img
+                    src={cat.image_url}
+                    alt=""
+                    width={36}
+                    height={36}
+                    className="w-full h-full object-cover"
+                    fallback={
+                      <div className="w-9 h-9 flex items-center justify-center text-lg" aria-hidden="true">
+                        {cat.icon || '🛒'}
+                      </div>
+                    }
+                  />
                 </div>
 
                 {/* Name */}
@@ -272,50 +464,12 @@ export default function AdminCategories() {
               <p className="text-xs text-destructive bg-destructive/10 p-2 rounded-lg">{saveErr}</p>
             )}
 
-            {/* Icon picker */}
-            <div>
-              <Label className="text-xs mb-1.5 block">Icon</Label>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setShowEmoji(v => !v)}
-                  className="w-12 h-12 rounded-xl border-2 border-border hover:border-primary text-2xl flex items-center justify-center transition-colors"
-                >
-                  {form.icon}
-                </button>
-                <div className="text-xs text-muted-foreground">
-                  Click to {showEmoji ? 'close' : 'open'} emoji picker
-                </div>
-              </div>
-
-              {showEmoji && (
-                <div className="mt-2 p-3 border border-border rounded-xl grid grid-cols-8 gap-1.5">
-                  {EMOJI_PRESETS.map(emoji => (
-                    <button
-                      key={emoji}
-                      onClick={() => { setForm(f => ({ ...f, icon: emoji })); setShowEmoji(false); }}
-                      className={`w-8 h-8 text-lg rounded-lg hover:bg-muted flex items-center justify-center transition-colors ${
-                        form.icon === emoji ? 'bg-primary/10 ring-1 ring-primary' : ''
-                      }`}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                  {/* Custom input */}
-                  <Input
-                    className="col-span-2 h-8 text-center text-sm"
-                    placeholder="Custom"
-                    maxLength={2}
-                    value=""
-                    onChange={e => {
-                      if (e.target.value) {
-                        setForm(f => ({ ...f, icon: e.target.value }));
-                        setShowEmoji(false);
-                      }
-                    }}
-                  />
-                </div>
-              )}
-            </div>
+            <CategoryImageField
+              value={form.image_url}
+              fallbackIcon={form.icon}
+              disabled={saving}
+              onChange={url => setForm(f => ({ ...f, image_url: url }))}
+            />
 
             {/* English name */}
             <div>

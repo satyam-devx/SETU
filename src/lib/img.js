@@ -37,3 +37,27 @@ export function optimizedSrc(url, { width, quality = 70 } = {}) {
 
   return url;
 }
+
+// ═══════════════════════════════════════════════════════════
+// deleteStorageObject — best-effort cleanup of a previous upload
+// when an admin replaces or removes an image (categories, banners).
+// Only ever touches objects inside the given bucket, parsed from our
+// own public URL shape — silently no-ops for external/pasted URLs or
+// anything that doesn't parse, since this is opportunistic cleanup,
+// never something a save/remove action should fail over.
+// ═══════════════════════════════════════════════════════════
+export async function deleteStorageObject(supabase, bucket, url) {
+  if (!url || typeof url !== 'string') return;
+  const marker = `${SUPABASE_PUBLIC_OBJECT}${bucket}/`;
+  const idx = url.indexOf(marker);
+  if (idx === -1) return; // not one of ours (or a different bucket) — leave it alone
+  const path = url.slice(idx + marker.length).split('?')[0];
+  if (!path) return;
+  try {
+    await supabase.storage.from(bucket).remove([path]);
+  } catch {
+    // Best-effort — the replace/remove action itself already succeeded
+    // from the user's point of view; a stray orphaned file is a much
+    // smaller problem than surfacing a confusing secondary error here.
+  }
+}

@@ -13,7 +13,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { supabase, supabaseRead, isSupabaseConfigured } from './supabase';
-import { PRODUCTS, VENDORS, ORDERS, NOTIFICATIONS, VILLAGES, CATEGORIES, SEVA_PROVIDERS, SCHEMES } from './mockData';
+import { PRODUCTS, VENDORS, ORDERS, NOTIFICATIONS, VILLAGES, CATEGORIES, SEVA_PROVIDERS, SCHEMES, BANNERS } from './mockData';
 
 // ── Helpers ───────────────────────────────────────────────
 
@@ -1619,8 +1619,14 @@ export async function reorderCategories(orderedIds) {
 
 export async function getAdminProducts({ vendorId, categoryId, search, page = 0, limit = 50 } = {}) {
   return safeQuery(() => {
+    // Was `.from('admin_products_view')` — the view has no RLS of its
+    // own and was reachable directly by any authenticated/anon caller
+    // (migration 072). The RPC checks is_admin() first; PostgREST
+    // still supports the same .eq()/.ilike()/.range() filtering on a
+    // function that returns `setof <view>`, so this call shape barely
+    // changes.
     let q = supabase
-      .from('admin_products_view')
+      .rpc('get_admin_products')
       .select('*')
       .range(page * limit, (page + 1) * limit - 1);
 
@@ -1668,12 +1674,21 @@ export async function savePlatformConfig(entries) {
 
 // ── Banners CRUD ──────────────────────────────────────────
 
-export async function getBanners({ adminView = false } = {}) {
+export async function getBanners({ adminView = false, villageId } = {}) {
   return safeQuery(() => {
     let q = supabase.from('banners').select('*').order('sort_order');
-    if (!adminView) q = q.eq('is_active', true);
+    if (!adminView) {
+      q = q.eq('is_active', true);
+      // RLS (banners_public_read) already enforces is_active + the
+      // active_from/active_to date window server-side — this only
+      // adds village-scoping, which (like getVendors' villageId
+      // filter) is a query-level concern, not a security boundary:
+      // a banner with no village_id is shown everywhere; one with a
+      // village_id is shown only there.
+      if (villageId) q = q.or(`village_id.is.null,village_id.eq.${villageId}`);
+    }
     return q;
-  }, [], 'getBanners');
+  }, BANNERS, 'getBanners');
 }
 
 export async function upsertBanner(bannerData) {
@@ -1767,9 +1782,11 @@ export async function getLiveAnalytics() {
     const { data, error } = await supabase.rpc('get_live_admin_analytics');
     if (!error && data) return ok(data);
   } catch (_) {}
-  // Fallback: view-based query (older schema)
+  // Fallback: view-based query (older schema) — now via the
+  // is_admin()-gated RPC wrapper (migration 072) rather than the raw
+  // view, which is no longer directly reachable.
   return safeQuery(
-    () => supabase.from('admin_analytics').select('*').single(),
+    () => supabase.rpc('get_admin_analytics_snapshot').select('*').single(),
     null,
     'getLiveAnalytics'
   );
@@ -1777,7 +1794,7 @@ export async function getLiveAnalytics() {
 
 export async function getDailyOrderTrend() {
   return safeQuery(
-    () => supabase.from('daily_order_trend').select('*').limit(30),
+    () => supabase.rpc('get_daily_order_trend').select('*').limit(30),
     [],
     'getDailyOrderTrend'
   );
@@ -1785,7 +1802,7 @@ export async function getDailyOrderTrend() {
 
 export async function getHourlyOrderTrend() {
   return safeQuery(
-    () => supabase.from('hourly_order_trend').select('*'),
+    () => supabase.rpc('get_hourly_order_trend').select('*'),
     [],
     'getHourlyOrderTrend'
   );

@@ -14,16 +14,16 @@ export const VILLAGES = [
 ];
 
 export const CATEGORIES = [
-  { id: 'c1', name: 'Grocery & Essentials', icon: '🛒', count: 45 },
-  { id: 'c2', name: 'Makhana & Dry Fruits', icon: '🥜', count: 18 },
-  { id: 'c3', name: 'Fresh Vegetables', icon: '🥬', count: 32 },
-  { id: 'c4', name: 'Dairy & Milk', icon: '🥛', count: 12 },
-  { id: 'c5', name: 'Fish & Meat', icon: '🐟', count: 8 },
-  { id: 'c6', name: 'Sweets & Snacks', icon: '🍬', count: 22 },
-  { id: 'c7', name: 'Clothing & Textiles', icon: '👕', count: 15 },
-  { id: 'c8', name: 'Electronics', icon: '📱', count: 10 },
-  { id: 'c9', name: 'Farm Supplies', icon: '🌾', count: 20 },
-  { id: 'c10', name: 'Health & Medicine', icon: '💊', count: 14 },
+  { id: 'c1', name: 'Grocery & Essentials', icon: '🛒', image_url: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=300&h=300&fit=crop', count: 45 },
+  { id: 'c2', name: 'Makhana & Dry Fruits', icon: '🥜', image_url: 'https://images.unsplash.com/photo-1599599810769-bcde5a160d32?w=300&h=300&fit=crop', count: 18 },
+  { id: 'c3', name: 'Fresh Vegetables', icon: '🥬', image_url: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=300&h=300&fit=crop', count: 32 },
+  { id: 'c4', name: 'Dairy & Milk', icon: '🥛', image_url: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=300&h=300&fit=crop', count: 12 },
+  { id: 'c5', name: 'Fish & Meat', icon: '🐟', image_url: 'https://images.unsplash.com/photo-1595854341625-f33ee10dbf94?w=300&h=300&fit=crop', count: 8 },
+  { id: 'c6', name: 'Sweets & Snacks', icon: '🍬', image_url: 'https://images.unsplash.com/photo-1600617288680-1a55adc99f38?w=300&h=300&fit=crop', count: 22 },
+  { id: 'c7', name: 'Clothing & Textiles', icon: '👕', image_url: 'https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?w=300&h=300&fit=crop', count: 15 },
+  { id: 'c8', name: 'Electronics', icon: '📱', image_url: 'https://images.unsplash.com/photo-1498049794561-7780e7231661?w=300&h=300&fit=crop', count: 10 },
+  { id: 'c9', name: 'Farm Supplies', icon: '🌾', image_url: 'https://images.unsplash.com/photo-1560493676-04071c5f467b?w=300&h=300&fit=crop', count: 20 },
+  { id: 'c10', name: 'Health & Medicine', icon: '💊', image_url: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=300&h=300&fit=crop', count: 14 },
 ];
 
 export const VENDORS = [
@@ -79,6 +79,31 @@ export const NOTIFICATIONS = [
   { id: 'n4', type: 'order', title: 'Order On The Way', body: 'Vikash Yadav is delivering your order SETU-2025-0002.', isRead: false, createdAt: '2025-05-31T09:30:00' },
   { id: 'n5', type: 'system', title: 'Welcome to SETU!', body: 'Start exploring vendors near you in Madhepur.', isRead: true, createdAt: '2025-05-28T10:00:00' },
   { id: 'n6', type: 'scheme', title: 'PM Kisan Samman', body: 'Check if you are eligible for PM Kisan Samman Nidhi.', isRead: false, createdAt: '2025-05-31T06:00:00' },
+];
+
+export const BANNERS = [
+  {
+    id: 'demo-b1', title: 'Chhath Festival Sale', subtitle: 'Up to 30% off on pooja essentials',
+    badge_text: 'Limited Offer', cta_text: 'Shop Now', link: '/customer/search',
+    bg_type: 'gradient', bg_color: '#F97316', gradient_to: '#C2410C',
+    overlay_opacity: 0, layout: 'text-only', image_url: null, foreground_image_url: null,
+    is_active: true, sort_order: 1,
+  },
+  {
+    id: 'demo-b2', title: 'Fresh Makhana Season', subtitle: 'Premium quality from Madhepur farms',
+    badge_text: null, cta_text: 'Explore', link: '/customer/search?q=Makhana',
+    bg_type: 'solid', bg_color: '#0D9488', gradient_to: null,
+    overlay_opacity: 0, layout: 'image-right', image_url: null,
+    foreground_image_url: 'https://images.unsplash.com/photo-1599599810769-bcde5a160d32?w=200&h=200&fit=crop',
+    is_active: true, sort_order: 2,
+  },
+  {
+    id: 'demo-b3', title: 'Free Delivery on ₹200+', subtitle: 'Order more, save on delivery across SETU villages',
+    badge_text: null, cta_text: 'Order Now', link: '/customer/search',
+    bg_type: 'solid', bg_color: '#78716C', gradient_to: null,
+    overlay_opacity: 0, layout: 'text-only', image_url: null, foreground_image_url: null,
+    is_active: true, sort_order: 3,
+  },
 ];
 
 export const WALLET = {

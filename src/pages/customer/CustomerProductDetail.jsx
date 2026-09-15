@@ -61,6 +61,7 @@ export default function CustomerProductDetail() {
   const mrp        = product.mrp ?? price;
   const category   = product.category;
   const stock      = product.stock ?? 0;
+  const isAvailable = product.is_available ?? true;
   const unit       = product.unit ?? 'piece';
   const image      = product.image_url   ?? product.image ?? '/placeholder-product.jpg';
   const vendorId   = product.vendor_id   ?? product.vendorId;
@@ -195,10 +196,12 @@ export default function CustomerProductDetail() {
         <Button
           className="flex-1 gap-2"
           onClick={handleAddToCart}
-          disabled={stock === 0}
+          disabled={stock === 0 || !isAvailable}
         >
           <ShoppingCart className="w-4 h-4" />
-          {stock === 0
+          {!isAvailable
+            ? 'Currently Unavailable'
+            : stock === 0
             ? 'Out of Stock'
             : added
             ? 'Added! ✓'

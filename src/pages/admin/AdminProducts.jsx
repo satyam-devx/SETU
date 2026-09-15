@@ -10,7 +10,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import {
   Search, Trash2, Check, X, RefreshCw,
-  Loader2, PackageX, Package, Plus,
+  Loader2, PackageX, Package, Plus, Pencil,
   CheckSquare, Square, Layers,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -30,11 +30,11 @@ import {
 import AppHeader from '@/components/shared/AppHeader';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { AdminAPI } from '@/lib/api';
-import { useAuth } from '@/lib/AuthContext'; // Corrected import path
+import { toast } from '@/components/ui/use-toast';
 
 // ── Create Product Dialog ─────────────────────────────────
 const EMPTY_PRODUCT = {
-  vendor_id: '', category_id: 'none', name: '', name_hindi: '',
+  vendor_id: 'none', category_id: 'none', name: '', name_hindi: '',
   description: '', price: '', mrp: '', unit: 'piece',
   stock: '0', image_url: '', is_available: true,
 };
@@ -43,25 +43,30 @@ function CreateProductDialog({ open, onClose, vendors, categories, onCreated }) 
   const [form,   setForm]   = useState(EMPTY_PRODUCT);
   const [saving, setSaving] = useState(false);
   const [err,    setErr]    = useState(null);
-  const { userRole } = useAuth(); // Fetch user role directly from context
 
-  const setF = (k, v) => { setForm(f => ({ ...f, [k]: v })); setErr(null); };
+  const setF = (k, v) => {
+    setForm(f => {
+      const next = { ...f, [k]: v };
+      // A vendor-less product can never be marked available (enforced
+      // in the database too — see migration 069) since there's no one
+      // to fulfill it from yet. Keep the toggle honest as the vendor
+      // selection changes rather than letting the admin flip it on and
+      // then hit a confusing save error.
+      if (k === 'vendor_id' && v === 'none') next.is_available = false;
+      return next;
+    });
+    setErr(null);
+  };
 
   const handleCreate = async () => {
-    const isAdmin = userRole === 'admin' || userRole === 'superadmin' || userRole === 'super_admin';
-    
-    // Vendor is required only if the user is NOT an admin or superadmin
-    if (!isAdmin && !form.vendor_id) { 
-      setErr('Vendor is required'); 
-      return; 
-    }
+    if (saving) return; // re-entry guard against a fast double-tap
     if (!form.name.trim()) { setErr('Product name is required'); return; }
     if (!form.price || isNaN(Number(form.price)) || Number(form.price) <= 0) {
       setErr('Valid price is required'); return;
     }
     setSaving(true);
     const payload = {
-      vendor_id:   form.vendor_id || null,
+      vendor_id:   form.vendor_id && form.vendor_id !== 'none' ? form.vendor_id : null,
       category_id: form.category_id && form.category_id !== 'none' ? form.category_id : null,
       name:        form.name.trim(),
       name_hindi:  form.name_hindi?.trim() || null,
@@ -71,7 +76,9 @@ function CreateProductDialog({ open, onClose, vendors, categories, onCreated }) 
       unit:        form.unit,
       stock:       Number(form.stock ?? 0),
       image_url:   form.image_url?.trim() || null,
-      is_available:form.is_available,
+      // Belt-and-suspenders: the DB rejects is_available=true with no
+      // vendor_id, but don't even try to send an invalid combination.
+      is_available: form.vendor_id !== 'none' && form.is_available,
     };
     const { error } = await AdminAPI.createProduct(payload);
     if (error) { setErr(error.message ?? 'Failed to create product'); setSaving(false); return; }
@@ -93,15 +100,21 @@ function CreateProductDialog({ open, onClose, vendors, categories, onCreated }) 
           )}
 
           <div>
-            <Label className="text-xs mb-1 block">Vendor</Label>
+            <Label htmlFor="product-vendor" className="text-xs mb-1 block">Vendor</Label>
             <Select value={form.vendor_id} onValueChange={v => setF('vendor_id', v)}>
-              <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Select vendor…" /></SelectTrigger>
+              <SelectTrigger id="product-vendor" className="h-9 text-xs"><SelectValue placeholder="Select vendor…" /></SelectTrigger>
               <SelectContent>
+                <SelectItem value="none">No vendor (unassigned draft)</SelectItem>
                 {(vendors ?? []).map(v => (
                   <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {form.vendor_id === 'none' && (
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Saved as a draft catalog entry. It won't be visible or orderable by customers until a vendor is assigned.
+              </p>
+            )}
           </div>
 
           <div>
@@ -169,9 +182,15 @@ function CreateProductDialog({ open, onClose, vendors, categories, onCreated }) 
           <div className="flex items-center justify-between p-2.5 bg-muted/40 rounded-lg">
             <div>
               <p className="text-sm font-medium">Available</p>
-              <p className="text-xs text-muted-foreground">Visible to customers immediately</p>
+              <p className="text-xs text-muted-foreground">
+                {form.vendor_id === 'none' ? 'Requires a vendor to be assigned first' : 'Visible to customers immediately'}
+              </p>
             </div>
-            <Switch checked={form.is_available} onCheckedChange={v => setF('is_available', v)} />
+            <Switch
+              checked={form.is_available}
+              disabled={form.vendor_id === 'none'}
+              onCheckedChange={v => setF('is_available', v)}
+            />
           </div>
 
           <div className="flex gap-2">
@@ -179,6 +198,183 @@ function CreateProductDialog({ open, onClose, vendors, categories, onCreated }) 
             <Button className="flex-1 gap-2" disabled={saving} onClick={handleCreate}>
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
               Create Product
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Edit Product Dialog ────────────────────────────────────
+// Previously the only way to change a product after creation was the
+// inline price/MRP/stock cells and the Available toggle — there was no
+// way to rename it, recategorize it, change its image, or (critically
+// for vendor-less products) assign a vendor later / remove one. This
+// fills that gap using the same fields as creation, pre-filled.
+function EditProductDialog({ product, vendors, categories, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    vendor_id:   product.vendor_id ?? 'none',
+    category_id: product.category_id ?? 'none',
+    name:        product.name ?? '',
+    name_hindi:  product.name_hindi ?? '',
+    description: product.description ?? '',
+    price:       String(product.price ?? ''),
+    mrp:         String(product.mrp ?? ''),
+    unit:        product.unit ?? 'piece',
+    stock:       String(product.stock ?? 0),
+    image_url:   product.image_url ?? '',
+    is_available: !!product.is_available,
+  });
+  const [saving, setSaving] = useState(false);
+  const [err,    setErr]    = useState(null);
+
+  const setF = (k, v) => {
+    setForm(f => {
+      const next = { ...f, [k]: v };
+      if (k === 'vendor_id' && v === 'none') next.is_available = false;
+      return next;
+    });
+    setErr(null);
+  };
+
+  const handleSave = async () => {
+    if (saving) return; // re-entry guard
+    if (!form.name.trim()) { setErr('Product name is required'); return; }
+    if (!form.price || isNaN(Number(form.price)) || Number(form.price) <= 0) {
+      setErr('Valid price is required'); return;
+    }
+    setSaving(true);
+    const updates = {
+      vendor_id:   form.vendor_id && form.vendor_id !== 'none' ? form.vendor_id : null,
+      category_id: form.category_id && form.category_id !== 'none' ? form.category_id : null,
+      name:        form.name.trim(),
+      name_hindi:  form.name_hindi?.trim() || null,
+      description: form.description?.trim() || null,
+      price:       Number(form.price),
+      mrp:         form.mrp ? Number(form.mrp) : Number(form.price),
+      unit:        form.unit,
+      stock:       Number(form.stock ?? 0),
+      image_url:   form.image_url?.trim() || null,
+      is_available: form.vendor_id !== 'none' && form.is_available,
+    };
+    const { error } = await AdminAPI.updateProduct(product.id, updates);
+    if (error) { setErr(error.message ?? 'Failed to save changes'); setSaving(false); return; }
+    setSaving(false);
+    onSaved();
+    onClose();
+  };
+
+  return (
+    <Dialog open onOpenChange={v => !v && !saving && onClose()}>
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Edit Product</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 pt-1">
+          {err && (
+            <p className="text-xs text-destructive p-2 bg-destructive/10 rounded-lg">{err}</p>
+          )}
+
+          <div>
+            <Label htmlFor="edit-product-vendor" className="text-xs mb-1 block">Vendor</Label>
+            <Select value={form.vendor_id} onValueChange={v => setF('vendor_id', v)}>
+              <SelectTrigger id="edit-product-vendor" className="h-9 text-xs"><SelectValue placeholder="Select vendor…" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No vendor (unassigned draft)</SelectItem>
+                {(vendors ?? []).map(v => (
+                  <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {form.vendor_id === 'none' && (
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Won't be visible or orderable by customers until a vendor is assigned.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <Label htmlFor="edit-product-category" className="text-xs mb-1 block">Category</Label>
+            <Select value={form.category_id} onValueChange={v => setF('category_id', v)}>
+              <SelectTrigger id="edit-product-category" className="h-9 text-xs"><SelectValue placeholder="Select category…" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No category</SelectItem>
+                {(categories ?? []).map(c => (
+                  <SelectItem key={c.id} value={c.id}>{c.icon} {c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label htmlFor="edit-product-name" className="text-xs mb-1 block">Name (English) *</Label>
+              <Input id="edit-product-name" value={form.name} onChange={e => setF('name', e.target.value)} className="h-9 text-sm" />
+            </div>
+            <div>
+              <Label htmlFor="edit-product-name-hi" className="text-xs mb-1 block">Name (Hindi)</Label>
+              <Input id="edit-product-name-hi" value={form.name_hindi} onChange={e => setF('name_hindi', e.target.value)} className="h-9 text-sm" />
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="edit-product-desc" className="text-xs mb-1 block">Description</Label>
+            <Textarea id="edit-product-desc" value={form.description} onChange={e => setF('description', e.target.value)} className="h-16 text-sm resize-none" />
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <Label htmlFor="edit-product-price" className="text-xs mb-1 block">Price (₹) *</Label>
+              <Input id="edit-product-price" type="number" min="0" value={form.price} onChange={e => setF('price', e.target.value)} className="h-9 text-sm" />
+            </div>
+            <div>
+              <Label htmlFor="edit-product-mrp" className="text-xs mb-1 block">MRP (₹)</Label>
+              <Input id="edit-product-mrp" type="number" min="0" value={form.mrp} onChange={e => setF('mrp', e.target.value)} className="h-9 text-sm" />
+            </div>
+            <div>
+              <Label htmlFor="edit-product-stock" className="text-xs mb-1 block">Stock</Label>
+              <Input id="edit-product-stock" type="number" min="0" value={form.stock} onChange={e => setF('stock', e.target.value)} className="h-9 text-sm" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label htmlFor="edit-product-unit" className="text-xs mb-1 block">Unit</Label>
+              <Select value={form.unit} onValueChange={v => setF('unit', v)}>
+                <SelectTrigger id="edit-product-unit" className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {['piece','kg','gram','litre','ml','dozen','pack','bundle','box'].map(u => (
+                    <SelectItem key={u} value={u}>{u}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="edit-product-image" className="text-xs mb-1 block">Image URL</Label>
+              <Input id="edit-product-image" value={form.image_url} onChange={e => setF('image_url', e.target.value)} className="h-9 text-sm" placeholder="https://…" />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-2.5 bg-muted/40 rounded-lg">
+            <div>
+              <p className="text-sm font-medium">Available</p>
+              <p className="text-xs text-muted-foreground">
+                {form.vendor_id === 'none' ? 'Requires a vendor to be assigned first' : 'Visible to customers'}
+              </p>
+            </div>
+            <Switch
+              checked={form.is_available}
+              disabled={form.vendor_id === 'none'}
+              onCheckedChange={v => setF('is_available', v)}
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" disabled={saving} onClick={onClose}>Cancel</Button>
+            <Button className="flex-1 gap-2" disabled={saving} onClick={handleSave}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              Save Changes
             </Button>
           </div>
         </div>
@@ -239,6 +435,7 @@ export default function AdminProducts() {
   const [toggling,    setToggling]    = useState(null);
   const [bulkAct,     setBulkAct]     = useState(false);
   const [createOpen,  setCreateOpen]  = useState(false);
+  const [editingProduct, setEditingProduct] = useState(null);
 
   const { data: products, isLoading, error, refetch } = useDataFetch(
     () => AdminAPI.getProducts({ limit: 200 }),
@@ -272,7 +469,8 @@ export default function AdminProducts() {
       const matchSearch = !search
         || p.name.toLowerCase().includes(search.toLowerCase())
         || (p.vendor_name ?? '').toLowerCase().includes(search.toLowerCase());
-      const matchVendor = vendorFil === 'all' || p.vendor_id === vendorFil;
+      const matchVendor = vendorFil === 'all'
+        || (vendorFil === 'none' ? !p.vendor_id : p.vendor_id === vendorFil);
       const matchCat    = catFil    === 'all' || p.category_id === catFil;
       return matchSearch && matchVendor && matchCat;
     });
@@ -292,7 +490,18 @@ export default function AdminProducts() {
 
   // ── Inline update ─────────────────────────────────────
   const update = async (id, updates) => {
-    await AdminAPI.updateProduct(id, updates);
+    const { error } = await AdminAPI.updateProduct(id, updates);
+    if (error) {
+      // Previously ignored entirely — e.g. toggling "Available" on for
+      // a vendor-less product is rejected by the database (migration
+      // 069's check constraint), and that failure vanished silently,
+      // leaving the admin unsure whether it saved or not.
+      toast({
+        title: "Couldn't save change",
+        description: error.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    }
     refetch();
   };
 
@@ -362,6 +571,7 @@ export default function AdminProducts() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Vendors</SelectItem>
+              <SelectItem value="none">Unassigned</SelectItem>
               {(vendors ?? []).map(v => (
                 <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
               ))}
@@ -431,7 +641,7 @@ export default function AdminProducts() {
               <span className="w-16 text-right">MRP</span>
               <span className="w-16 text-right">Stock</span>
               <span className="w-16 text-center">Avail</span>
-              <span className="w-16 text-center">Actions</span>
+              <span className="w-20 text-center">Actions</span>
             </div>
 
             {/* Rows */}
@@ -461,7 +671,7 @@ export default function AdminProducts() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{p.name}</p>
                     <p className="text-xs text-muted-foreground truncate">
-                      {p.vendor_name ?? '—'} · {p.category_name ?? p.category ?? '—'}
+                      {p.vendor_name ?? <span className="italic">Unassigned</span>} · {p.category_name ?? p.category ?? '—'}
                     </p>
                   </div>
 
@@ -495,7 +705,8 @@ export default function AdminProducts() {
                   <div className="w-16 flex justify-center">
                     <Switch
                       checked={p.is_available}
-                      disabled={toggling === p.id}
+                      disabled={toggling === p.id || !p.vendor_id}
+                      title={!p.vendor_id ? 'Assign a vendor before making this available' : undefined}
                       onCheckedChange={v => {
                         setToggling(p.id);
                         update(p.id, { is_available: v }).then(() => setToggling(null));
@@ -503,14 +714,24 @@ export default function AdminProducts() {
                     />
                   </div>
 
-                  {/* Delete */}
-                  <div className="w-16 flex justify-center">
+                  {/* Edit + Delete */}
+                  <div className="w-20 flex justify-center gap-1">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-muted-foreground hover:bg-muted"
+                      onClick={() => setEditingProduct(p)}
+                      aria-label={`Edit ${p.name}`}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </Button>
                     <Button
                       size="icon"
                       variant="ghost"
                       className="h-7 w-7 text-destructive hover:bg-destructive/10"
                       disabled={deleting.has(p.id)}
                       onClick={() => deleteSingle(p.id)}
+                      aria-label={`Delete ${p.name}`}
                     >
                       {deleting.has(p.id)
                         ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -536,6 +757,15 @@ export default function AdminProducts() {
           vendors={vendors ?? []}
           categories={categories ?? []}
           onCreated={refetch}
+        />
+      )}
+      {editingProduct && (
+        <EditProductDialog
+          product={editingProduct}
+          vendors={vendors ?? []}
+          categories={categories ?? []}
+          onClose={() => setEditingProduct(null)}
+          onSaved={refetch}
         />
       )}
     </div>
