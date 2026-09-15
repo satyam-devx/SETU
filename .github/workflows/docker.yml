@@ -1,0 +1,132 @@
+name: Docker Build & Smoke Test
+
+# ─────────────────────────────────────────────────────────
+# Purely additive: validates the Docker image builds and serves the app
+# correctly. Does not touch, gate, or replace ci.yml / deploy.yml / any
+# existing pipeline. Scoped to only run when Docker-related files (or
+# things that could break the build, like package.json) actually change.
+# ─────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'docker/**'
+      - 'docker-compose.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.npmrc'
+      - 'vite.config.js'
+      - 'scripts/inject_sw_config.py'
+      - '.github/workflows/docker.yml'
+  pull_request:
+    branches: [main, staging]
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'docker/**'
+      - 'docker-compose.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.npmrc'
+      - 'vite.config.js'
+      - 'scripts/inject_sw_config.py'
+  workflow_dispatch:
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-smoke-test:
+    name: Build image & smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build with real secrets if available; falls back to the same
+      # no-credentials placeholder values as ci.yml's "Build Verification"
+      # job (PRs from forks won't have secrets either) — the image must
+      # build regardless, same as that job.
+      - name: Build production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: setu:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+            VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
+            VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY || 'placeholder' }}
+            VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN || 'placeholder.firebaseapp.com' }}
+            VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID || 'placeholder-project' }}
+            VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET || 'placeholder.appspot.com' }}
+            VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID || '000000000000' }}
+            VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID || '1:000000000000:web:placeholder' }}
+            VITE_FIREBASE_VAPID_KEY=${{ secrets.VITE_FIREBASE_VAPID_KEY || 'placeholder-vapid-key' }}
+            VITE_MAPBOX_TOKEN=${{ secrets.VITE_MAPBOX_TOKEN || 'pk.placeholder' }}
+            VITE_RAZORPAY_KEY_ID=${{ secrets.VITE_RAZORPAY_KEY_ID || 'rzp_test_placeholder' }}
+
+      - name: Report image size
+        run: |
+          docker image inspect setu:ci --format='Image size: {{.Size}} bytes'
+
+      - name: Start container
+        run: docker run -d --name setu-smoke -p 8080:8080 setu:ci
+
+      - name: Wait for container health
+        run: |
+          for i in $(seq 1 15); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' setu-smoke)
+            if [ "$status" = "healthy" ]; then
+              echo "Container healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Container did not become healthy in time"
+          docker logs setu-smoke
+          exit 1
+
+      - name: Verify root page serves
+        run: |
+          curl -fsS http://localhost:8080/ -o /tmp/root.html
+          grep -q '<div id="root">' /tmp/root.html
+
+      - name: Verify a deep SPA route does not 404 at the server
+        # /customer/orders is a real nested route (see src/App.jsx) — the
+        # server doesn't know or care that ProtectedRoute will redirect
+        # an unauthenticated visitor client-side; it just needs to return
+        # the SPA shell (200), not a bare 404, for React Router to run at
+        # all. If this ever returns anything but 200, the nginx SPA
+        # fallback broke.
+        run: |
+          status=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/customer/orders)
+          if [ "$status" != "200" ]; then
+            echo "::error::Deep route /customer/orders returned $status, expected 200 (SPA fallback broken)"
+            exit 1
+          fi
+
+      - name: Verify security headers are present
+        run: curl -fsSI http://localhost:8080/ | grep -qi 'content-security-policy'
+
+      - name: Check served output for obvious leaked secrets
+        run: |
+          if docker exec setu-smoke sh -c \
+            "grep -rlE 'service_role|SUPABASE_SERVICE_ROLE|RAZORPAY_KEY_SECRET|BEGIN PRIVATE KEY' /usr/share/nginx/html"; then
+            echo "::error::Possible secret found in built image output"
+            exit 1
+          fi
+          echo "No obvious secrets found in served output"
+
+      - name: Stop and remove container
+        if: always()
+        run: docker rm -f setu-smoke || true

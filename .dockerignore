@@ -1,0 +1,54 @@
+# SETU — Docker build context excludes
+#
+# Trims what's sent to the Docker daemon and — critically — keeps a HOST
+# node_modules from ever being copied into the image. Dependencies are
+# always installed fresh, from package-lock.json, inside the container
+# (see Dockerfile); a copied-in host node_modules built on a different
+# OS/CPU (e.g. Termux/ARM) would silently ship broken native binaries
+# (esbuild, etc.) instead.
+
+# Dependencies — always installed fresh inside the image
+node_modules
+
+# Build output — rebuilt inside the image
+dist
+dist.zip
+build
+
+# Git / GitHub metadata — not needed to build the frontend
+.git
+.github
+
+# Env files with real secrets — NEVER enter the build context.
+# Only plain VITE_* --build-arg values (public, client-visible by
+# design — see .env.example) ever reach the image.
+.env
+.env.local
+.env.production
+.env.development
+.env.staging
+.env.*.local
+
+# Supabase CLI local dev state
+.supabase
+
+# QA / security / E2E pipeline — a separate workspace (its own
+# package.json, Playwright browsers, etc.), not required to build the
+# frontend image. See DOCKER.md "QA & testing" for running it against
+# the built container instead.
+qa
+
+# Capacitor native Android project — irrelevant to the web image
+android
+
+# Logs, caches, one-off reports
+*.log
+npm-debug.log*
+.npm
+audit.json
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db

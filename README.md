@@ -20,6 +20,8 @@ npm run dev
 
 Open `http://localhost:5173` to see the SETU role selector. Without real credentials, set `VITE_DEMO_MODE=true` in `.env.local` for local preview (see `.env.example` for what every variable does and where to get it).
 
+Prefer Docker? `docker compose --env-file .env.local up --build` gives the same dev server in a container — see [`DOCKER.md`](DOCKER.md).
+
 ### Common scripts
 
 | Command | What it does |
@@ -132,6 +134,7 @@ Hindi (हिन्दी) · Maithili (मैथिली) · Bhojpuri (भो�
 | [`PERFORMANCE.md`](PERFORMANCE.md) | 2G/low-end-device performance budget and bundle strategy |
 | [`ACCESSIBILITY.md`](ACCESSIBILITY.md) | WCAG 2.1 AA scope, automated + manual testing checklist |
 | [`HOSTING.md`](HOSTING.md) | GitHub Pages → Cloudflare Pages migration, deploy targets |
+| [`DOCKER.md`](DOCKER.md) | Docker build/run, dev via Compose, env vars, CI, troubleshooting |
 | [`SCALING.md`](SCALING.md) | Read replicas, WAF/rate-limiting, scaling playbook |
 | [`DR.md`](DR.md) | Disaster recovery — RTO/RPO, rollback procedure |
 | [`RUNBOOK.md`](RUNBOOK.md) | Operational runbook for incidents |

@@ -1,0 +1,80 @@
+# SETU — local development via Docker
+#
+# Runs the real `npm run dev` Vite dev server (hot reload) inside a
+# container — a reproducible dev environment independent of whatever
+# Node version happens to be on the host. This is a DEV convenience only;
+# it is not how the production image is built or served — that's the
+# Dockerfile's "runtime" stage. See DOCKER.md.
+#
+# Usage:
+#   cp .env.example .env.local        # fill in real values, or leave the
+#                                      # placeholders and set
+#                                      # VITE_DEMO_MODE=true below for a
+#                                      # credential-free preview
+#   docker compose --env-file .env.local up --build
+#   open http://localhost:5173
+#
+# To instead build and run the production nginx image locally:
+#   docker compose --profile prod-preview up --build preview
+#   open http://localhost:8080
+
+services:
+  dev:
+    build:
+      context: .
+      target: base   # stop at the "deps installed, nothing built yet"
+                      # stage — the dev server builds nothing up front
+    command: npm run dev
+    ports:
+      - "5173:5173"   # matches vite.config.js server.port (host: true
+                       # is already set there, so no extra --host flag
+                       # is needed for it to bind inside the container)
+    volumes:
+      - .:/app
+      # Named volume, mounted over the bind mount above at exactly
+      # /app/node_modules, so the *container's* Linux-built node_modules
+      # (installed in the "base" stage) is what actually runs — not
+      # whatever (possibly Termux/ARM) node_modules exists on the host.
+      - node_modules:/app/node_modules
+    environment:
+      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+      VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+      VITE_SUPABASE_REPLICA_URL: ${VITE_SUPABASE_REPLICA_URL:-}
+      VITE_DEMO_MODE: ${VITE_DEMO_MODE:-true}
+      VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY:-}
+      VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN:-}
+      VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID:-}
+      VITE_FIREBASE_STORAGE_BUCKET: ${VITE_FIREBASE_STORAGE_BUCKET:-}
+      VITE_FIREBASE_MESSAGING_SENDER_ID: ${VITE_FIREBASE_MESSAGING_SENDER_ID:-}
+      VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID:-}
+      VITE_FIREBASE_VAPID_KEY: ${VITE_FIREBASE_VAPID_KEY:-}
+      VITE_MAPBOX_TOKEN: ${VITE_MAPBOX_TOKEN:-}
+      VITE_RAZORPAY_KEY_ID: ${VITE_RAZORPAY_KEY_ID:-}
+
+  # Optional: build + run the actual production image (Dockerfile's
+  # "runtime" stage) locally, e.g. to sanity-check a deploy before
+  # pushing. Does not start with a plain `docker compose up`.
+  preview:
+    build:
+      context: .
+      target: runtime
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+        VITE_SUPABASE_REPLICA_URL: ${VITE_SUPABASE_REPLICA_URL:-}
+        VITE_DEMO_MODE: ${VITE_DEMO_MODE:-false}
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY:-}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN:-}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID:-}
+        VITE_FIREBASE_STORAGE_BUCKET: ${VITE_FIREBASE_STORAGE_BUCKET:-}
+        VITE_FIREBASE_MESSAGING_SENDER_ID: ${VITE_FIREBASE_MESSAGING_SENDER_ID:-}
+        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID:-}
+        VITE_FIREBASE_VAPID_KEY: ${VITE_FIREBASE_VAPID_KEY:-}
+        VITE_MAPBOX_TOKEN: ${VITE_MAPBOX_TOKEN:-}
+        VITE_RAZORPAY_KEY_ID: ${VITE_RAZORPAY_KEY_ID:-}
+    ports:
+      - "8080:8080"
+    profiles: ["prod-preview"]
+
+volumes:
+  node_modules:
