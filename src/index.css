@@ -354,6 +354,18 @@
   }
   .scroll-strip::-webkit-scrollbar { display: none; }
 
+  /* Snap-paginated horizontal strip — Home's category showcase.
+     Unlike .scroll-strip (free-scrolling rail), this snaps to
+     full-width "pages" so adding more categories from the admin
+     panel pages the deck sideways instead of growing new grid
+     columns or endless rows. */
+  .scroll-strip-snap {
+    @apply flex overflow-x-auto snap-x snap-mandatory scroll-smooth pb-1;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scroll-strip-snap::-webkit-scrollbar { display: none; }
+
   /* Thin, theme-aware scrollbar for dark sidebar nav areas */
   .nav-scroll {
     scrollbar-width: thin;

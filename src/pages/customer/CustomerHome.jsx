@@ -18,7 +18,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Search, Mic, MapPin, ChevronRight, Star, Bell,
-  Plus, ShoppingCart, RefreshCw, Loader2, CheckCircle2, AlertCircle,
+  ShoppingCart, RefreshCw, Loader2, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useVillage } from '@/lib/village';
@@ -33,81 +33,19 @@ import {
   BannerSkeleton, CategorySkeleton, VendorCardSkeleton, ProductCardSkeleton,
 } from '@/components/shared/SkeletonCard';
 import EmptyState from '@/components/shared/EmptyState';
-import Img from '@/components/shared/Img';
 import BannerCard from '@/components/shared/BannerCard';
+import CategoriesCarousel from '@/components/customer/CategoriesCarousel';
+import ProductCard from '@/components/customer/ProductCard';
 import { useRealtimeBanners } from '@/hooks/useRealtimeBanners';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import { formatCurrency } from '@/lib/utils';
 
 // ── Banners now come from the `banners` table (see
 // useRealtimeBanners) — this hardcoded array was the actual reason
 // admin banner edits never reached customers: Home never queried the
 // database at all, realtime or otherwise.
-
-// ── CategoryCard ──────────────────────────────────────────
-// A 2x2 collage of real product photos from that category (falling
-// back to the category's own icon for any cell with no photo, or the
-// whole tile when the category has none at all yet), with an
-// accurate "+N more" count floating on the bottom edge — replaces the
-// old single-emoji tile with something that actually shows what's
-// inside the category.
-function CategoryCard({ cat }) {
-  const samples  = (cat.sample_images ?? []).filter(Boolean).slice(0, 4);
-  const total    = cat.product_count ?? 0;
-  const more     = Math.max(0, total - samples.length);
-  const IconTile = ({ className = '' }) => (
-    <div className={`flex items-center justify-center text-lg bg-primary/5 ${className}`} aria-hidden="true">
-      {cat.icon || '🛒'}
-    </div>
-  );
-
-  return (
-    <Link
-      to={`/customer/search?category=${cat.id}`}
-      role="listitem"
-      className="flex flex-col gap-1.5"
-    >
-      <div className="relative bg-muted/40 border border-border/60 rounded-2xl p-1.5">
-        {samples.length === 0 ? (
-          // No product photos yet for this category — one honest tile
-          // instead of four identical, repetitive icon cells.
-          <div className="aspect-square rounded-xl overflow-hidden">
-            <Img
-              src={cat.image_url}
-              alt=""
-              width={120}
-              height={120}
-              className="w-full h-full object-cover"
-              fallback={<IconTile className="w-full h-full" />}
-            />
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-1">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="aspect-square rounded-lg overflow-hidden bg-card">
-                {samples[i]
-                  ? <Img src={samples[i]} alt="" width={60} height={60} className="w-full h-full object-cover" fallback={<IconTile className="w-full h-full" />} />
-                  : <IconTile className="w-full h-full" />}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {more > 0 && (
-          <div className="absolute left-1/2 bottom-0 -translate-x-1/2 translate-y-1/2 bg-card border border-border rounded-full px-2.5 py-1 shadow-sm">
-            <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">+{more} more</span>
-          </div>
-        )}
-      </div>
-      <span className="text-sm font-bold text-foreground leading-tight line-clamp-2 px-0.5">
-        {cat.name}
-      </span>
-    </Link>
-  );
-}
 
 // ── VendorCard ────────────────────────────────────────────
 function VendorCard({ vendor }) {
@@ -147,70 +85,6 @@ function VendorCard({ vendor }) {
             {vendor.review_count > 0 && (
               <span className="text-[10px] text-muted-foreground font-medium">({vendor.review_count})</span>
             )}
-          </div>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-// ── ProductCard ───────────────────────────────────────────
-function ProductCard({ product }) {
-  const { items, addItem } = useCart();
-  const [imgErr, setImgErr] = useState(false);
-  const inCart = items.find(i => i.id === product.id);
-
-  const handleAdd = (e) => {
-    e.preventDefault();
-    addItem(product, 1);
-  };
-
-  return (
-    <Link to={`/customer/product/${product.id}`} className="block">
-      <div className="setu-card overflow-hidden h-full">
-        <div className="h-28 bg-muted overflow-hidden relative">
-          {product.image_url && !imgErr ? (
-            <img
-              src={product.image_url}
-              alt={product.name}
-              className="w-full h-full object-cover"
-              loading="lazy"
-              onError={() => setImgErr(true)}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-3xl">🛒</div>
-          )}
-          {product.mrp > product.price && (
-            <span className="absolute top-2 right-2 bg-destructive text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-              {Math.round((1 - product.price / product.mrp) * 100)}% OFF
-            </span>
-          )}
-        </div>
-        <div className="p-3">
-          <h4 className="text-xs font-semibold line-clamp-2 leading-snug">{product.name}</h4>
-          {product.name_hindi && (
-            <p className="text-[10px] text-muted-foreground">{product.name_hindi}</p>
-          )}
-          <div className="flex items-center justify-between mt-2">
-            <div>
-              <span className="text-sm font-bold text-foreground">{formatCurrency(product.price)}</span>
-              {product.mrp > product.price && (
-                <span className="text-[10px] text-muted-foreground line-through ml-1">
-                  {formatCurrency(product.mrp)}
-                </span>
-              )}
-            </div>
-            <button
-              onClick={handleAdd}
-              aria-label={inCart ? 'In cart' : `Add ${product.name} to cart`}
-              className={`w-11 h-11 rounded-xl flex items-center justify-center transition-colors shrink-0 ${
-                inCart
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground'
-              }`}
-            >
-              {inCart ? <ShoppingCart className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-            </button>
           </div>
         </div>
       </div>
@@ -517,27 +391,27 @@ export default function CustomerHome() {
       ) : null}
 
       {/* ── Categories ──────────────────────────────── */}
-      <section className="px-4 mb-6" aria-labelledby="categories-title">
-        <div className="section-header">
+      {/* Every category from the admin panel shows up here — the
+         carousel pages sideways in fixed 3×2 pages instead of ever
+         growing new columns or rows. "See All" leads to a real
+         Categories page (with products), not a generic search. */}
+      <section className="mb-6" aria-labelledby="categories-title">
+        <div className="section-header px-4">
           <h3 id="categories-title" className="section-title">Categories</h3>
-          <Link to="/customer/search" className="section-link">See All</Link>
+          <Link to="/customer/categories" className="section-link">See All</Link>
         </div>
         {catsLoading ? (
-          <CategorySkeleton count={6} />
+          <div className="px-4"><CategorySkeleton count={6} /></div>
         ) : catsError ? (
-          <div className="flex flex-col items-center gap-2 py-6">
+          <div className="px-4 flex flex-col items-center gap-2 py-6">
             <AlertCircle className="w-6 h-6 text-destructive" aria-hidden="true" />
             <p className="text-xs text-muted-foreground text-center">Could not load categories.</p>
             <button onClick={refetchCats} className="text-xs text-primary font-semibold underline">Retry</button>
           </div>
         ) : !categories?.length ? (
-          <EmptyState emoji="🛒" title="No categories yet" size="sm" />
+          <div className="px-4"><EmptyState emoji="🛒" title="No categories yet" size="sm" /></div>
         ) : (
-          <div className="grid grid-cols-3 gap-3" role="list">
-            {categories.slice(0, 6).map(cat => (
-              <CategoryCard key={cat.id} cat={cat} />
-            ))}
-          </div>
+          <CategoriesCarousel categories={categories} />
         )}
       </section>
 
