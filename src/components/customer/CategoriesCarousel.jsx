@@ -21,7 +21,7 @@ import { Link } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import CategoryCard from './CategoryCard';
 
-const PAGE_SIZE = 6; // 2 cols × 3 rows — fixed Home grid
+const PAGE_SIZE = 6; // 3 columns × 2 rows — fixed Home grid
 
 export default function CategoriesCarousel({ categories }) {
   const scrollerRef = useRef(null);
@@ -43,14 +43,21 @@ export default function CategoriesCarousel({ categories }) {
     const el = scrollerRef.current;
     if (!el) return;
     const clamped = Math.max(0, Math.min(i, totalPages - 1));
-    el.scrollTo({ left: clamped * el.clientWidth, behavior: 'smooth' });
+    el.children[clamped]?.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
   }, [totalPages]);
 
   const handleScroll = useCallback(() => {
     const el = scrollerRef.current;
     if (!el || el.clientWidth === 0) return;
     setHasScrolled(true);
-    setPage(Math.round(el.scrollLeft / el.clientWidth));
+    const children = Array.from(el.children);
+    if (children.length) {
+      const nearest = children.reduce((best, child, i) => {
+        const distance = Math.abs(child.offsetLeft - el.scrollLeft);
+        return distance < best.distance ? { index: i, distance } : best;
+      }, { index: 0, distance: Infinity });
+      setPage(nearest.index);
+    }
   }, []);
 
   const handleKeyDown = (e) => {
@@ -66,12 +73,12 @@ export default function CategoriesCarousel({ categories }) {
           onScroll={handleScroll}
           onKeyDown={handleKeyDown}
           tabIndex={totalPages > 1 ? 0 : -1}
-          className="scroll-strip-snap px-4"
+          className="scroll-strip-snap px-4 gap-3"
           role="region"
           aria-label="Categories, swipe for more"
         >
           {pages.map((pageCats, pi) => (
-            <div key={pi} className="grid grid-cols-2 gap-3 w-full shrink-0 snap-start" role="list">
+            <div key={pi} className="grid grid-cols-3 grid-rows-2 gap-3 w-full shrink-0 snap-start" role="list">
               {pageCats.map((cat, ci) => (
                 <div
                   key={cat.id}
