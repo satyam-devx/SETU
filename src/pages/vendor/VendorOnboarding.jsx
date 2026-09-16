@@ -842,7 +842,7 @@ function Step5({ vendorId, productsCount, user, onSubmitted }) {
 // ── Root component ────────────────────────────────────────
 export default function VendorOnboarding() {
   const navigate  = useNavigate();
-  const { user, reloadProfile } = useAuth();
+  const { user, reloadProfile, isLoading: authLoading } = useAuth();
   const [checking,        setChecking]        = useState(true);
   const [step,            setStep]            = useState(1);
   const [vendorId,        setVendorId]        = useState(null);
@@ -854,7 +854,8 @@ export default function VendorOnboarding() {
   // (which has no route back into onboarding — they'd be stuck for
   // good). Only a fully *submitted* application skips onboarding.
   useEffect(() => {
-    if (!user) return;
+    if (authLoading) return; // wait for the session restore to settle either way
+    if (!user) { setChecking(false); return; } // public route — no session yet, start fresh at Step 1
     let active = true;
 
     getVendorByOwnerId(user.id).then(async ({ data }) => {
@@ -880,7 +881,7 @@ export default function VendorOnboarding() {
     });
 
     return () => { active = false; };
-  }, [user, navigate]);
+  }, [user, authLoading, navigate]);
 
   const next = () => setStep(s => Math.min(s + 1, 5));
   const back = () => setStep(s => Math.max(s - 1, 1));
