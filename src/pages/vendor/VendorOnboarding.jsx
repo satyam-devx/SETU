@@ -34,7 +34,7 @@ import { Progress } from '@/components/ui/progress';
 import { kyc as kycService } from '@/lib/kyc';
 import { useAuth }  from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { upsertVendorProfile, upsertProduct, getVillages, getVendorByOwnerId } from '@/lib/api';
+import { upsertVendorProfile, upsertProduct, getVillages, getVendorByOwnerId, getProducts } from '@/lib/api';
 
 // ── Constants ─────────────────────────────────────────────
 const STEPS = [
@@ -74,7 +74,7 @@ function StepIndicator({ current }) {
             }`}>
               {step.id < current ? <CheckCircle className="w-4 h-4" /> : step.id}
             </div>
-            <p className="text-[9px] text-center mt-1 font-medium hidden sm:block">{step.label}</p>
+            <p className="text-[9px] text-center mt-1 font-medium leading-tight max-w-[52px]">{step.label}</p>
           </div>
           {i < STEPS.length - 1 && (
             <div className={`flex-1 h-0.5 mx-1 ${step.id < current ? 'bg-accent' : 'bg-border'}`} />
@@ -195,7 +195,11 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
     name: '', category: '', description: '',
     village_id: '', landmark: '', delivery_radius: 2,
   });
-  const [shopPhotos, setShopPhotos] = useState([]);
+  // Indexed by fixed slot (0 = Shop front, 1 = Inside, 2 = Products) —
+  // not a compacted list — so each labeled box always shows/replaces
+  // its own photo, never whichever one was uploaded most recently.
+  const [shopPhotos, setShopPhotos] = useState([null, null, null]);
+  const [activeSlot, setActiveSlot] = useState(0);
   const [villages,   setVillages]   = useState([]);
   const [saving,     setSaving]     = useState(false);
   const [error,      setError]      = useState('');
@@ -213,7 +217,21 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
   const handlePhotoAdd = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setShopPhotos(ps => [...ps.slice(0, 2), { file, preview: URL.createObjectURL(file) }]);
+    setShopPhotos(ps => {
+      const next = [...ps];
+      next[activeSlot] = { file, preview: URL.createObjectURL(file) };
+      return next;
+    });
+    e.target.value = ''; // allow re-picking the same file for another slot
+  };
+
+  const handlePhotoRemove = (i, e) => {
+    e.stopPropagation(); // don't also trigger the slot's own onClick (file picker)
+    setShopPhotos(ps => {
+      const next = [...ps];
+      next[i] = null;
+      return next;
+    });
   };
 
   const handleSave = async () => {
@@ -227,7 +245,7 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
       // Upload shop photos to Supabase Storage (your version)
       const photoUrls = [];
       for (const photo of shopPhotos) {
-        if (!photo.file) continue;
+        if (!photo?.file) continue;
         const path = `shop/${user.id}/${Date.now()}.jpg`;
         const { data: uploaded, error: upErr } = await supabase.storage
           .from('vendor-images')
@@ -313,17 +331,28 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
         <label className="text-xs font-medium mb-1 block">Shop Photos</label>
         <div className="grid grid-cols-3 gap-2">
           {['Shop front', 'Inside', 'Products'].map((label, i) => (
-            <button
-              key={label}
-              type="button"
-              className="aspect-square bg-muted rounded-xl flex flex-col items-center justify-center border-2 border-dashed border-border hover:border-primary transition-colors overflow-hidden"
-              onClick={() => photoRef.current?.click()}
-            >
-              {shopPhotos[i]
-                ? <img src={shopPhotos[i].preview} alt={label} className="w-full h-full object-cover" />
-                : <><Camera className="w-5 h-5 text-muted-foreground mb-1" /><p className="text-[9px] text-muted-foreground">{label}</p></>
-              }
-            </button>
+            <div key={label} className="relative aspect-square">
+              <button
+                type="button"
+                className="w-full h-full bg-muted rounded-xl flex flex-col items-center justify-center border-2 border-dashed border-border hover:border-primary transition-colors overflow-hidden"
+                onClick={() => { setActiveSlot(i); photoRef.current?.click(); }}
+              >
+                {shopPhotos[i]
+                  ? <img src={shopPhotos[i].preview} alt={label} className="w-full h-full object-cover" />
+                  : <><Camera className="w-5 h-5 text-muted-foreground mb-1" /><p className="text-[9px] text-muted-foreground">{label}</p></>
+                }
+              </button>
+              {shopPhotos[i] && (
+                <button
+                  type="button"
+                  onClick={(e) => handlePhotoRemove(i, e)}
+                  className="absolute top-1 right-1 w-5 h-5 bg-black/50 rounded-full flex items-center justify-center"
+                  aria-label={`Remove ${label} photo`}
+                >
+                  <X className="w-3 h-3 text-white" />
+                </button>
+              )}
+            </div>
           ))}
         </div>
       </div>
@@ -385,9 +414,9 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
 // ── Step 3: Products ──────────────────────────────────────
 // Your version kept entirely: live adds with image upload + DB write per product.
 // Added: onProductAdded callback so root component tracks count correctly.
-function Step3({ onNext, onBack, vendorId, onProductAdded }) {
+function Step3({ onNext, onBack, vendorId, onProductAdded, initialProducts = [] }) {
   const fileRef = useRef(null);
-  const [products, setProducts] = useState([]);
+  const [products, setProducts] = useState(initialProducts);
   const [form,     setForm]     = useState({ name: '', price: '', stock: '', unit: 'piece' });
   const [imgFile,  setImgFile]  = useState(null);
   const [imgPrev,  setImgPrev]  = useState(null);
@@ -573,7 +602,7 @@ function Step3({ onNext, onBack, vendorId, onProductAdded }) {
 
 // ── Step 4: Bank & Payment ────────────────────────────────
 // Your version: saves to vendor_payment_info table.
-function Step4({ onNext, onBack, vendorId }) {
+function Step4({ onNext, onBack, vendorId, user }) {
   const [form, setForm] = useState({
     account_name: '', account_number: '', ifsc: '', bank_name: '', upi_id: '',
   });
@@ -610,8 +639,11 @@ function Step4({ onNext, onBack, vendorId }) {
 
       if (payErr) throw payErr;
 
-      // Mark step progress on vendor row
-      await upsertVendorProfile({ owner_id: vendorId, onboarding_step: 4 });
+      // Mark step progress on vendor row (owner_id must be the
+      // authenticated user's id — vendors_own_update RLS checks
+      // owner_id = auth.uid(), not the vendor row's own id)
+      const { error: stepErr } = await upsertVendorProfile({ owner_id: user.id, onboarding_step: 4 });
+      if (stepErr) throw stepErr;
       onNext();
     } catch (err) {
       setError(err?.message || 'Failed to save payment info. Please try again.');
@@ -767,10 +799,13 @@ function Step5({ vendorId, productsCount, user, onSubmitted }) {
         {checklist.map((item, i) => (
           <div key={i} className={`flex items-center gap-3 p-3 rounded-xl border ${
             item.status === 'done'    ? 'bg-green-50 border-green-200' :
+            item.status === 'warn'    ? 'bg-amber-50 border-amber-200' :
             item.status === 'pending' ? 'bg-amber-50 border-amber-200' :
                                         'bg-muted border-border'
           }`}>
-            <p className={`text-sm ${item.status === 'pending' ? 'text-amber-700' : 'text-foreground'}`}>
+            <p className={`text-sm ${
+              item.status === 'warn' || item.status === 'pending' ? 'text-amber-700' : 'text-foreground'
+            }`}>
               {item.label}
             </p>
           </div>
@@ -808,16 +843,43 @@ function Step5({ vendorId, productsCount, user, onSubmitted }) {
 export default function VendorOnboarding() {
   const navigate  = useNavigate();
   const { user, reloadProfile } = useAuth();
-  const [step,          setStep]          = useState(1);
-  const [vendorId,      setVendorId]      = useState(null);
-  const [productsCount, setProductsCount] = useState(0);
+  const [checking,        setChecking]        = useState(true);
+  const [step,            setStep]            = useState(1);
+  const [vendorId,        setVendorId]        = useState(null);
+  const [productsCount,   setProductsCount]   = useState(0);
+  const [initialProducts, setInitialProducts] = useState([]);
 
-  // Phase 0: redirect if vendor row already exists
+  // Resume onboarding where the vendor left off, instead of bouncing
+  // anyone with a saved-but-incomplete vendor row straight to /vendor
+  // (which has no route back into onboarding — they'd be stuck for
+  // good). Only a fully *submitted* application skips onboarding.
   useEffect(() => {
     if (!user) return;
-    getVendorByOwnerId(user.id).then(({ data }) => {
-      if (data) navigate('/vendor', { replace: true });
+    let active = true;
+
+    getVendorByOwnerId(user.id).then(async ({ data }) => {
+      if (!active) return;
+      if (!data) { setChecking(false); return; }
+
+      if (data.onboarding_status === 'submitted') {
+        navigate('/vendor', { replace: true });
+        return;
+      }
+
+      setVendorId(data.id);
+      // Whatever step's save last succeeded, resume at the next one
+      // (min 2, since a vendor row only exists once Step 2 has saved).
+      setStep(Math.min(Math.max((data.onboarding_step || 1) + 1, 2), 5));
+
+      const { data: existingProducts } = await getProducts({ vendorId: data.id, limit: 100 });
+      if (active && existingProducts?.length) {
+        setInitialProducts(existingProducts);
+        setProductsCount(existingProducts.length);
+      }
+      if (active) setChecking(false);
     });
+
+    return () => { active = false; };
   }, [user, navigate]);
 
   const next = () => setStep(s => Math.min(s + 1, 5));
@@ -830,6 +892,14 @@ export default function VendorOnboarding() {
   const handleSubmitted = async () => {
     navigate('/vendor', { replace: true });
   };
+
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-background max-w-md mx-auto flex items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" aria-label="Loading" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background max-w-md mx-auto">
@@ -864,6 +934,7 @@ export default function VendorOnboarding() {
           onBack={back}
           vendorId={vendorId}
           onProductAdded={() => setProductsCount(n => n + 1)}
+          initialProducts={initialProducts}
         />
       )}
       {step === 4 && (
@@ -871,6 +942,7 @@ export default function VendorOnboarding() {
           onNext={next}
           onBack={back}
           vendorId={vendorId}
+          user={user}
         />
       )}
       {step === 5 && (
