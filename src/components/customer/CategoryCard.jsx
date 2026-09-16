@@ -29,7 +29,7 @@ export default function CategoryCard({ cat }) {
     <Link
       to={`/customer/search?category=${cat.id}`}
       role="listitem"
-      className="flex flex-col gap-1.5"
+      className="flex flex-col gap-1.5 items-center text-center"
     >
       <div className="relative bg-muted/40 border border-border/60 rounded-2xl p-1.5">
         {samples.length === 0 ? (
@@ -63,7 +63,7 @@ export default function CategoryCard({ cat }) {
           </div>
         )}
       </div>
-      <span className="text-sm font-bold text-foreground leading-tight line-clamp-2 px-0.5">
+      <span className="text-sm font-bold text-foreground leading-tight line-clamp-2 px-0.5 w-full text-center">
         {cat.name}
       </span>
     </Link>
