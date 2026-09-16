@@ -21,19 +21,19 @@ import { Link } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import CategoryCard from './CategoryCard';
 
-const PAGE_SIZE = 6; // 3 cols × 2 rows — the original fixed grid shape
+const PAGE_SIZE = 6; // 2 cols × 3 rows — fixed Home grid
 
 export default function CategoriesCarousel({ categories }) {
   const scrollerRef = useRef(null);
   const [page, setPage] = useState(0);
   const [hasScrolled, setHasScrolled] = useState(false);
 
+  // Home intentionally shows only the first 6 categories.
+  // All remaining categories stay on the dedicated Categories page,
+  // so the Home section never grows into multiple horizontal pages.
   const pages = useMemo(() => {
-    const chunks = [];
-    for (let i = 0; i < categories.length; i += PAGE_SIZE) {
-      chunks.push(categories.slice(i, i + PAGE_SIZE));
-    }
-    return chunks;
+    if (categories.length === 0) return [];
+    return [categories.slice(0, PAGE_SIZE)];
   }, [categories]);
 
   const hasFinale  = categories.length > PAGE_SIZE;
@@ -71,7 +71,7 @@ export default function CategoriesCarousel({ categories }) {
           aria-label="Categories, swipe for more"
         >
           {pages.map((pageCats, pi) => (
-            <div key={pi} className="grid grid-cols-3 gap-3 w-full shrink-0 snap-start" role="list">
+            <div key={pi} className="grid grid-cols-2 gap-3 w-full shrink-0 snap-start" role="list">
               {pageCats.map((cat, ci) => (
                 <div
                   key={cat.id}
