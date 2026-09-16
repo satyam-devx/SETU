@@ -89,13 +89,13 @@ export function BannerSkeleton() {
 }
 
 // Category icon skeleton
-export function CategorySkeleton({ count = 5 }) {
+export function CategorySkeleton({ count = 6 }) {
   return (
-    <div className="grid grid-cols-5 gap-2">
+    <div className="grid grid-cols-3 gap-3">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="flex flex-col items-center gap-1 p-2">
-          <Skeleton className="w-12 h-12 rounded-2xl" />
-          <Skeleton className="h-2 w-8" />
+        <div key={i} className="flex flex-col gap-1.5">
+          <Skeleton className="aspect-square rounded-2xl" />
+          <Skeleton className="h-3.5 w-4/5" />
         </div>
       ))}
     </div>

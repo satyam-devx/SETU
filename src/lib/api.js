@@ -71,6 +71,26 @@ export async function getCategories() {
   );
 }
 
+// Backs the Home category cards: sample product images + a real
+// count per category, via the category_previews view (migration 073).
+// Demo-mode fallback derives the same shape from the mock PRODUCTS
+// list (matched by category name) rather than hand-maintaining a
+// separate mock dataset that could drift out of sync with it.
+export async function getCategoryPreviews() {
+  return safeQuery(
+    () => supabaseRead.from('category_previews').select('*').order('sort_order'),
+    CATEGORIES.map(c => {
+      const inCategory = PRODUCTS.filter(p => p.category === c.name && p.isAvailable !== false);
+      return {
+        ...c,
+        sample_images: inCategory.slice(0, 4).map(p => p.image).filter(Boolean),
+        product_count: inCategory.length,
+      };
+    }),
+    'getCategoryPreviews'
+  );
+}
+
 // ── Vendors ───────────────────────────────────────────────
 
 export async function getVendors({ villageId, category, page = 0, limit = 20 } = {}) {

@@ -26,7 +26,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useCart } from '@/lib/cartContext';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import {
-  getCategories, getVendors, getProducts, getSchemes,
+  getCategoryPreviews, getVendors, getProducts, getSchemes,
 } from '@/lib/api';
 import { useFcmToken } from '@/hooks/useFcmToken';
 import {
@@ -46,6 +46,68 @@ import { formatCurrency } from '@/lib/utils';
 // useRealtimeBanners) — this hardcoded array was the actual reason
 // admin banner edits never reached customers: Home never queried the
 // database at all, realtime or otherwise.
+
+// ── CategoryCard ──────────────────────────────────────────
+// A 2x2 collage of real product photos from that category (falling
+// back to the category's own icon for any cell with no photo, or the
+// whole tile when the category has none at all yet), with an
+// accurate "+N more" count floating on the bottom edge — replaces the
+// old single-emoji tile with something that actually shows what's
+// inside the category.
+function CategoryCard({ cat }) {
+  const samples  = (cat.sample_images ?? []).filter(Boolean).slice(0, 4);
+  const total    = cat.product_count ?? 0;
+  const more     = Math.max(0, total - samples.length);
+  const IconTile = ({ className = '' }) => (
+    <div className={`flex items-center justify-center text-lg bg-primary/5 ${className}`} aria-hidden="true">
+      {cat.icon || '🛒'}
+    </div>
+  );
+
+  return (
+    <Link
+      to={`/customer/search?category=${cat.id}`}
+      role="listitem"
+      className="flex flex-col gap-1.5"
+    >
+      <div className="relative bg-muted/40 border border-border/60 rounded-2xl p-1.5">
+        {samples.length === 0 ? (
+          // No product photos yet for this category — one honest tile
+          // instead of four identical, repetitive icon cells.
+          <div className="aspect-square rounded-xl overflow-hidden">
+            <Img
+              src={cat.image_url}
+              alt=""
+              width={120}
+              height={120}
+              className="w-full h-full object-cover"
+              fallback={<IconTile className="w-full h-full" />}
+            />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-1">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="aspect-square rounded-lg overflow-hidden bg-card">
+                {samples[i]
+                  ? <Img src={samples[i]} alt="" width={60} height={60} className="w-full h-full object-cover" fallback={<IconTile className="w-full h-full" />} />
+                  : <IconTile className="w-full h-full" />}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {more > 0 && (
+          <div className="absolute left-1/2 bottom-0 -translate-x-1/2 translate-y-1/2 bg-card border border-border rounded-full px-2.5 py-1 shadow-sm">
+            <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">+{more} more</span>
+          </div>
+        )}
+      </div>
+      <span className="text-sm font-bold text-foreground leading-tight line-clamp-2 px-0.5">
+        {cat.name}
+      </span>
+    </Link>
+  );
+}
 
 // ── VendorCard ────────────────────────────────────────────
 function VendorCard({ vendor }) {
@@ -226,9 +288,12 @@ export default function CustomerHome() {
   );
 
   // ── Data fetching ─────────────────────────────────────
-  const { data: categories, isLoading: catsLoading }     = useDataFetch(
-    () => getCategories(),
-    [], { cacheKey: 'categories' }
+  const {
+    data: categories, isLoading: catsLoading,
+    error: catsError, refetch: refetchCats,
+  } = useDataFetch(
+    () => getCategoryPreviews(),
+    [], { cacheKey: 'category-previews' }
   );
   const {
     data: vendors, isLoading: vendorsLoading,
@@ -458,34 +523,19 @@ export default function CustomerHome() {
           <Link to="/customer/search" className="section-link">See All</Link>
         </div>
         {catsLoading ? (
-          <CategorySkeleton count={10} />
+          <CategorySkeleton count={6} />
+        ) : catsError ? (
+          <div className="flex flex-col items-center gap-2 py-6">
+            <AlertCircle className="w-6 h-6 text-destructive" aria-hidden="true" />
+            <p className="text-xs text-muted-foreground text-center">Could not load categories.</p>
+            <button onClick={refetchCats} className="text-xs text-primary font-semibold underline">Retry</button>
+          </div>
+        ) : !categories?.length ? (
+          <EmptyState emoji="🛒" title="No categories yet" size="sm" />
         ) : (
-          <div className="grid grid-cols-5 gap-2" role="list">
-            {(categories || []).slice(0, 10).map(cat => (
-              <Link
-                key={cat.id}
-                to={`/customer/search?category=${cat.id}`}
-                role="listitem"
-                className="flex flex-col items-center gap-1.5 p-1 rounded-xl active:bg-muted transition-colors"
-              >
-                <div className="w-14 h-14 rounded-2xl overflow-hidden border border-border/60 bg-muted shadow-sm">
-                  <Img
-                    src={cat.image_url}
-                    alt=""
-                    width={56}
-                    height={56}
-                    className="w-full h-full object-cover"
-                    fallback={
-                      <div className="w-14 h-14 flex items-center justify-center text-2xl bg-primary/5" aria-hidden="true">
-                        {cat.icon || '🛒'}
-                      </div>
-                    }
-                  />
-                </div>
-                <span className="text-[10px] text-center text-muted-foreground font-medium leading-tight line-clamp-2">
-                  {cat.name.split(' ')[0]}
-                </span>
-              </Link>
+          <div className="grid grid-cols-3 gap-3" role="list">
+            {categories.slice(0, 6).map(cat => (
+              <CategoryCard key={cat.id} cat={cat} />
             ))}
           </div>
         )}
