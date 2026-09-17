@@ -754,10 +754,14 @@ function Step4({ onNext, onBack, vendorId, user }) {
 
       if (payErr) throw payErr;
 
-      // Mark step progress on vendor row (owner_id must be the
-      // authenticated user's id — vendors_own_update RLS checks
-      // owner_id = auth.uid(), not the vendor row's own id)
-      const { error: stepErr } = await upsertVendorProfile({ owner_id: user.id, onboarding_step: 4 });
+      // Mark step progress on the existing vendor row directly (never
+      // upsert here — this payload has no name/category/etc, so if an
+      // upsert ever took the INSERT path instead of matching the
+      // existing row, it would crash on those NOT NULL columns)
+      const { error: stepErr } = await supabase
+        .from('vendors')
+        .update({ onboarding_step: 4 })
+        .eq('id', vendorId);
       if (stepErr) throw stepErr;
       onNext();
     } catch (err) {
@@ -849,14 +853,19 @@ function Step5({ vendorId, productsCount, user, onSubmitted }) {
     setSubmitting(true); setError('');
 
     try {
-      // Mark vendor as submitted (your version)
-      const { error: submitErr } = await upsertVendorProfile({
-        owner_id:          user.id,
-        onboarding_status: 'submitted',
-        onboarding_step:   5,
-        submitted_at:      new Date().toISOString(),
-        is_verified:       false,
-      });
+      // Mark vendor as submitted — update the existing row directly,
+      // never upsert (this payload has no name/category/etc, so an
+      // upsert that took the INSERT path would crash on those
+      // NOT NULL columns)
+      const { error: submitErr } = await supabase
+        .from('vendors')
+        .update({
+          onboarding_status: 'submitted',
+          onboarding_step:   5,
+          submitted_at:      new Date().toISOString(),
+          is_verified:       false,
+        })
+        .eq('id', vendorId);
       if (submitErr) throw submitErr;
 
       // Update profile role to 'vendor' (Phase 0)
