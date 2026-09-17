@@ -78,17 +78,21 @@ const CustomerTerms             = lazy(() => import('@/pages/customer/CustomerTe
 const CustomerAccountManagement = lazy(() => import('@/pages/customer/CustomerAccountManagement'));
 
 // ── Lazy: Vendor portal ───────────────────────────────────
-const VendorLayout    = lazy(() => import('@/pages/vendor/VendorLayout'));
-const VendorDashboard = lazy(() => import('@/pages/vendor/VendorDashboard'));
-const VendorOrders    = lazy(() => import('@/pages/vendor/VendorOrders'));
-const VendorProducts  = lazy(() => import('@/pages/vendor/VendorProducts'));
-const VendorProfile   = lazy(() => import('@/pages/vendor/VendorProfile'));
-const VendorEarnings  = lazy(() => import('@/pages/vendor/VendorEarnings'));
-const VendorAnalytics = lazy(() => import('@/pages/vendor/VendorAnalytics'));
-const VendorSettings  = lazy(() => import('@/pages/vendor/VendorSettings'));
-const VendorCredit    = lazy(() => import('@/pages/vendor/VendorCredit'));
-const VendorCustomers = lazy(() => import('@/pages/vendor/VendorCustomers'));
-const VendorAddProduct = lazy(() => import('@/pages/vendor/VendorAddProduct'));
+const VendorLayout       = lazy(() => import('@/pages/vendor/VendorLayout'));
+const VendorDashboard    = lazy(() => import('@/pages/vendor/VendorDashboard'));
+const VendorOrders       = lazy(() => import('@/pages/vendor/VendorOrders'));
+const VendorProducts     = lazy(() => import('@/pages/vendor/VendorProducts'));
+const VendorProfile      = lazy(() => import('@/pages/vendor/VendorProfile'));
+const VendorEarnings     = lazy(() => import('@/pages/vendor/VendorEarnings'));
+const VendorAnalytics    = lazy(() => import('@/pages/vendor/VendorAnalytics'));
+const VendorSettings     = lazy(() => import('@/pages/vendor/VendorSettings'));
+const VendorCredit       = lazy(() => import('@/pages/vendor/VendorCredit'));
+const VendorCustomers    = lazy(() => import('@/pages/vendor/VendorCustomers'));
+const VendorAddProduct   = lazy(() => import('@/pages/vendor/VendorAddProduct'));
+const VendorReviews      = lazy(() => import('@/pages/vendor/VendorReviews'));
+const VendorSubscription = lazy(() => import('@/pages/vendor/VendorSubscription'));
+const VendorDocuments    = lazy(() => import('@/pages/vendor/VendorDocuments'));
+const VendorSupport      = lazy(() => import('@/pages/vendor/VendorSupport'));
 
 // ── Lazy: Rider portal ────────────────────────────────────
 const RiderLayout     = lazy(() => import('@/pages/rider/RiderLayout'));
@@ -362,6 +366,10 @@ function App() {
                 <Route path="analytics"      element={<Suspense fallback={<PortalFallback />}><VendorAnalytics /></Suspense>} />
                 <Route path="credit"         element={<Suspense fallback={<PortalFallback />}><VendorCredit /></Suspense>} />
                 <Route path="customers"      element={<Suspense fallback={<PortalFallback />}><VendorCustomers /></Suspense>} />
+                <Route path="reviews"        element={<Suspense fallback={<PortalFallback />}><VendorReviews /></Suspense>} />
+                <Route path="subscription"   element={<Suspense fallback={<PortalFallback />}><VendorSubscription /></Suspense>} />
+                <Route path="documents"      element={<Suspense fallback={<PortalFallback />}><VendorDocuments /></Suspense>} />
+                <Route path="support"        element={<Suspense fallback={<PortalFallback />}><VendorSupport /></Suspense>} />
                 <Route path="settings"       element={<Suspense fallback={<PortalFallback />}><VendorSettings /></Suspense>} />
                 <Route path="profile"        element={<Suspense fallback={<PortalFallback />}><VendorProfile /></Suspense>} />
               </Route>
