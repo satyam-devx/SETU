@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════
 // SETU — CustomerProfile (v3)
 // UI refreshed: Camera avatar, SETU Score badge, quick-stat
-// cards, rich menu with descriptions.
+// cards, rich menu with descriptions, Dark Mode toggle in header.
 // Logic unchanged: real auth, API updateProfile, store counts.
 // ═══════════════════════════════════════════════════════════
 import React, { useState, useEffect } from 'react';
@@ -10,6 +10,7 @@ import {
   MapPin, Star, Gift, Settings, ChevronRight, Edit2,
   CheckCircle, LogOut, Shield, HeadphonesIcon, Camera,
   CreditCard, FileText, Bell, Loader2, AlertCircle,
+  Moon, Sun,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -49,6 +50,19 @@ export default function CustomerProfile() {
 
   const [showSignout, setShowSignout] = useState(false);
 
+  // ── Dark Mode State & Handler ─────────────────────────────
+  const [darkMode, setDarkMode] = useState(
+    () => document.documentElement.classList.contains('dark')
+  );
+
+  const toggleDarkMode = () => {
+    setDarkMode(prev => {
+      const next = !prev;
+      document.documentElement.classList.toggle('dark', next);
+      return next;
+    });
+  };
+
   // ── Edit Profile modal ──────────────────────────────────
   const [editOpen, setEditOpen]   = useState(false);
   const [form, setForm]           = useState({ name: '', villageId: '' });
@@ -83,12 +97,6 @@ export default function CustomerProfile() {
   };
 
   const handleSaveProfile = async () => {
-    // Re-entry guard: the trigger button is already disabled while
-    // saving is true, but that disabled state only takes effect on
-    // React's next render — a fast double-tap (common on the lower-end
-    // Android hardware this app targets) can fire this handler twice
-    // before that happens. Guard here too rather than rely on the
-    // button alone.
     if (saving) return;
     if (!form.name.trim()) {
       setFormError('Full name is required');
@@ -122,9 +130,23 @@ export default function CustomerProfile() {
       <AppHeader
         title="Profile"
         rightAction={
-          <Button variant="ghost" size="icon" onClick={openEdit} aria-label="Edit profile">
-            <Edit2 className="w-4 h-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleDarkMode}
+              aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {darkMode ? (
+                <Sun className="w-4 h-4 text-amber-500 transition-transform hover:rotate-45" />
+              ) : (
+                <Moon className="w-4 h-4 text-muted-foreground transition-transform hover:-rotate-12" />
+              )}
+            </Button>
+            <Button variant="ghost" size="icon" onClick={openEdit} aria-label="Edit profile">
+              <Edit2 className="w-4 h-4" />
+            </Button>
+          </div>
         }
       />
 
@@ -156,10 +178,6 @@ export default function CustomerProfile() {
               )}
 
               <div className="flex items-center gap-2 mt-1 flex-wrap">
-                {/* bg-primary/15 measured 4.02:1 contrast (fails WCAG AA 4.5:1 —
-                    flagged by qa/tests/e2e/a11y/accessibility.spec.js). At /5
-                    opacity the tint is lighter, keeping text-primary's contrast
-                    at ~4.67:1 against it. See CHANGELOG.md. */}
                 <span className="text-xs chip-primary px-2 py-0.5 rounded-full font-bold">
                   SETU Score: {setuScore}
                 </span>
