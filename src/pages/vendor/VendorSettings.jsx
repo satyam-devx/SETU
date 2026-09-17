@@ -23,7 +23,7 @@ import { Input } from '@/components/ui/input';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
 import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendorByOwnerId, upsertVendorProfile } from '@/lib/api';
+import { getVendorByOwnerId, upsertVendorProfile, getVendorHours, saveVendorHours } from '@/lib/api';
 
 const DEFAULT_HOURS = [
   { day: 'Monday – Friday', open: '08:00', close: '21:00' },
@@ -40,11 +40,17 @@ export default function VendorSettings() {
     [user?.id],
     { cacheKey: `vendor-profile-${user?.id}`, enabled: !!user?.id }
   );
+  const { data: storedHours } = useDataFetch(
+    () => getVendorHours(vendor.id),
+    [vendor?.id],
+    { cacheKey: `vendor-hours-${vendor?.id}`, enabled: !!vendor?.id }
+  );
 
   // ── Toggle states (seeded from DB) ────────────────────────
   const [orderNotifs, setOrderNotifs] = useState(true);
   const [stockAlerts, setStockAlerts] = useState(true);
   const [autoAccept,  setAutoAccept]  = useState(false);
+  const [storeOpen,   setStoreOpen]   = useState(false);
   const [darkMode,    setDarkMode]    = useState(
     () => document.documentElement.classList.contains('dark')
   );
@@ -66,10 +72,22 @@ export default function VendorSettings() {
     setOrderNotifs(prefs.order_notifs   ?? true);
     setStockAlerts(prefs.stock_alerts   ?? true);
     setAutoAccept( prefs.auto_accept    ?? false);
-    if (vendor.business_hours) {
-      setHours(vendor.business_hours);
+    setStoreOpen(vendor.is_open ?? false);
+    const savedDark = prefs.dark_mode ?? false;
+    setDarkMode(savedDark);
+    document.documentElement.classList.toggle('dark', savedDark);
+    // vendor_hours is normalized in the database; keep the compact UI shape.
+    if (storedHours?.length) {
+      const labels = ['Sunday','Monday – Friday','Saturday'];
+      const byDay = new Map(storedHours.map(h => [Number(h.day_of_week), h]));
+      const monFri = byDay.get(1) || {};
+      setHours([
+        { day: 'Monday – Friday', open: monFri.open_time?.slice(0,5) || '08:00', close: monFri.close_time?.slice(0,5) || '21:00', closed: !!monFri.is_closed },
+        { day: 'Saturday', open: byDay.get(6)?.open_time?.slice(0,5) || '08:00', close: byDay.get(6)?.close_time?.slice(0,5) || '22:00', closed: !!byDay.get(6)?.is_closed },
+        { day: 'Sunday', open: byDay.get(0)?.open_time?.slice(0,5) || '09:00', close: byDay.get(0)?.close_time?.slice(0,5) || '18:00', closed: !!byDay.get(0)?.is_closed },
+      ]);
     }
-  }, [vendor]);
+  }, [vendor, storedHours]);
 
   // Dark mode toggle wired to DOM
   const handleDarkMode = (val) => {
@@ -86,18 +104,28 @@ export default function VendorSettings() {
     const { error } = await upsertVendorProfile({
       id:         vendor.id,
       owner_id:   user.id,
+      is_open:    storeOpen,
       preferences: {
         order_notifs: orderNotifs,
         stock_alerts: stockAlerts,
         auto_accept:  autoAccept,
         dark_mode:    darkMode,
       },
-      business_hours: hours,
     });
 
+    const { error: hoursError } = await saveVendorHours(vendor.id, [
+      { ...(hours[2] || {}), dayIndex: 0 },
+      { ...(hours[0] || {}), dayIndex: 1 },
+      { ...(hours[0] || {}), dayIndex: 2 },
+      { ...(hours[0] || {}), dayIndex: 3 },
+      { ...(hours[0] || {}), dayIndex: 4 },
+      { ...(hours[0] || {}), dayIndex: 5 },
+      { ...(hours[1] || {}), dayIndex: 6 },
+    ].map(h => ({...h, open: h.open, close: h.close})));
+
     setSaving(false);
-    if (error) {
-      setSaveError(error.message ?? 'Failed to save settings.');
+    if (error || hoursError) {
+      setSaveError((error || hoursError).message ?? 'Failed to save settings.');
     } else {
       setSaveDone(true);
       setEditHours(false);
@@ -148,6 +176,17 @@ export default function VendorSettings() {
             </div>
           </Card>
         )}
+
+        {/* Store status */}
+        <Card className="border-border">
+          <div className="flex items-center justify-between px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">Store Open</p>
+              <p className="text-xs text-muted-foreground">Customers can place orders when your store is open.</p>
+            </div>
+            <Switch checked={storeOpen} onCheckedChange={setStoreOpen} />
+          </div>
+        </Card>
 
         {/* Order settings */}
         <Card className="border-border divide-y divide-border">

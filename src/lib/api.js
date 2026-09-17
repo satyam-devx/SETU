@@ -123,7 +123,20 @@ export async function getVendorById(id) {
 export async function getVendorByOwnerId(ownerId) {
   return safeQuery(
     () => supabase.from('vendors').select('*').eq('owner_id', ownerId).maybeSingle(),
-    null,
+    // Demo mode needs a real vendor-shaped object so every vendor screen can
+    // be exercised without a database row. Never used when Supabase is configured.
+    isSupabaseConfigured ? null : {
+      ...VENDORS[0],
+      owner_id: ownerId,
+      village_id: 'madhepur',
+      image_url: VENDORS[0].image,
+      review_count: VENDORS[0].reviewCount,
+      is_open: VENDORS[0].isOpen,
+      is_verified: VENDORS[0].isVerified,
+      delivery_radius: VENDORS[0].deliveryRadius,
+      subscription_tier: VENDORS[0].subscriptionTier,
+      trust_score: 720,
+    },
     'getVendorByOwnerId'
   );
 }
@@ -136,33 +149,72 @@ export async function upsertVendorProfile(vendorData) {
   );
 }
 
+export async function getVendorPaymentInfo(vendorId) {
+  return safeQuery(
+    () => supabase.from('vendor_payment_info').select('account_name,account_number,ifsc,bank_name,upi_id').eq('vendor_id', vendorId).maybeSingle(),
+    null,
+    'getVendorPaymentInfo'
+  );
+}
+
+export async function getVendorHours(vendorId) {
+  return safeQuery(
+    () => supabase.from('vendor_hours').select('day_of_week,open_time,close_time,is_closed').eq('vendor_id', vendorId).order('day_of_week'),
+    [],
+    'getVendorHours'
+  );
+}
+
+export async function saveVendorHours(vendorId, hours) {
+  if (!isSupabaseConfigured) return ok(hours);
+  try {
+    const rows = (hours ?? []).map((h, i) => ({
+      vendor_id: vendorId,
+      day_of_week: i,
+      open_time: h.open || null,
+      close_time: h.close || null,
+      is_closed: !!h.closed,
+    }));
+    const { data, error } = await supabase
+      .from('vendor_hours')
+      .upsert(rows, { onConflict: 'vendor_id,day_of_week' })
+      .select();
+    if (error) return err(error, 'saveVendorHours');
+    return ok(data);
+  } catch (e) { return err(e, 'saveVendorHours'); }
+}
+
 // ── Products ──────────────────────────────────────────────
 
-export async function getProducts({ vendorId, category, search, page = 0, limit = 30 } = {}) {
+export async function getProducts({ vendorId, category, search, page = 0, limit = 30, includeUnavailable = false } = {}) {
   return safeQuery(() => {
-    let q = supabaseRead
+    let q = supabase
       .from('products')
       .select(`
         id, vendor_id, name, name_hindi, description, price, mrp,
-        unit, stock, image_url, is_available, category, category_id
+        unit, stock, image_url, is_available, category, category_id, is_seasonal
       `)
-      .eq('is_available', true)
       .range(page * limit, (page + 1) * limit - 1)
       .order('name');
 
-    if (vendorId)  q = q.eq('vendor_id', vendorId);
-    if (category)  q = q.eq('category', category);
-    if (search)    q = q.ilike('name', `%${search}%`);
+    if (!includeUnavailable) q = q.eq('is_available', true);
+    if (vendorId) q = q.eq('vendor_id', vendorId);
+    if (category) q = q.eq('category', category);
+    if (search) q = q.ilike('name', `%${search}%`);
     return q;
-  }, PRODUCTS, 'getProducts');
+  }, PRODUCTS
+    .filter(p => !vendorId || (p.vendor_id ?? p.vendorId) === vendorId)
+    .filter(p => includeUnavailable || (p.is_available ?? p.isAvailable) !== false)
+    .filter(p => !category || p.category === category)
+    .filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase())), 'getProducts');
 }
 
-export async function getProductById(id) {
-  return safeQuery(
-    () => supabase.from('products').select('*, vendors(name, rating, village)').eq('id', id).single(),
-    PRODUCTS.find(p => p.id === id) || null,
-    'getProductById'
-  );
+export async function getProductById(id, { vendorId } = {}) {
+  return safeQuery(() => {
+    let q = supabase.from('products').select('*, vendors(name, rating, village)').eq('id', id);
+    if (vendorId) q = q.eq('vendor_id', vendorId);
+    return q.single();
+  }, PRODUCTS.find(p => p.id === id && (!vendorId || (p.vendor_id ?? p.vendorId) === vendorId)) || null, 'getProductById');
 }
 
 export async function upsertProduct(productData) {
@@ -207,7 +259,7 @@ export async function getOrdersByVendor(vendorId, { page = 0, limit = 20, status
       .from('orders')
       .select(`
         id, order_number, status, total, payment_method, payment_status,
-        customer_name, created_at, delivery_address, is_cod,
+        customer_name, created_at, delivery_address, is_cod, vendor_review_reply,
         order_items(id, name, qty, price)
       `)
       .eq('vendor_id', vendorId)
@@ -553,6 +605,12 @@ export async function deleteAddress(addressId) {
 // ── Support ───────────────────────────────────────────────
 
 export async function getSupportTickets(userId) {
+  if (!isSupabaseConfigured) {
+    try {
+      const all = JSON.parse(localStorage.getItem(`setu_vendor_tickets_${userId}`) || '[]');
+      return ok(all);
+    } catch { return ok([]); }
+  }
   return safeQuery(
     () => supabase.from('support_tickets').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
     [],
@@ -561,6 +619,15 @@ export async function getSupportTickets(userId) {
 }
 
 export async function createSupportTicket(payload) {
+  if (!isSupabaseConfigured) {
+    try {
+      const key = `setu_vendor_tickets_${payload.user_id}`;
+      const all = JSON.parse(localStorage.getItem(key) || '[]');
+      const ticket = { ...payload, id: `demo-ticket-${Date.now()}`, created_at: new Date().toISOString() };
+      localStorage.setItem(key, JSON.stringify([ticket, ...all]));
+      return ok(ticket);
+    } catch (e) { return err(e, 'createSupportTicket'); }
+  }
   return safeQuery(
     () => supabase.from('support_tickets').insert(payload).select().single(),
     null,
@@ -777,6 +844,22 @@ export const NotificationAPI = {
   markAllRead: (userId)      => markAllNotificationsRead(userId),
 };
 
+export async function getVendorCreditAccount(userId) {
+  return safeQuery(
+    () => supabase.from('credit_accounts').select('*').eq('user_id', userId).maybeSingle(),
+    { credit_limit: 0, outstanding: 0, status: 'active', score: 500 },
+    'getVendorCreditAccount'
+  );
+}
+
+export async function getVendorCreditTransactions(userId, { limit = 15 } = {}) {
+  return safeQuery(
+    () => supabase.from('credit_transactions').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(limit),
+    [],
+    'getVendorCreditTransactions'
+  );
+}
+
 export const CreditAPI = {
   getAccount:  (userId)      => safeQuery(
     () => supabase.from('credit_accounts').select('*').eq('user_id', userId).maybeSingle(),
@@ -789,7 +872,7 @@ export const CreditAPI = {
     // validates the limit and records a PENDING credit_disbursements
     // application (audited). The old client-side check + direct
     // outstanding UPDATE was a privilege-escalation hole.
-    if (!isSupabaseConfigured) return ok({ success: false, message: 'Demo mode' });
+    if (!isSupabaseConfigured) return err({ message: 'Credit applications are unavailable in demo mode.' }, 'CreditAPI.applyCredit');
     const { data, error: e } = await supabase.rpc('request_credit', {
       p_amount:  amount,
       p_purpose: purpose ?? null,
@@ -839,10 +922,25 @@ function unwrapStatusResult({ data, error }) {
   return { data, error: null };
 }
 
+export async function replyToVendorReview(orderId, reply) {
+  if (!isSupabaseConfigured) return ok({ success: true });
+  try {
+    const { data, error } = await supabase.rpc('reply_to_vendor_review', {
+      p_order_id: orderId,
+      p_reply: reply,
+    });
+    if (error) return err(error, 'replyToVendorReview');
+    if (data?.error) return err({ message: data.error }, 'replyToVendorReview');
+    return ok(data);
+  } catch (e) {
+    return err(e, 'replyToVendorReview');
+  }
+}
+
 export const VendorAPI = {
   getOrders:       (vendorId, opts) => getOrdersByVendor(vendorId, opts),
   updateOrder:     (orderId, status, extra) => updateOrderStatus(orderId, status, extra),
-  getProducts:     (vendorId)       => getProducts({ vendorId }),
+  getProducts:     (vendorId)       => getProducts({ vendorId, includeUnavailable: true }),
   upsertProduct:   (data)           => upsertProduct(data),
   deleteProduct:   (id)             => deleteProduct(id),
   getProfile:      (ownerId)        => getVendorByOwnerId(ownerId),
@@ -861,9 +959,10 @@ export const VendorAPI = {
   startPreparing: async (orderId) => unwrapStatusResult(await updateOrderStatus(orderId, 'preparing')),
   markReady: async (orderId) => unwrapStatusResult(await updateOrderStatus(orderId, 'ready')),
   rejectOrder: async (orderId, reason) => {
-    // A rejected order may already be paid for (UPI/wallet) — use the
-    // same atomic cancel+auto-refund path checkout and customer
-    // cancellation use, rather than a raw status flip with no refund.
+    // A rejected order may already be paid for; production uses the atomic
+    // cancel+refund RPC. Demo mode mirrors the action locally instead of
+    // calling the placeholder Supabase client.
+    if (!isSupabaseConfigured) return ok({ success: true, demo: true });
     const { data: { user } = {} } = await supabase.auth.getUser();
     return cancelOrderWithRefund(orderId, user?.id, 'vendor', reason);
   },

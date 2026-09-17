@@ -33,7 +33,7 @@ import { Badge }    from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { kyc as kycService } from '@/lib/kyc';
 import { useAuth }  from '@/lib/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { upsertVendorProfile, upsertProduct, getVillages, getVendorByOwnerId, getProducts } from '@/lib/api';
 import { setPostLoginRedirect } from '@/lib/postLoginRedirect';
 
@@ -151,7 +151,7 @@ function Step1({ onNext, user }) {
           <Button
             variant="outline" size="sm" className="w-full text-xs"
             onClick={otpSent ? () => onNext() : handleVerify}
-            disabled={true || loading || aadhaar.length !== 12}
+            disabled={loading || aadhaar.length !== 12}
           >
             {loading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
             {otpSent ? 'Confirm OTP & Continue' : 'Request OTP via UIDAI'}
@@ -284,6 +284,10 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
 
         const photo = shopPhotos[i];
         if (!photo?.file) continue;
+        if (!isSupabaseConfigured) {
+          photoUrls.push(URL.createObjectURL(photo.file));
+          continue;
+        }
         const path = `shop/${user.id}/${Date.now()}.jpg`;
         const { data: uploaded, error: upErr } = await supabase.storage
           .from('vendor-images')
@@ -537,8 +541,11 @@ function Step3({ onNext, onBack, vendorId, onProductAdded, initialProducts = [] 
       // A pasted URL is used as-is; otherwise upload the picked file.
       let imageUrl = imgUrl.trim() || null;
       if (!imageUrl && imgFile) {
-        const path = `${vendorId}/${Date.now()}.jpg`;
-        const { data: upData, error: upErr } = await supabase.storage
+        if (!isSupabaseConfigured) {
+          imageUrl = URL.createObjectURL(imgFile);
+        } else {
+          const path = `${vendorId}/${Date.now()}.jpg`;
+          const { data: upData, error: upErr } = await supabase.storage
           .from('product-images')
           .upload(path, imgFile);
         if (!upErr) {
@@ -546,6 +553,7 @@ function Step3({ onNext, onBack, vendorId, onProductAdded, initialProducts = [] 
             .from('product-images')
             .getPublicUrl(upData.path);
           imageUrl = publicUrl;
+        }
         }
       }
 
@@ -736,6 +744,12 @@ function Step4({ onNext, onBack, vendorId, user }) {
     }
     setSaving(true); setError('');
 
+    if (!isSupabaseConfigured) {
+      setSaving(false);
+      onNext();
+      return;
+    }
+
     try {
       // Save to vendor_payment_info (your version)
       const { error: payErr } = await supabase
@@ -851,6 +865,13 @@ function Step5({ vendorId, productsCount, user, onSubmitted }) {
     if (!user)     { setError('You need to be logged in to continue. Please log in and try again.'); return; }
     if (!vendorId) { setError('Vendor ID missing. Please restart onboarding.'); return; }
     setSubmitting(true); setError('');
+
+    if (!isSupabaseConfigured) {
+      setSubmitting(false);
+      setSubmitted(true);
+      setTimeout(() => onSubmitted(), 1200);
+      return;
+    }
 
     try {
       // Mark vendor as submitted — update the existing row directly,

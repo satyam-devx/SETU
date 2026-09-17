@@ -9,11 +9,11 @@ import AppHeader from '@/components/shared/AppHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { useStore } from '@/lib/store';
 import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
-import { VendorAPI } from '@/lib/api';
+import { useDataFetch } from '@/hooks/useDataFetch';
+import { VendorAPI, getVendorByOwnerId } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
 import { toast } from '@/components/ui/use-toast';
 
-const VENDOR_ID = 'vn1'; // Phase 3: replace with vendor profile from auth
 
 // ── Loading skeleton ──────────────────────────────────────
 function OrdersSkeleton() {
@@ -28,8 +28,13 @@ function OrdersSkeleton() {
 
 export default function VendorOrders() {
   const { dispatch }          = useStore();
-  const { profile }           = useAuth();
-  const vendorId              = profile?.vendor_id ?? VENDOR_ID;
+  const { user }               = useAuth();
+  const { data: vendor }      = useDataFetch(
+    () => getVendorByOwnerId(user?.id),
+    [user?.id],
+    { cacheKey: `vendor-profile-${user?.id}`, enabled: !!user?.id }
+  );
+  const vendorId              = vendor?.id ?? null;
 
   const [tab, setTab]         = useState('active');
   const [query, setQuery]     = useState('');

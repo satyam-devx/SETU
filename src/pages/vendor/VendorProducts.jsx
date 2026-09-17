@@ -52,7 +52,7 @@ export default function VendorProducts() {
     error: productsError,
     refetch,
   } = useDataFetch(
-    () => getProducts({ vendorId: vendor?.id }),
+    () => getProducts({ vendorId: vendor?.id, includeUnavailable: true }),
     [vendor?.id],
     { cacheKey: `vendor-products-${vendor?.id}`, enabled: !!vendor?.id }
   );

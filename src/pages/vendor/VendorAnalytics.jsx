@@ -36,7 +36,6 @@ const PIE_COLORS = [
   'hsl(160, 60%, 45%)', 'hsl(290, 50%, 55%)',
 ];
 
-const STAR_WEIGHTS = [68, 22, 6, 2, 2]; // default until real reviews wired
 
 // ── helpers ──────────────────────────────────────────────────
 
@@ -55,7 +54,7 @@ function buildHourlyData(orders) {
 function buildTopProducts(orders) {
   const map = {};
   orders.forEach(o => {
-    const items = o.items ?? [];
+    const items = o.items ?? o.order_items ?? [];
     items.forEach(i => {
       if (!map[i.name]) map[i.name] = { name: i.name, orders: 0, revenue: 0 };
       map[i.name].orders  += i.qty ?? i.quantity ?? 1;
@@ -71,7 +70,7 @@ function buildTopProducts(orders) {
 function buildCategoryData(orders) {
   const map = {};
   orders.forEach(o => {
-    const items = o.items ?? [];
+    const items = o.items ?? o.order_items ?? [];
     items.forEach(i => {
       const cat = i.category ?? 'Other';
       if (!map[cat]) map[cat] = 0;
@@ -138,6 +137,16 @@ export default function VendorAnalytics() {
   );
 
   const completedOrders = vendorOrders.filter(o => o.status !== 'cancelled');
+  const ratingDistribution = useMemo(() => {
+    const rated = completedOrders.filter(o => o.vendor_rating != null);
+    const total = rated.length || 1;
+    return [5,4,3,2,1].map(star => ({
+      star,
+      count: rated.filter(o => Number(o.vendor_rating) === star).length,
+      pct: Math.round((rated.filter(o => Number(o.vendor_rating) === star).length / total) * 100),
+    }));
+  }, [completedOrders]);
+
 
   // ── Derived analytics ────────────────────────────────────
   const hourlyData  = useMemo(() => buildHourlyData(vendorOrders),   [vendorOrders]);
@@ -394,11 +403,11 @@ export default function VendorAnalytics() {
                 <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
                   <div
                     className="h-full bg-primary rounded-full"
-                    style={{ width: `${STAR_WEIGHTS[5 - star]}%` }}
+                    style={{ width: `${ratingDistribution.find(r => r.star === star)?.pct ?? 0}%` }}
                   />
                 </div>
                 <span className="text-xs text-muted-foreground w-6">
-                  {STAR_WEIGHTS[5 - star]}%
+                  {ratingDistribution.find(r => r.star === star)?.pct ?? 0}%
                 </span>
               </div>
             ))}

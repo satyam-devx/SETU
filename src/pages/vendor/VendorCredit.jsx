@@ -9,6 +9,7 @@
 //  - Full loading, error, and empty states
 // ═══════════════════════════════════════════════════════════
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   CreditCard, ArrowUpRight, ArrowDownLeft, TrendingUp,
   Loader2, AlertCircle, RefreshCw, CheckCircle, Clock,
@@ -21,14 +22,14 @@ import { Progress } from '@/components/ui/progress';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
 import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendorByOwnerId, CreditAPI } from '@/lib/api';
-import { supabase } from '@/lib/supabase';
+import { getVendorByOwnerId, CreditAPI, getVendorCreditAccount, getVendorCreditTransactions } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 
 const APPLY_AMOUNTS = [2000, 5000, 7500, 10000];
 
 export default function VendorCredit() {
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   // ── Vendor profile ────────────────────────────────────────
   const { data: vendor } = useDataFetch(
@@ -58,28 +59,19 @@ export default function VendorCredit() {
   const loadAccount = useCallback(async (vendorId) => {
     setAcctLoading(true);
     setAcctError(null);
-    const { data, error } = await supabase
-      .from('credit_accounts')
-      .select('*')
-      .eq('vendor_id', vendorId)
-      .maybeSingle();
+    const { data, error } = await getVendorCreditAccount(user?.id);
     if (error) setAcctError(error.message);
     else        setAccount(data);
     setAcctLoading(false);
-  }, []);
+  }, [user?.id]);
 
   // ── Load transactions ─────────────────────────────────────
   const loadTransactions = useCallback(async (vendorId) => {
     setTxnLoading(true);
-    const { data } = await supabase
-      .from('credit_transactions')
-      .select('*')
-      .eq('vendor_id', vendorId)
-      .order('created_at', { ascending: false })
-      .limit(15);
+    const { data } = await getVendorCreditTransactions(user?.id, { limit: 15 });
     setTransactions(data ?? []);
     setTxnLoading(false);
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     if (vendor?.id) {
@@ -95,7 +87,7 @@ export default function VendorCredit() {
     setActionErr(null);
 
     const { error } = await CreditAPI.applyCredit(
-      vendor.id,
+      user.id,
       parseInt(applyAmt, 10),
       applyPurpose
     );
@@ -208,8 +200,8 @@ export default function VendorCredit() {
           >
             <ArrowUpRight className="w-4 h-4" /> Apply Credit
           </Button>
-          <Button variant="outline" className="h-10 gap-2" disabled>
-            <ArrowDownLeft className="w-4 h-4" /> Repay
+          <Button variant="outline" className="h-10 gap-2" onClick={() => navigate('/vendor/support')}>
+            <ArrowDownLeft className="w-4 h-4" /> Repay via Support
           </Button>
         </div>
 

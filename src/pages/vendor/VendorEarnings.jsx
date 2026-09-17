@@ -8,10 +8,10 @@
 //  - Revenue aggregates (gross, fees, net) from real orders
 //  - Lazy chart: only renders after data arrives
 // ═══════════════════════════════════════════════════════════
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-  IndianRupee, TrendingUp, Download, ArrowDownLeft, ArrowUpRight,
-  Loader2, AlertCircle, RefreshCw,
+  IndianRupee, TrendingUp, ArrowDownLeft,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,10 +23,8 @@ import {
 import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
 import { useAuth } from '@/lib/AuthContext';
-import { useStore } from '@/lib/store';
 import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendorByOwnerId } from '@/lib/api';
-import { supabase } from '@/lib/supabase';
+import { getVendorByOwnerId, getOrdersByVendor } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -68,8 +66,8 @@ function buildMonthlyChart(orders) {
 
 export default function VendorEarnings() {
   const { user }   = useAuth();
-  const { state }  = useStore();
   const [period, setPeriod] = useState('week');
+  const navigate = useNavigate();
 
   // ── Vendor profile ────────────────────────────────────────
   const { data: vendor } = useDataFetch(
@@ -78,37 +76,16 @@ export default function VendorEarnings() {
     { cacheKey: `vendor-profile-${user?.id}`, enabled: !!user?.id }
   );
 
-  // ── Wallet transactions from Supabase ─────────────────────
-  const [transactions,  setTransactions]  = useState([]);
-  const [txnLoading,    setTxnLoading]    = useState(true);
-  const [txnError,      setTxnError]      = useState(null);
+  // ── Server-fetched vendor orders ─────────────────────────
+  const { data: fetchedOrders } = useDataFetch(
+    () => getOrdersByVendor(vendor.id, { limit: 100 }),
+    [vendor?.id],
+    { enabled: !!vendor?.id, cacheKey: `vendor-earnings-orders-${vendor?.id}` }
+  );
 
-  const loadTransactions = async (vendorId) => {
-    setTxnLoading(true);
-    setTxnError(null);
-    const { data, error } = await supabase
-      .from('wallet_transactions')
-      .select('*')
-      .eq('vendor_id', vendorId)
-      .order('created_at', { ascending: false })
-      .limit(20);
-    if (error) setTxnError(error.message);
-    else        setTransactions(data ?? []);
-    setTxnLoading(false);
-  };
-
-  useEffect(() => {
-    if (vendor?.id) loadTransactions(vendor.id);
-  }, [vendor?.id]);
-
-  // ── Aggregates from store orders (realtime) ───────────────
   const vendorOrders = useMemo(() =>
-    state.orders.filter(o =>
-      vendor?.id &&
-      (o.vendor_id === vendor.id || o.vendorId === vendor.id) &&
-      o.status !== 'cancelled'
-    ),
-    [state.orders, vendor?.id]
+    (fetchedOrders ?? []).filter(o => o.status !== 'cancelled'),
+    [fetchedOrders]
   );
 
   const totalRevenue = vendorOrders.reduce((s, o) => s + (o.total ?? 0), 0);
@@ -218,105 +195,23 @@ export default function VendorEarnings() {
           </div>
         </Card>
 
-        {/* ── Wallet transactions ──────────────────────── */}
+        {/* ── Recent order settlements ───────────────────── */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold text-sm">Recent Transactions</h3>
-            <div className="flex gap-2">
-              {txnError && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs gap-1"
-                  onClick={() => vendor?.id && loadTransactions(vendor.id)}
-                >
-                  <RefreshCw className="w-3 h-3" /> Retry
-                </Button>
-              )}
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" disabled>
-                <Download className="w-3 h-3" /> Export
-              </Button>
-            </div>
+            <h3 className="font-semibold text-sm">Recent Settlements</h3>
+            <span className="text-[10px] text-muted-foreground">From orders</span>
           </div>
-
-          {txnLoading && (
-            <div className="flex justify-center py-6">
-              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-            </div>
-          )}
-
-          {!txnLoading && txnError && (
-            <Card className="p-4 border-destructive/20 bg-destructive/5 flex items-center gap-2 text-destructive">
-              <AlertCircle className="w-4 h-4" />
-              <p className="text-xs">Could not load transactions. {txnError}</p>
+          {recentSettlements.length ? <div className="space-y-2">{recentSettlements.map(t=>(
+            <Card key={t.id} className="p-3 border-border flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-green-100 flex items-center justify-center shrink-0"><ArrowDownLeft className="w-4 h-4 text-green-600"/></div>
+              <div className="flex-1 min-w-0"><p className="text-[10px] font-mono text-muted-foreground">{t.id}</p><p className="text-sm font-medium">{t.customer}</p><p className="text-xs text-muted-foreground">{t.time}</p></div>
+              <div className="text-right shrink-0"><p className="text-sm font-bold text-green-600">+{formatCurrency(t.net)}</p><p className="text-xs text-muted-foreground">gross {formatCurrency(t.amount)}</p></div>
             </Card>
-          )}
-
-          {/* Wallet txns if available, fallback to order settlements */}
-          {!txnLoading && !txnError && (
-            <>
-              {transactions.length > 0 ? (
-                <div className="space-y-2">
-                  {transactions.map(t => {
-                    const isCredit = t.type === 'credit';
-                    return (
-                      <Card key={t.id} className="p-3 border-border flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isCredit ? 'bg-green-100' : 'bg-red-100'}`}>
-                          {isCredit
-                            ? <ArrowDownLeft className="w-4 h-4 text-green-600" />
-                            : <ArrowUpRight  className="w-4 h-4 text-red-600"   />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">
-                            {t.description ?? (isCredit ? 'Settlement' : 'Payout')}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(t.created_at).toLocaleDateString('en-IN', { dateStyle: 'medium' })}
-                          </p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className={`text-sm font-bold ${isCredit ? 'text-green-600' : 'text-red-600'}`}>
-                            {isCredit ? '+' : '−'}₹{t.amount?.toLocaleString('en-IN')}
-                          </p>
-                          <Badge variant="outline" className="text-[9px]">
-                            {t.status ?? 'completed'}
-                          </Badge>
-                        </div>
-                      </Card>
-                    );
-                  })}
-                </div>
-              ) : recentSettlements.length > 0 ? (
-                // Fallback: derive from orders
-                <div className="space-y-2">
-                  {recentSettlements.map((t, i) => (
-                    <Card key={i} className="p-3 border-border flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-green-100 flex items-center justify-center shrink-0">
-                        <ArrowDownLeft className="w-4 h-4 text-green-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[10px] font-mono text-muted-foreground">{t.id}</p>
-                        <p className="text-sm font-medium">{t.customer}</p>
-                        <p className="text-xs text-muted-foreground">{t.time}</p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-sm font-bold text-green-600">+{formatCurrency(t.net)}</p>
-                        <p className="text-xs text-muted-foreground">gross {formatCurrency(t.amount)}</p>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              ) : (
-                <Card className="p-6 border-border text-center">
-                  <p className="text-sm text-muted-foreground">No transactions yet</p>
-                </Card>
-              )}
-            </>
-          )}
+          ))}</div> : <Card className="p-6 text-center"><p className="text-sm text-muted-foreground">No completed earnings yet.</p></Card>}
         </div>
 
-        <Button className="w-full gap-2">
-          <IndianRupee className="w-4 h-4" /> Request Payout
+        <Button className="w-full gap-2" onClick={() => navigate('/vendor/support')}>
+          <IndianRupee className="w-4 h-4" /> Request Payout Support
         </Button>
       </div>
     </div>

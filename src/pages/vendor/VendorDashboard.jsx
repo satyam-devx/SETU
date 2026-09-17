@@ -108,8 +108,6 @@ export default function VendorDashboard() {
                 title="Trust Score"
                 value={String(vendor?.trust_score ?? 500)}
                 icon={TrendingUp}
-                trendValue={vendor?.trust_score >= 700 ? 'Top 20%' : undefined}
-                trend={vendor?.trust_score >= 700 ? 'up' : 'neutral'}
               />
             </div>
           </>

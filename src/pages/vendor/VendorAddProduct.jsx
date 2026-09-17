@@ -21,13 +21,14 @@ import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { getCategories, getVendorByOwnerId, upsertProduct } from '@/lib/api';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 const UNITS = ['kg', 'g', 'litre', 'ml', 'piece', 'box', 'pack', 'bag', 'dozen', 'bundle'];
 const MAX_IMAGE_SIZE_MB = 5;
 
 // ── Upload image to Supabase Storage ────────────────────────
 async function uploadProductImage(file, vendorId) {
+  if (!isSupabaseConfigured) return URL.createObjectURL(file);
   const ext      = file.name.split('.').pop() ?? 'jpg';
   const filePath = `${vendorId}/${Date.now()}.${ext}`;
 
@@ -67,7 +68,7 @@ export default function VendorAddProduct() {
   // ── Form state ────────────────────────────────────────────
   const [form, setForm] = useState({
     name: '', name_hindi: '', category: '', price: '', mrp: '',
-    unit: 'kg', stock: '', description: '', is_seasonal: false, is_available: true,
+    unit: 'kg', stock: '', description: '', image_url: '', is_seasonal: false, is_available: true,
   });
   const [errors,       setErrors]       = useState({});
   const [imageFile,    setImageFile]    = useState(null);
@@ -106,6 +107,7 @@ export default function VendorAddProduct() {
     if (!form.category)                                             e.category = 'Category is required';
     if (!form.price || isNaN(form.price) || Number(form.price) <= 0) e.price  = 'Valid price required';
     if (!form.stock || isNaN(form.stock) || Number(form.stock) < 0)  e.stock  = 'Valid stock quantity required';
+    if (form.image_url && !/^https?:\/\//i.test(form.image_url.trim())) e.image_url = 'Image URL must start with http:// or https://';
     return e;
   };
 
@@ -120,8 +122,8 @@ export default function VendorAddProduct() {
     setUploadPct(0);
 
     try {
-      // 1. Upload image if provided
-      let imageUrl = null;
+      // 1. Upload image if provided; otherwise preserve a user-supplied URL.
+      let imageUrl = form.image_url.trim() || null;
       if (imageFile) {
         // Fake progress ticks while uploading
         const timer = setInterval(() => setUploadPct(p => Math.min(p + 15, 85)), 200);
@@ -194,6 +196,18 @@ export default function VendorAddProduct() {
           className="hidden"
           onChange={handleImageChange}
         />
+
+        <div>
+          <Label className="text-xs mb-1 block">Image URL (optional)</Label>
+          <Input
+            type="url"
+            placeholder="https://example.com/product.jpg"
+            value={form.image_url}
+            onChange={e => set('image_url', e.target.value)}
+          />
+          {errors.image_url && <p className="text-xs text-destructive mt-1">{errors.image_url}</p>}
+          <p className="text-[10px] text-muted-foreground mt-1">Use a direct image URL. Uploading a photo takes priority.</p>
+        </div>
 
         {imagePreview ? (
           <div className="relative w-full h-44 rounded-xl overflow-hidden border border-border">

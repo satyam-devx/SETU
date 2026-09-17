@@ -82,6 +82,7 @@ const VendorLayout       = lazy(() => import('@/pages/vendor/VendorLayout'));
 const VendorDashboard    = lazy(() => import('@/pages/vendor/VendorDashboard'));
 const VendorOrders       = lazy(() => import('@/pages/vendor/VendorOrders'));
 const VendorProducts     = lazy(() => import('@/pages/vendor/VendorProducts'));
+const VendorEditProduct  = lazy(() => import('@/pages/vendor/VendorEditProduct'));
 const VendorProfile      = lazy(() => import('@/pages/vendor/VendorProfile'));
 const VendorEarnings     = lazy(() => import('@/pages/vendor/VendorEarnings'));
 const VendorAnalytics    = lazy(() => import('@/pages/vendor/VendorAnalytics'));
@@ -362,6 +363,7 @@ function App() {
                 <Route path="orders"         element={<Suspense fallback={<PortalFallback />}><VendorOrders /></Suspense>} />
                 <Route path="products"       element={<Suspense fallback={<PortalFallback />}><VendorProducts /></Suspense>} />
                 <Route path="products/new"   element={<Suspense fallback={<PortalFallback />}><VendorAddProduct /></Suspense>} />
+                <Route path="products/:productId/edit" element={<Suspense fallback={<PortalFallback />}><VendorEditProduct /></Suspense>} />
                 <Route path="earnings"       element={<Suspense fallback={<PortalFallback />}><VendorEarnings /></Suspense>} />
                 <Route path="analytics"      element={<Suspense fallback={<PortalFallback />}><VendorAnalytics /></Suspense>} />
                 <Route path="credit"         element={<Suspense fallback={<PortalFallback />}><VendorCredit /></Suspense>} />

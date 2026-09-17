@@ -1,81 +1,29 @@
 import React from 'react';
-import { FileText, CheckCircle, XCircle, Clock, Upload, Building2, CreditCard, Receipt } from 'lucide-react';
+import { FileText, CreditCard, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import AppHeader from '@/components/shared/AppHeader';
+import { useAuth } from '@/lib/AuthContext';
+import { useDataFetch } from '@/hooks/useDataFetch';
+import { getVendorByOwnerId, getVendorPaymentInfo } from '@/lib/api';
 
-const documents = [
-  { id: 'd1', name: 'Aadhaar Card', icon: FileText, status: 'verified', number: 'XXXX-XXXX-1234', uploaded: 'Jan 15, 2026' },
-  { id: 'd2', name: 'PAN Card', icon: FileText, status: 'verified', number: 'ABCDE1234F', uploaded: 'Jan 15, 2026' },
-  { id: 'd3', name: 'FSSAI License', icon: Receipt, status: 'verified', number: '12345678901234', expiry: 'Dec 2027' },
-  { id: 'd4', name: 'GST Certificate', icon: Building2, status: 'pending', number: '—', uploaded: '—' },
-  { id: 'd5', name: 'Bank Account Proof', icon: CreditCard, status: 'verified', number: 'HDFC ****4521', uploaded: 'Jan 16, 2026' },
-  { id: 'd6', name: 'Shop Photo (Front)', icon: FileText, status: 'verified', number: '3 photos', uploaded: 'Jan 15, 2026' },
-  { id: 'd7', name: 'Trade License', icon: Receipt, status: 'expired', number: 'TL-2024-0456', expiry: 'Mar 2026' },
-];
-
-const statusConfig = {
-  verified: { icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-100', label: 'Verified' },
-  pending: { icon: Clock, color: 'text-amber-600', bg: 'bg-amber-100', label: 'Pending' },
-  expired: { icon: XCircle, color: 'text-red-600', bg: 'bg-red-100', label: 'Expired' },
-};
-
-export default function VendorDocuments() {
-  const verifiedCount = documents.filter(d => d.status === 'verified').length;
-
-  return (
-    <div className="pb-20">
-      <AppHeader title="Business Documents" subtitle="KYC & compliance records" />
-      <div className="p-4 space-y-4">
-        <Card className="p-4 border-border">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground">Verification Status</p>
-              <p className="text-lg font-bold">{verifiedCount} / {documents.length} verified</p>
-            </div>
-            <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
-              <CheckCircle className="w-6 h-6 text-green-600" />
-            </div>
-          </div>
-          <div className="mt-3 h-2 bg-muted rounded-full overflow-hidden">
-            <div className="h-full bg-green-500 rounded-full" style={{ width: `${(verifiedCount / documents.length) * 100}%` }} />
-          </div>
-        </Card>
-
-        <div className="space-y-2">
-          {documents.map(doc => {
-            const cfg = statusConfig[doc.status];
-            return (
-              <Card key={doc.id} className="p-4 border-border">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center shrink-0">
-                      <doc.icon className="w-5 h-5 text-muted-foreground" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-semibold text-sm">{doc.name}</p>
-                      <p className="text-xs text-muted-foreground">{doc.number}</p>
-                      {doc.expiry && <p className={`text-[10px] ${doc.status === 'expired' ? 'text-red-500' : 'text-muted-foreground'}`}>Expires: {doc.expiry}</p>}
-                      {doc.status !== 'pending' && <p className="text-[10px] text-muted-foreground">Uploaded: {doc.uploaded}</p>}
-                    </div>
-                  </div>
-                  <Badge className={`text-[9px] ${cfg.bg} ${cfg.color} border-0 shrink-0`}>{cfg.label}</Badge>
-                </div>
-                {(doc.status === 'pending' || doc.status === 'expired') && (
-                  <Button size="sm" variant="outline" className="w-full mt-3 h-8 text-xs">
-                    <Upload className="w-3 h-3 mr-1" /> {doc.status === 'expired' ? 'Renew Document' : 'Upload Document'}
-                  </Button>
-                )}
-              </Card>
-            );
-          })}
-        </div>
-
-        <Card className="p-4 border-border bg-blue-50 border-blue-200">
-          <p className="text-xs text-blue-800"><strong>Need help?</strong> Contact your block anchor or SETU support to assist with document verification. Expired documents may affect your store visibility.</p>
-        </Card>
-      </div>
-    </div>
-  );
+export default function VendorDocuments(){
+ const {user}=useAuth();
+ const {data:vendor,isLoading,error}=useDataFetch(()=>getVendorByOwnerId(user?.id),[user?.id],{enabled:!!user?.id,cacheKey:`vendor-profile-${user?.id}`});
+ const {data:payment}=useDataFetch(()=>getVendorPaymentInfo(vendor.id),[vendor?.id],{enabled:!!vendor?.id,cacheKey:`vendor-payment-${vendor?.id}`});
+ const mask=v=>v?`•••• ${String(v).slice(-4)}`:'Not provided';
+ const docs=[
+  ['KYC verification',vendor?.kyc_status||'not_submitted'],
+  ['GSTIN','Managed through submitted business documents'],
+  ['FSSAI','Managed through submitted business documents'],
+  ['Bank account',mask(payment?.account_number)],
+  ['IFSC',payment?.ifsc||'Not provided'],
+  ['UPI',payment?.upi_id||'Not provided'],
+ ];
+ return <div className="pb-20"><AppHeader title="Business Documents" subtitle="KYC, tax & payout information"/><div className="p-4 space-y-4">
+  {error&&<Card className="p-4 text-sm text-destructive flex gap-2"><AlertCircle className="w-4 h-4"/>{error.message}</Card>}
+  {isLoading?<div className="py-10 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto"/></div>:<><Card className="p-4"><div className="flex items-center gap-3"><ShieldCheck className="w-6 h-6 text-primary"/><div><p className="font-semibold text-sm">Verification status</p><p className="text-xs text-muted-foreground">Your submitted KYC status is controlled by SETU verification.</p></div><Badge className="ml-auto text-[9px]">{vendor?.kyc_status||'not submitted'}</Badge></div></Card>
+  <Card className="divide-y divide-border">{docs.map(([name,value])=><div key={name} className="p-4 flex items-center gap-3"><FileText className="w-4 h-4 text-muted-foreground"/><div className="flex-1"><p className="text-sm font-medium">{name}</p><p className="text-xs text-muted-foreground break-all">{value}</p></div></div>)}</Card>
+  <Card className="p-4 bg-muted/40"><div className="flex gap-3"><CreditCard className="w-5 h-5 text-muted-foreground shrink-0"/><div><p className="text-sm font-semibold">Need to change a document?</p><p className="text-xs text-muted-foreground mt-1">Use Support so changes are reviewed rather than silently overwriting verified KYC records.</p></div></div></Card></>}
+ </div></div>;
 }
