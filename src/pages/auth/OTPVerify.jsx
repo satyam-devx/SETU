@@ -23,22 +23,21 @@
 // ═══════════════════════════════════════════════════════════
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Loader2, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useAuth } from '@/lib/AuthContext';
 import { getPortalPath } from '@/lib/supabase';
+import { consumePostLoginRedirect } from '@/lib/postLoginRedirect';
 
 const OTP_LENGTH      = 6; // Supabase default OTP length is 6 digits
 const RESEND_COOLDOWN = 30; // seconds
 
 export default function OTPVerify() {
   const navigate         = useNavigate();
-  const location         = useLocation();
   const [searchParams]   = useSearchParams();
   const phone            = searchParams.get('phone') || '';
-  const from             = location.state?.from || null;
 
   const {
     verifyOTP,
@@ -112,24 +111,26 @@ export default function OTPVerify() {
     if (isLoading) return;        // Wait for auth state to fully resolve
 
     if (isAuthenticated) {
-      if (from) {
-        navigate(from, { replace: true });
-      } else if (isProfileLoaded) {
-        // Existing user — go to their portal
-        navigate(getPortalPath(profile.role), { replace: true });
+      if (isProfileLoaded) {
+        // Existing user — go back wherever they were headed, if anywhere
+        const pending = consumePostLoginRedirect();
+        navigate(pending || getPortalPath(profile.role), { replace: true });
       } else {
-        // New user — no profile row yet — go to onboarding
-        navigate('/onboarding/register', { state: { phone, from } });
+        // New user — no profile row yet — go to onboarding first (the
+        // pending redirect, if any, stays in sessionStorage for
+        // RegisterOnboarding to pick up once the basic profile is set)
+        navigate('/onboarding/register', { state: { phone } });
       }
     }
-  }, [success, isLoading, isAuthenticated, isProfileLoaded, profile, phone, from, navigate]);
+  }, [success, isLoading, isAuthenticated, isProfileLoaded, profile, phone, navigate]);
 
   // If already authenticated before this page loaded, redirect immediately
   useEffect(() => {
     if (!isLoading && isAuthenticated && isProfileLoaded) {
-      navigate(from || portalPath, { replace: true });
+      const pending = consumePostLoginRedirect();
+      navigate(pending || portalPath, { replace: true });
     }
-  }, [isLoading, isAuthenticated, isProfileLoaded, portalPath, from, navigate]);
+  }, [isLoading, isAuthenticated, isProfileLoaded, portalPath, navigate]);
 
   // Resend cooldown timer
   useEffect(() => {

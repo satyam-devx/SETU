@@ -12,12 +12,13 @@
 // ═══════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Phone, ArrowRight, Loader2, AlertCircle, Mail, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { useAuth } from '@/lib/AuthContext';
+import { consumePostLoginRedirect } from '@/lib/postLoginRedirect';
 
 const VALID_INDIAN_PHONE = /^[6-9]\d{9}$/;
 const OTP_COOLDOWN_SECS  = 60;
@@ -45,8 +46,6 @@ function startCooldown() {
 
 export default function LoginOTP() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const from = location.state?.from || null;
   const {
     sendOTP, signInWithGoogle,
     isAuthenticated, isProfileLoaded, isLoading, portalPath,
@@ -83,11 +82,12 @@ export default function LoginOTP() {
     if (isLoading) return;
     if (!isAuthenticated) return;
     if (!isProfileLoaded) return;
-    if (from) { navigate(from, { replace: true }); return; }
+    const pending = consumePostLoginRedirect();
+    if (pending) { navigate(pending, { replace: true }); return; }
     if (portalPath && portalPath !== '/') {
       navigate(portalPath, { replace: true });
     }
-  }, [isAuthenticated, isProfileLoaded, isLoading, portalPath, from, navigate]);
+  }, [isAuthenticated, isProfileLoaded, isLoading, portalPath, navigate]);
 
   // ── Phone input ──────────────────────────────────────────
   const handlePhoneChange = (e) => {
@@ -130,7 +130,7 @@ export default function LoginOTP() {
     // Success — start cooldown and navigate to verify page
     startCooldown();
     setCooldown(OTP_COOLDOWN_SECS);
-    navigate(`/login/verify?phone=${encodeURIComponent(phone)}`, { state: from ? { from } : undefined });
+    navigate(`/login/verify?phone=${encodeURIComponent(phone)}`);
   };
 
   const handleKeyDown = (e) => {

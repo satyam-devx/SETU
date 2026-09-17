@@ -36,6 +36,7 @@ import { useNavigate } from 'react-router-dom';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
+import { consumePostLoginRedirect } from '@/lib/postLoginRedirect';
 
 export default function AuthCallback() {
   const navigate = useNavigate();
@@ -99,9 +100,14 @@ export default function AuthCallback() {
       // Google OAuth users get a profile row via DB trigger,
       // but with their Google display name and no village.
       // Village is always missing for new users — send to onboarding.
+      // (a pending redirect, if any, stays in sessionStorage for
+      // RegisterOnboarding to pick up once the basic profile is set)
       navigate('/onboarding/register', { replace: true });
       return;
     }
+
+    const pending = consumePostLoginRedirect();
+    if (pending) { navigate(pending, { replace: true }); return; }
 
     if (portalPath && portalPath !== '/') {
       navigate(portalPath, { replace: true });

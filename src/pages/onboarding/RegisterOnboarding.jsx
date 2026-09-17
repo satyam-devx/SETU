@@ -32,6 +32,7 @@ import { Card } from '@/components/ui/card';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { getVillages } from '@/lib/api';
+import { consumePostLoginRedirect } from '@/lib/postLoginRedirect';
 
 // Names that the DB trigger auto-inserts and that mean
 // "user has not set their own name yet".
@@ -45,7 +46,6 @@ export default function RegisterOnboarding() {
   const navigate  = useNavigate();
   const location  = useLocation();
   const phone     = location.state?.phone || '';
-  const from      = location.state?.from  || null;
 
   const {
     user, isLoading, profile, portalPath,
@@ -88,7 +88,7 @@ export default function RegisterOnboarding() {
     const dest           = portalPath && portalPath !== '/' ? portalPath : '/customer';
 
     if (hasRealName && hasVillage) {
-      navigate(dest, { replace: true });
+      navigate(consumePostLoginRedirect() || dest, { replace: true });
     }
     // If name is set but village is missing, stay here to collect village.
     // If name is placeholder ('SETU User'), stay here to collect name.
@@ -142,7 +142,7 @@ export default function RegisterOnboarding() {
     await reloadProfile();
 
     setSaving(false);
-    navigate(from || '/customer', { replace: true });
+    navigate(consumePostLoginRedirect() || '/customer', { replace: true });
   };
 
   // ── Loading state ─────────────────────────────────────────

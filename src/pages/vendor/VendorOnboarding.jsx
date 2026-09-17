@@ -35,6 +35,7 @@ import { kyc as kycService } from '@/lib/kyc';
 import { useAuth }  from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { upsertVendorProfile, upsertProduct, getVillages, getVendorByOwnerId, getProducts } from '@/lib/api';
+import { setPostLoginRedirect } from '@/lib/postLoginRedirect';
 
 // ── Constants ─────────────────────────────────────────────
 const STEPS = [
@@ -113,7 +114,8 @@ function Step1({ onNext, user }) {
       // Not logged in yet (this route is reachable pre-login) — send them
       // to log in, then straight back here, instead of letting them fall
       // through to Step 2 where saving would need a real user id.
-      navigate('/login', { state: { from: '/onboarding/vendor' } });
+      setPostLoginRedirect('/onboarding/vendor');
+      navigate('/login');
       return;
     }
     onNext();
@@ -215,8 +217,11 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
   // Indexed by fixed slot (0 = Shop front, 1 = Inside, 2 = Products) —
   // not a compacted list — so each labeled box always shows/replaces
   // its own photo, never whichever one was uploaded most recently.
-  const [shopPhotos, setShopPhotos] = useState([null, null, null]);
-  const [activeSlot, setActiveSlot] = useState(0);
+  const [shopPhotos,    setShopPhotos]    = useState([null, null, null]);
+  // A pasted image URL is a valid alternative to a file upload, per slot.
+  const [shopPhotoUrls, setShopPhotoUrls] = useState(['', '', '']);
+  const [brokenSlots,   setBrokenSlots]   = useState([false, false, false]);
+  const [activeSlot,    setActiveSlot]    = useState(0);
   const [villages,   setVillages]   = useState([]);
   const [saving,     setSaving]     = useState(false);
   const [error,      setError]      = useState('');
@@ -231,25 +236,35 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  const setAt = (setter, i, val) => setter(arr => {
+    const next = [...arr];
+    next[i] = val;
+    return next;
+  });
+
   const handlePhotoAdd = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setShopPhotos(ps => {
-      const next = [...ps];
-      next[activeSlot] = { file, preview: URL.createObjectURL(file) };
-      return next;
-    });
+    setAt(setShopPhotos, activeSlot, { file, preview: URL.createObjectURL(file) });
+    setAt(setShopPhotoUrls, activeSlot, ''); // a picked file replaces any pasted URL for this slot
+    setAt(setBrokenSlots, activeSlot, false);
     e.target.value = ''; // allow re-picking the same file for another slot
+  };
+
+  const handlePhotoUrlChange = (i, val) => {
+    setAt(setShopPhotoUrls, i, val);
+    setAt(setBrokenSlots, i, false);
+    if (val.trim()) setAt(setShopPhotos, i, null); // a pasted URL replaces any picked file for this slot
   };
 
   const handlePhotoRemove = (i, e) => {
     e.stopPropagation(); // don't also trigger the slot's own onClick (file picker)
-    setShopPhotos(ps => {
-      const next = [...ps];
-      next[i] = null;
-      return next;
-    });
+    setAt(setShopPhotos, i, null);
+    setAt(setShopPhotoUrls, i, '');
+    setAt(setBrokenSlots, i, false);
   };
+
+  const slotPreview = (i) => shopPhotos[i]?.preview || shopPhotoUrls[i]?.trim() || null;
 
   const handleSave = async () => {
     if (!user)              { setError('You need to be logged in to continue. Please log in and try again.'); return; }
@@ -260,9 +275,14 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
     setSaving(true); setError('');
 
     try {
-      // Upload shop photos to Supabase Storage (your version)
+      // Upload shop photos to Supabase Storage (your version) —
+      // a pasted URL for a slot is used as-is, no upload needed.
       const photoUrls = [];
-      for (const photo of shopPhotos) {
+      for (let i = 0; i < shopPhotos.length; i++) {
+        const pastedUrl = shopPhotoUrls[i]?.trim();
+        if (pastedUrl) { photoUrls.push(pastedUrl); continue; }
+
+        const photo = shopPhotos[i];
         if (!photo?.file) continue;
         const path = `shop/${user.id}/${Date.now()}.jpg`;
         const { data: uploaded, error: upErr } = await supabase.storage
@@ -343,7 +363,7 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
         onChange={e => set('description', e.target.value)}
       />
 
-      {/* Shop photos — your upload implementation */}
+      {/* Shop photos — file upload, or paste an image URL instead */}
       <div>
         <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoAdd} />
         <label className="text-xs font-medium mb-1 block">Shop Photos</label>
@@ -355,12 +375,19 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
                 className="w-full h-full bg-muted rounded-xl flex flex-col items-center justify-center border-2 border-dashed border-border hover:border-primary transition-colors overflow-hidden"
                 onClick={() => { setActiveSlot(i); photoRef.current?.click(); }}
               >
-                {shopPhotos[i]
-                  ? <img src={shopPhotos[i].preview} alt={label} className="w-full h-full object-cover" />
+                {slotPreview(i) && !brokenSlots[i]
+                  ? (
+                    <img
+                      src={slotPreview(i)}
+                      alt={label}
+                      className="w-full h-full object-cover"
+                      onError={() => setAt(setBrokenSlots, i, true)}
+                    />
+                  )
                   : <><Camera className="w-5 h-5 text-muted-foreground mb-1" /><p className="text-[9px] text-muted-foreground">{label}</p></>
                 }
               </button>
-              {shopPhotos[i] && (
+              {slotPreview(i) && (
                 <button
                   type="button"
                   onClick={(e) => handlePhotoRemove(i, e)}
@@ -369,6 +396,28 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
                 >
                   <X className="w-3 h-3 text-white" />
                 </button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2 mt-3 mb-2">
+          <div className="flex-1 h-px bg-border" />
+          <span className="text-[10px] text-muted-foreground">OR PASTE IMAGE URLS</span>
+          <div className="flex-1 h-px bg-border" />
+        </div>
+        <div className="space-y-1.5">
+          {['Shop front', 'Inside', 'Products'].map((label, i) => (
+            <div key={label}>
+              <Input
+                placeholder={`${label} photo URL`}
+                className="text-xs h-8"
+                inputMode="url"
+                value={shopPhotoUrls[i]}
+                onChange={e => handlePhotoUrlChange(i, e.target.value)}
+              />
+              {brokenSlots[i] && shopPhotoUrls[i]?.trim() && (
+                <p className="text-[10px] text-destructive mt-0.5">Couldn't load that link — check the URL.</p>
               )}
             </div>
           ))}
@@ -437,7 +486,9 @@ function Step3({ onNext, onBack, vendorId, onProductAdded, initialProducts = [] 
   const [products, setProducts] = useState(initialProducts);
   const [form,     setForm]     = useState({ name: '', price: '', stock: '', unit: 'piece' });
   const [imgFile,  setImgFile]  = useState(null);
+  const [imgUrl,   setImgUrl]   = useState(''); // pasted image URL, alternative to a file upload
   const [imgPrev,  setImgPrev]  = useState(null);
+  const [imgBroken, setImgBroken] = useState(false);
   const [adding,   setAdding]   = useState(false);
   const [error,    setError]    = useState('');
 
@@ -447,7 +498,28 @@ function Step3({ onNext, onBack, vendorId, onProductAdded, initialProducts = [] 
     const file = e.target.files?.[0];
     if (!file) return;
     setImgFile(file);
+    setImgUrl('');          // a picked file replaces any pasted URL
+    setImgBroken(false);
     setImgPrev(URL.createObjectURL(file));
+  };
+
+  const handleImageUrlChange = (val) => {
+    setImgUrl(val);
+    setImgBroken(false);
+    if (val.trim()) {
+      setImgFile(null);     // a pasted URL replaces any picked file
+      setImgPrev(val.trim());
+    } else {
+      setImgPrev(null);
+    }
+  };
+
+  const handleImageRemove = () => {
+    setImgFile(null);
+    setImgUrl('');
+    setImgPrev(null);
+    setImgBroken(false);
+    if (fileRef.current) fileRef.current.value = '';
   };
 
   const handleAdd = async () => {
@@ -462,9 +534,9 @@ function Step3({ onNext, onBack, vendorId, onProductAdded, initialProducts = [] 
     setAdding(true); setError('');
 
     try {
-      // Upload product image (your version)
-      let imageUrl = null;
-      if (imgFile) {
+      // A pasted URL is used as-is; otherwise upload the picked file.
+      let imageUrl = imgUrl.trim() || null;
+      if (!imageUrl && imgFile) {
         const path = `${vendorId}/${Date.now()}.jpg`;
         const { data: upData, error: upErr } = await supabase.storage
           .from('product-images')
@@ -492,8 +564,7 @@ function Step3({ onNext, onBack, vendorId, onProductAdded, initialProducts = [] 
       setProducts(ps => [...ps, saved ?? { id: Date.now(), ...form, image_url: imageUrl }]);
       onProductAdded?.();
       setForm({ name: '', price: '', stock: '', unit: 'piece' });
-      setImgFile(null); setImgPrev(null);
-      if (fileRef.current) fileRef.current.value = '';
+      handleImageRemove();
     } catch (err) {
       setError(err?.message || 'Failed to add product. Please try again.');
     } finally {
@@ -545,11 +616,16 @@ function Step3({ onNext, onBack, vendorId, onProductAdded, initialProducts = [] 
         <p className="text-sm font-semibold mb-3">Add New Product</p>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImagePick} />
 
-        {imgPrev ? (
+        {imgPrev && !imgBroken ? (
           <div className="relative h-28 mb-3 rounded-xl overflow-hidden">
-            <img src={imgPrev} alt="preview" className="w-full h-full object-cover" />
+            <img
+              src={imgPrev}
+              alt="preview"
+              className="w-full h-full object-cover"
+              onError={() => setImgBroken(true)}
+            />
             <button
-              onClick={() => { setImgFile(null); setImgPrev(null); }}
+              onClick={handleImageRemove}
               className="absolute top-1 right-1 w-6 h-6 bg-black/50 rounded-full flex items-center justify-center"
               aria-label="Remove image"
             >
@@ -557,14 +633,31 @@ function Step3({ onNext, onBack, vendorId, onProductAdded, initialProducts = [] 
             </button>
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            className="w-full h-16 mb-3 rounded-xl border border-dashed border-border flex items-center justify-center gap-2 text-muted-foreground hover:border-primary hover:bg-primary/5 transition-colors"
-          >
-            <Camera className="w-4 h-4" />
-            <span className="text-xs">Add photo (optional)</span>
-          </button>
+          <div className="mb-3 space-y-2">
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="w-full h-16 rounded-xl border border-dashed border-border flex items-center justify-center gap-2 text-muted-foreground hover:border-primary hover:bg-primary/5 transition-colors"
+            >
+              <Camera className="w-4 h-4" />
+              <span className="text-xs">Add photo (optional)</span>
+            </button>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-[10px] text-muted-foreground">OR</span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+            <Input
+              placeholder="Paste image URL"
+              className="text-xs h-9"
+              inputMode="url"
+              value={imgUrl}
+              onChange={e => handleImageUrlChange(e.target.value)}
+            />
+            {imgBroken && imgUrl.trim() && (
+              <p className="text-[10px] text-destructive">Couldn't load that link — check the URL.</p>
+            )}
+          </div>
         )}
 
         <div className="space-y-2">
