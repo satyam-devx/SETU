@@ -88,6 +88,7 @@ function StepIndicator({ current }) {
 // ── Step 1: Identity (KYC) ────────────────────────────────
 // Your version's logic kept intact; Phase 0's inline error display added.
 function Step1({ onNext, user }) {
+  const navigate = useNavigate();
   const [aadhaar, setAadhaar] = useState('');
   const [loading, setLoading] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
@@ -105,6 +106,17 @@ function Step1({ onNext, user }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleContinue = () => {
+    if (!user) {
+      // Not logged in yet (this route is reachable pre-login) — send them
+      // to log in, then straight back here, instead of letting them fall
+      // through to Step 2 where saving would need a real user id.
+      navigate('/login', { state: { from: '/onboarding/vendor' } });
+      return;
+    }
+    onNext();
   };
 
   return (
@@ -180,8 +192,13 @@ function Step1({ onNext, user }) {
       </Card>
 
       {/* Allow skipping KYC in demo/dev mode */}
-      <Button className="w-full" onClick={() => onNext()}>
-        Continue to Shop Details <ChevronRight className="w-4 h-4 ml-1" />
+      {!user && (
+        <p className="text-xs text-muted-foreground text-center">
+          You'll be asked to log in before continuing.
+        </p>
+      )}
+      <Button className="w-full" onClick={handleContinue}>
+        {user ? 'Continue to Shop Details' : 'Login to Continue'} <ChevronRight className="w-4 h-4 ml-1" />
       </Button>
     </div>
   );
@@ -235,6 +252,7 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
   };
 
   const handleSave = async () => {
+    if (!user)              { setError('You need to be logged in to continue. Please log in and try again.'); return; }
     if (!form.name.trim()) { setError('Shop name is required.'); return; }
     if (!form.category)    { setError('Please select a category.'); return; }
     if (!form.village_id)  { setError('Please select your village.'); return; }
@@ -611,6 +629,10 @@ function Step4({ onNext, onBack, vendorId, user }) {
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSave = async () => {
+    if (!user) {
+      setError('You need to be logged in to continue. Please log in and try again.');
+      return;
+    }
     if (!vendorId) {
       setError('Vendor profile not found. Go back to shop details.');
       return;
@@ -729,6 +751,7 @@ function Step5({ vendorId, productsCount, user, onSubmitted }) {
   ];
 
   const handleSubmit = async () => {
+    if (!user)     { setError('You need to be logged in to continue. Please log in and try again.'); return; }
     if (!vendorId) { setError('Vendor ID missing. Please restart onboarding.'); return; }
     setSubmitting(true); setError('');
 

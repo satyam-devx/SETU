@@ -23,7 +23,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { ArrowLeft, Loader2, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -35,8 +35,10 @@ const RESEND_COOLDOWN = 30; // seconds
 
 export default function OTPVerify() {
   const navigate         = useNavigate();
+  const location         = useLocation();
   const [searchParams]   = useSearchParams();
   const phone            = searchParams.get('phone') || '';
+  const from             = location.state?.from || null;
 
   const {
     verifyOTP,
@@ -110,22 +112,24 @@ export default function OTPVerify() {
     if (isLoading) return;        // Wait for auth state to fully resolve
 
     if (isAuthenticated) {
-      if (isProfileLoaded) {
+      if (from) {
+        navigate(from, { replace: true });
+      } else if (isProfileLoaded) {
         // Existing user — go to their portal
         navigate(getPortalPath(profile.role), { replace: true });
       } else {
         // New user — no profile row yet — go to onboarding
-        navigate('/onboarding/register', { state: { phone } });
+        navigate('/onboarding/register', { state: { phone, from } });
       }
     }
-  }, [success, isLoading, isAuthenticated, isProfileLoaded, profile, phone, navigate]);
+  }, [success, isLoading, isAuthenticated, isProfileLoaded, profile, phone, from, navigate]);
 
   // If already authenticated before this page loaded, redirect immediately
   useEffect(() => {
     if (!isLoading && isAuthenticated && isProfileLoaded) {
-      navigate(portalPath, { replace: true });
+      navigate(from || portalPath, { replace: true });
     }
-  }, [isLoading, isAuthenticated, isProfileLoaded, portalPath, navigate]);
+  }, [isLoading, isAuthenticated, isProfileLoaded, portalPath, from, navigate]);
 
   // Resend cooldown timer
   useEffect(() => {

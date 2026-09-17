@@ -45,6 +45,7 @@ export default function RegisterOnboarding() {
   const navigate  = useNavigate();
   const location  = useLocation();
   const phone     = location.state?.phone || '';
+  const from      = location.state?.from  || null;
 
   const {
     user, isLoading, profile, portalPath,
@@ -141,7 +142,7 @@ export default function RegisterOnboarding() {
     await reloadProfile();
 
     setSaving(false);
-    navigate('/customer', { replace: true });
+    navigate(from || '/customer', { replace: true });
   };
 
   // ── Loading state ─────────────────────────────────────────
