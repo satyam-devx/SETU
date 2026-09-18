@@ -56,7 +56,16 @@ export default function VendorEditProduct() {
     setSaving(false); if(e) return setError(e.message||'Could not save product.'); navigate('/vendor/products',{replace:true});
   };
   if(isLoading) return <div className="min-h-screen grid place-items-center text-sm text-muted-foreground">Loading product…</div>;
-  if(loadError || !product || notOwned || !form) return <div className="p-6"><Card className="p-6 text-center"><AlertCircle className="mx-auto mb-2"/><p className="text-sm">Product not found or could not be loaded.</p><Button className="mt-3" onClick={()=>navigate('/vendor/products')}>Back to products</Button></Card></div>;
+  if(loadError || !product || notOwned) return <div className="p-6"><Card className="p-6 text-center"><AlertCircle className="mx-auto mb-2"/><p className="text-sm">Product not found or could not be loaded.</p><Button className="mt-3" onClick={()=>navigate('/vendor/products')}>Back to products</Button></Card></div>;
+  // `form` is seeded from `product` by the effect above, which — like every
+  // effect — runs one render AFTER `product` itself becomes available. So
+  // there's always exactly one render where `product` is already valid but
+  // `form` is still null. Lumping `!form` in with the checks above (as a
+  // previous fix did) meant THIS render hit the "not found" card too — a
+  // real, visible flash despite `product` having loaded correctly. Treating
+  // it as "still loading" instead (never "not found", never rendering the
+  // form with a null `form`) removes that flash for good.
+  if(!form) return <div className="min-h-screen grid place-items-center text-sm text-muted-foreground">Loading product…</div>;
   return <div className="pb-24"><AppHeader title="Edit Product" showBack backTo="/vendor/products"/><div className="p-4 space-y-4">
     {error&&<div className="p-3 rounded-xl bg-destructive/10 text-destructive text-xs flex gap-2"><AlertCircle className="w-4 h-4 shrink-0"/>{error}</div>}
     <Card className="p-4 space-y-3"><h3 className="font-semibold text-sm">Product details</h3>
