@@ -150,6 +150,12 @@
     "dynamic": false
   },
   {
+    "path": "/customer/categories",
+    "crawlPath": "/customer/categories",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
     "path": "/customer/product/:productId",
     "crawlPath": "/customer/product/crawler-test-id",
     "role": "customer",
@@ -246,6 +252,12 @@
     "dynamic": false
   },
   {
+    "path": "/vendor/products/:productId/edit",
+    "crawlPath": "/vendor/products/crawler-test-id/edit",
+    "role": "vendor",
+    "dynamic": true
+  },
+  {
     "path": "/vendor/earnings",
     "crawlPath": "/vendor/earnings",
     "role": "vendor",
@@ -266,6 +278,30 @@
   {
     "path": "/vendor/customers",
     "crawlPath": "/vendor/customers",
+    "role": "vendor",
+    "dynamic": false
+  },
+  {
+    "path": "/vendor/reviews",
+    "crawlPath": "/vendor/reviews",
+    "role": "vendor",
+    "dynamic": false
+  },
+  {
+    "path": "/vendor/subscription",
+    "crawlPath": "/vendor/subscription",
+    "role": "vendor",
+    "dynamic": false
+  },
+  {
+    "path": "/vendor/documents",
+    "crawlPath": "/vendor/documents",
+    "role": "vendor",
+    "dynamic": false
+  },
+  {
+    "path": "/vendor/support",
+    "crawlPath": "/vendor/support",
     "role": "vendor",
     "dynamic": false
   },
