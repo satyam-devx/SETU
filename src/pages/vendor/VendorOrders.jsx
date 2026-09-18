@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Search, Clock, CheckCircle, Package, Loader2, Bell } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,6 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AppHeader from '@/components/shared/AppHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { useStore } from '@/lib/store';
-import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { VendorAPI, getVendorByOwnerId } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
@@ -27,7 +26,7 @@ function OrdersSkeleton() {
 }
 
 export default function VendorOrders() {
-  const { dispatch }          = useStore();
+  const { state, dispatch }   = useStore();
   const { user }               = useAuth();
   const { data: vendor }      = useDataFetch(
     () => getVendorByOwnerId(user?.id),
@@ -41,11 +40,36 @@ export default function VendorOrders() {
   const [acting, setActing]   = useState(null);
   const [newOrderBanner, setNewOrderBanner] = useState(null);
 
-  // ── Realtime orders for this vendor ──
-  const { orders, isLoading, refetch } = useRealtimeOrders({
-    mode:     'vendor',
-    vendorId,
-  });
+  // ── Orders for this vendor ──
+  // VendorLayout already holds the one live realtime channel for this
+  // portal (`orders-vendor-{vendorId}`) and keeps state.orders current
+  // for every vendor page. This page used to open a SECOND subscription
+  // on that exact same topic via useRealtimeOrders — harmless once both
+  // had settled on the real vendorId, but while it was still resolving
+  // (null → vendor.id) both this component and the layout raced to
+  // subscribe/unsubscribe the same channel name within the same tick,
+  // which is what was crashing this page specifically. Dashboard never
+  // crashed because it never opened a second subscription — it just
+  // reads the store, like this now does. A plain REST fetch (no
+  // channel) seeds/refreshes the store instead; live updates still
+  // arrive through the layout's single channel.
+  const { data: fetchedOrders, isLoading: fetchLoading, refetch } = useDataFetch(
+    () => VendorAPI.getOrders(vendorId, { limit: 50 }),
+    [vendorId],
+    { cacheKey: `vendor-orders-${vendorId}`, enabled: !!vendorId }
+  );
+
+  useEffect(() => {
+    if (fetchedOrders?.length) {
+      dispatch({ type: 'SET_ORDERS', payload: { orders: fetchedOrders } });
+    }
+  }, [fetchedOrders, dispatch]);
+
+  const orders = useMemo(
+    () => (vendorId ? state.orders.filter(o => o.vendorId === vendorId || o.vendor_id === vendorId) : []),
+    [state.orders, vendorId]
+  );
+  const isLoading = !vendorId || fetchLoading;
 
   // ── Track previous order count to detect new arrivals ──
   const prevPendingCount = useRef(0);
@@ -133,7 +157,6 @@ export default function VendorOrders() {
       <AppHeader
         title="Orders"
         subtitle={`${activeCount} active · ${pendingCount} pending`}
-        notificationCount={pendingCount}
       />
 
       {/* New order banner */}

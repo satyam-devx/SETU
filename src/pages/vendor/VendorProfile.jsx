@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Store, IndianRupee, BarChart3, CreditCard, Settings, HelpCircle, Star, Award, FileText, ChevronRight } from 'lucide-react';
+import { Store, IndianRupee, BarChart3, CreditCard, Settings, HelpCircle, Star, Award, FileText, Users, ChevronRight } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
@@ -12,6 +12,7 @@ import { formatCurrency } from '@/lib/utils';
 const menuItems=[
  {label:'Earnings & Payouts',icon:IndianRupee,path:'/vendor/earnings',desc:'Revenue, settlements & history'},
  {label:'Analytics',icon:BarChart3,path:'/vendor/analytics',desc:'Performance & insights'},
+ {label:'Customers',icon:Users,path:'/vendor/customers',desc:'Everyone who has ordered from you'},
  {label:'Customer Reviews',icon:Star,path:'/vendor/reviews',desc:'View & respond to reviews'},
  {label:'SETU Vendor Credit',icon:CreditCard,path:'/vendor/credit',desc:'Working capital'},
  {label:'Subscription',icon:Award,path:'/vendor/subscription',desc:'Manage your plan'},

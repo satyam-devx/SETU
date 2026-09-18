@@ -26,7 +26,7 @@ export default function VendorReviews() {
   const filtered=reviews.filter(r=>tab==='all'||(tab==='new'&&!r.reply)||(tab==='replied'&&r.reply));
   const avg=reviews.length?(reviews.reduce((s,r)=>s+r.rating,0)/reviews.length).toFixed(1):'—';
   const submit=async id=>{ if(!replyText.trim()) return; setSaving(true);setActionError(''); const {error:e}=await replyToVendorReview(id,replyText.trim()); setSaving(false); if(e){setActionError(e.message);return;} setReplyingTo(null);setReplyText('');refetch(); };
-  return <div className="pb-20"><AppHeader title="Customer Reviews" subtitle="Real order ratings & replies"/>
+  return <div className="pb-20"><AppHeader title="Customer Reviews" subtitle="Real order ratings & replies" showBack backTo="/vendor/profile"/>
     <div className="p-4 space-y-4">
       {actionError&&<div className="p-3 rounded-xl bg-destructive/10 text-destructive text-xs flex gap-2"><AlertCircle className="w-4 h-4"/>{actionError}</div>}
       <div className="grid grid-cols-3 gap-2"><StatCard title="Avg Rating" value={avg} icon={Star}/><StatCard title="Total Reviews" value={String(reviews.length)} icon={ThumbsUp}/><StatCard title="Pending Reply" value={String(reviews.filter(r=>!r.reply).length)} icon={Reply}/></div>

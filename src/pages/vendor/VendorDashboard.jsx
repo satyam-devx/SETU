@@ -11,7 +11,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ShoppingBag, Package, IndianRupee, TrendingUp,
-  ChevronRight, AlertCircle, RefreshCw,
+  ChevronRight, AlertCircle, Plus, FileBarChart,
 } from 'lucide-react';
 import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
@@ -113,6 +113,30 @@ export default function VendorDashboard() {
           </>
         )}
 
+        {/* Quick actions */}
+        {!isLoading && (
+          <div className="grid grid-cols-3 gap-2">
+            <Link to="/vendor/products/new" className="setu-card p-3 flex flex-col items-center gap-1.5 text-center hover:bg-muted/40 transition-colors">
+              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Plus className="w-4 h-4 text-primary" aria-hidden="true" />
+              </div>
+              <span className="text-[10px] font-medium">Add Product</span>
+            </Link>
+            <Link to="/vendor/orders" className="setu-card p-3 flex flex-col items-center gap-1.5 text-center hover:bg-muted/40 transition-colors">
+              <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center">
+                <ShoppingBag className="w-4 h-4" aria-hidden="true" />
+              </div>
+              <span className="text-[10px] font-medium">View Orders</span>
+            </Link>
+            <Link to="/vendor/earnings" className="setu-card p-3 flex flex-col items-center gap-1.5 text-center hover:bg-muted/40 transition-colors">
+              <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center">
+                <FileBarChart className="w-4 h-4" aria-hidden="true" />
+              </div>
+              <span className="text-[10px] font-medium">Earnings</span>
+            </Link>
+          </div>
+        )}
+
         {/* Pending orders alert */}
         {pendingOrders.length > 0 && (
           <Link to="/vendor/orders" className="block">
@@ -186,18 +210,30 @@ export default function VendorDashboard() {
           </div>
         )}
 
-        {/* KYC reminder if not verified */}
+        {/* KYC reminder if not verified — was a dead-end static card (no
+            link, same copy regardless of actual status); now goes to
+            Business Documents and reflects the real kyc_status. */}
         {vendor && !vendor.is_verified && (
-          <div className="setu-card p-4 border-primary/30 bg-primary/5 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-              <span className="text-sm">🛡</span>
+          <Link to="/vendor/documents" className="block">
+            <div className="setu-card p-4 border-primary/30 bg-primary/5 flex items-center gap-3 hover:bg-primary/10 transition-colors">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <span className="text-sm">🛡</span>
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold">
+                  {vendor.kyc_status === 'submitted' ? 'KYC under review'
+                    : vendor.kyc_status === 'rejected' ? 'KYC rejected'
+                    : 'Complete KYC'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {vendor.kyc_status === 'submitted' ? 'SETU is verifying your documents'
+                    : vendor.kyc_status === 'rejected' ? 'Tap to see what needs fixing'
+                    : 'Get verified to build customer trust'}
+                </p>
+              </div>
+              <ChevronRight className="w-4 h-4 text-primary shrink-0" aria-hidden="true" />
             </div>
-            <div className="flex-1">
-              <p className="text-sm font-semibold">Complete KYC</p>
-              <p className="text-xs text-muted-foreground">Get verified to build customer trust</p>
-            </div>
-            <ChevronRight className="w-4 h-4 text-primary shrink-0" aria-hidden="true" />
-          </div>
+          </Link>
         )}
       </div>
     </div>

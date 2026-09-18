@@ -16,9 +16,21 @@ export default function VendorEditProduct() {
   const { productId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { data: vendor } = useDataFetch(() => getVendorByOwnerId(user?.id), [user?.id], { enabled: !!user?.id });
-  const { data: product, isLoading, error: loadError } = useDataFetch(() => getProductById(productId, { vendorId: vendor?.id }), [productId, vendor?.id], { enabled: !!productId && !!vendor?.id });
+  // NOTE: the product fetch used to be gated on vendor?.id (enabled: !!productId
+  // && !!vendor?.id) to double as an ownership filter. That created a two-step
+  // dependent fetch: while `vendor` was still resolving, `enabled` was false, so
+  // this hook's `isLoading` initialised to `false` (its lazy useState only looks
+  // at `enabled` once, on mount) even though nothing had loaded yet — the render
+  // below then fell through to the "Product not found" card for that whole
+  // window, before snapping to the real form once vendor resolved. That's the
+  // "briefly redirects to another page" glitch. Fetching the product
+  // independently (by id alone, no vendor?.id dependency) and checking
+  // ownership separately below removes the dependent-fetch race entirely.
+  const { data: vendor, isLoading: vendorLoading } = useDataFetch(() => getVendorByOwnerId(user?.id), [user?.id], { cacheKey: `vendor-profile-${user?.id}`, enabled: !!user?.id });
+  const { data: product, isLoading: productLoading, error: loadError } = useDataFetch(() => getProductById(productId), [productId], { enabled: !!productId });
   const { data: categories } = useDataFetch(() => getCategories(), [], { cacheKey: 'categories', staleTime: 120000 });
+  const isLoading = vendorLoading || productLoading;
+  const notOwned  = !!product && !!vendor?.id && (product.vendor_id ?? product.vendorId) !== vendor.id;
   const [form,setForm]=useState(null); const [saving,setSaving]=useState(false); const [error,setError]=useState('');
   useEffect(()=>{
     if(product) setForm({
@@ -44,7 +56,7 @@ export default function VendorEditProduct() {
     setSaving(false); if(e) return setError(e.message||'Could not save product.'); navigate('/vendor/products',{replace:true});
   };
   if(isLoading) return <div className="min-h-screen grid place-items-center text-sm text-muted-foreground">Loading product…</div>;
-  if(loadError || !form) return <div className="p-6"><Card className="p-6 text-center"><AlertCircle className="mx-auto mb-2"/><p className="text-sm">Product not found or could not be loaded.</p><Button className="mt-3" onClick={()=>navigate('/vendor/products')}>Back to products</Button></Card></div>;
+  if(loadError || !product || notOwned || !form) return <div className="p-6"><Card className="p-6 text-center"><AlertCircle className="mx-auto mb-2"/><p className="text-sm">Product not found or could not be loaded.</p><Button className="mt-3" onClick={()=>navigate('/vendor/products')}>Back to products</Button></Card></div>;
   return <div className="pb-24"><AppHeader title="Edit Product" showBack backTo="/vendor/products"/><div className="p-4 space-y-4">
     {error&&<div className="p-3 rounded-xl bg-destructive/10 text-destructive text-xs flex gap-2"><AlertCircle className="w-4 h-4 shrink-0"/>{error}</div>}
     <Card className="p-4 space-y-3"><h3 className="font-semibold text-sm">Product details</h3>

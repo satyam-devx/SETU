@@ -12,7 +12,7 @@
 // ═══════════════════════════════════════════════════════════
 import React, { useState, useEffect } from 'react';
 import {
-  Bell, Globe, Moon, ChevronRight, LogOut, Store,
+  Globe, Moon, LogOut, Store,
   Clock, Save, Loader2, CheckCircle, AlertCircle, Edit2,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -51,6 +51,7 @@ export default function VendorSettings() {
   const [stockAlerts, setStockAlerts] = useState(true);
   const [autoAccept,  setAutoAccept]  = useState(false);
   const [storeOpen,   setStoreOpen]   = useState(false);
+  const [language,    setLanguage]    = useState('hi');
   const [darkMode,    setDarkMode]    = useState(
     () => document.documentElement.classList.contains('dark')
   );
@@ -73,6 +74,7 @@ export default function VendorSettings() {
     setStockAlerts(prefs.stock_alerts   ?? true);
     setAutoAccept( prefs.auto_accept    ?? false);
     setStoreOpen(vendor.is_open ?? false);
+    setLanguage(prefs.language ?? 'hi');
     const savedDark = prefs.dark_mode ?? false;
     setDarkMode(savedDark);
     document.documentElement.classList.toggle('dark', savedDark);
@@ -110,6 +112,7 @@ export default function VendorSettings() {
         stock_alerts: stockAlerts,
         auto_accept:  autoAccept,
         dark_mode:    darkMode,
+        language,
       },
     });
 
@@ -288,10 +291,17 @@ export default function VendorSettings() {
               <Globe className="w-4 h-4 text-muted-foreground" />
               <p className="text-sm font-medium">Language</p>
             </div>
-            <div className="flex items-center gap-1 text-muted-foreground">
-              <span className="text-sm">Hindi</span>
-              <ChevronRight className="w-4 h-4" />
-            </div>
+            <select
+              className="h-8 text-sm bg-transparent text-right pr-1 focus:outline-none"
+              value={language}
+              onChange={e => setLanguage(e.target.value)}
+              aria-label="App language"
+            >
+              <option value="hi">हिंदी</option>
+              <option value="mai">मैथिली</option>
+              <option value="bh">भोजपुरी</option>
+              <option value="en">English</option>
+            </select>
           </div>
         </Card>
 

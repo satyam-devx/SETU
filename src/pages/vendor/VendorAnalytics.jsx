@@ -22,7 +22,7 @@ import StatCard from '@/components/shared/StatCard';
 import { useAuth } from '@/lib/AuthContext';
 import { useStore } from '@/lib/store';
 import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendorByOwnerId } from '@/lib/api';
+import { getVendorByOwnerId, getProducts } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 
 const HOUR_LABELS = [
@@ -136,6 +136,19 @@ export default function VendorAnalytics() {
     [state.orders, vendor?.id]
   );
 
+  // Products for the low-stock card below. NOTE: this used to read
+  // state.products from the global store, but nothing in the app ever
+  // populates that field — initialState has no `products` key and the
+  // one reducer case for it (PRODUCT_UPDATE_STOCK) is a no-op — so the
+  // low-stock card could never show regardless of real stock levels.
+  // Fetching directly (same call/cache-key VendorDashboard and
+  // VendorProducts already use, so this is normally a free cache hit).
+  const { data: products } = useDataFetch(
+    () => getProducts({ vendorId: vendor?.id }),
+    [vendor?.id],
+    { cacheKey: `vendor-products-${vendor?.id}`, enabled: !!vendor?.id }
+  );
+
   const completedOrders = vendorOrders.filter(o => o.status !== 'cancelled');
   const ratingDistribution = useMemo(() => {
     const rated = completedOrders.filter(o => o.vendor_rating != null);
@@ -184,8 +197,7 @@ export default function VendorAnalytics() {
   );
 
   const lowStockProducts = vendorOrders.length === 0 ? [] :
-    (state.products ?? []).filter(p =>
-      (p.vendor_id === vendor?.id || p.vendorId === vendor?.id) &&
+    (products ?? []).filter(p =>
       (p.stock ?? 99) < 5 &&
       (p.is_available ?? true)
     );

@@ -175,7 +175,7 @@ export default function VendorAddProduct() {
   }
 
   return (
-    <div className="pb-24">
+    <div className="pb-40">
       <AppHeader title="Add Product" showBack backTo="/vendor/products" />
       <div className="px-4 py-4 space-y-4">
 
@@ -364,7 +364,10 @@ export default function VendorAddProduct() {
       </div>
 
       {/* ── Bottom CTA ──────────────────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 bg-background border-t border-border px-4 py-3 flex gap-2">
+      {/* bottom-20 + z-40 keeps this above MobileNav (fixed bottom-0, z-50) —
+          it used to sit at bottom-0 with no z-index, so MobileNav painted
+          over it and Save/Cancel were literally behind the tab bar. */}
+      <div className="fixed bottom-20 left-0 right-0 z-40 max-w-lg mx-auto bg-background border-t border-border px-4 py-3 flex gap-2">
         <Button variant="outline" className="flex-1" onClick={() => navigate('/vendor/products')}>
           Cancel
         </Button>

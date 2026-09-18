@@ -27,7 +27,7 @@ export default function VendorCustomers() {
     return [...map.values()].sort((a,b)=>b.totalSpent-a.totalSpent);
   },[orders]);
   const filtered=customers.filter(c=>c.name.toLowerCase().includes(query.toLowerCase())||c.village.toLowerCase().includes(query.toLowerCase()));
-  return <div className="pb-20"><AppHeader title="Customers" subtitle={`${customers.length} customers from your orders`}/><div className="p-4 space-y-3">
+  return <div className="pb-20"><AppHeader title="Customers" subtitle={`${customers.length} customers from your orders`} showBack backTo="/vendor/profile"/><div className="p-4 space-y-3">
     <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"/><Input className="pl-9" placeholder="Search customers…" value={query} onChange={e=>setQuery(e.target.value)}/></div>
     {isLoading&&<div className="py-10 text-center text-sm text-muted-foreground"><Loader2 className="w-5 h-5 animate-spin mx-auto mb-2"/>Loading customers…</div>}
     {!isLoading&&error&&<Card className="p-6 text-center text-sm text-destructive">{error.message}</Card>}
