@@ -93,18 +93,27 @@ export async function signInWithGoogleNative() {
     const result = await GoogleSignIn.signIn({ nonce: hashedNonce });
     return { idToken: result.idToken, nonce: rawNonce };
   } catch (error) {
-    if (error?.code === ErrorCode.SignInCanceled) {
-      throw new Error('Sign-in was cancelled.');
-    }
+    // TEMPORARY (remove once sign-in is confirmed working end-to-end,
+    // and restore the plain friendly SignInCanceled message that used
+    // to be the first branch here): Google Play services reports
+    // almost ANY native-side failure — including config problems that
+    // have nothing to do with the user actually tapping cancel — as
+    // SIGN_IN_CANCELED (see Capawesome's own troubleshooting FAQ). The
+    // real cause lives in error.message / error.code, which we can't
+    // read via logcat without root, so every branch below appends it
+    // to the on-screen message instead of hiding it. A real end user
+    // build should never ship with this debug suffix visible.
+    const debug = ` [DEBUG code=${error?.code ?? 'none'} message="${error?.message ?? 'none'}"]`;
+
     if (error?.code === ErrorCode.NoCredentialAvailable) {
-      throw new Error('No Google account found on this device. Add one in Settings and try again.');
+      throw new Error('No Google account found on this device. Add one in Settings and try again.' + debug);
     }
     if (error?.code === ErrorCode.ProviderConfigurationError) {
-      throw new Error('Google Play services is missing or out of date on this device.');
+      throw new Error('Google Play services is missing or out of date on this device.' + debug);
     }
-    // Most common remaining cause: no Android OAuth client registered
-    // for this app's package name + signing certificate SHA-1 yet.
-    // See ANDROID_APP.md → "Native Google Sign-In setup".
-    throw new Error(error?.message || 'Google sign-in failed. Please try again.');
+    // Covers SignInCanceled and anything else, including cases where
+    // it's genuinely a user cancelling — that's fine, we'll drop the
+    // debug suffix once we've seen what a real failure looks like here.
+    throw new Error('Google sign-in failed.' + debug);
   }
 }
