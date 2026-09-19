@@ -80,7 +80,7 @@ jobs:
 
       # Upload dist for downstream jobs
       - name: Upload dist artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-${{ github.sha }}
           path: dist/
@@ -140,7 +140,7 @@ jobs:
         run: npm run test:coverage
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-${{ github.sha }}
@@ -148,7 +148,7 @@ jobs:
           retention-days: 14
 
       - name: Upload Vitest results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: vitest-results-${{ github.sha }}
@@ -215,7 +215,7 @@ jobs:
         run: node scripts/run-semgrep.js
 
       - name: Upload security report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: security-report-${{ github.sha }}
@@ -298,7 +298,7 @@ jobs:
         run: npm run test:e2e -- --project=mobile-chrome --reporter=list,json,junit
 
       - name: Upload Playwright results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: playwright-results-${{ github.sha }}
@@ -412,7 +412,7 @@ jobs:
         run: npm run test:visual -- --reporter=list,json,junit
 
       - name: Upload crawler & visual results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ui-crawler-results-${{ github.sha }}
@@ -527,7 +527,7 @@ jobs:
         run: pkill -f "vite" || true
 
       - name: Upload a11y report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: a11y-report-${{ github.sha }}
@@ -571,7 +571,7 @@ jobs:
         run: node scripts/run-perf-suite.js
 
       - name: Upload performance report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: perf-report-${{ github.sha }}
@@ -645,7 +645,7 @@ jobs:
         run: node scripts/generate-report.js
 
       - name: Upload unified QA report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: qa-report-${{ github.sha }}
           path: |
@@ -793,7 +793,7 @@ jobs:
                 --reporter=list,json
 
       - name: Upload post-deploy E2E results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: post-deploy-e2e-${{ github.sha }}
