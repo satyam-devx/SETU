@@ -561,7 +561,7 @@ jobs:
 
       # Download the built dist
       - name: Download dist artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist-${{ github.sha }}
           path: dist/
@@ -602,35 +602,35 @@ jobs:
 
       # Download all partial reports
       - name: Download vitest results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: vitest-results-${{ github.sha }}
           path: ${{ env.QA_DIR }}/reports/
         continue-on-error: true
 
       - name: Download playwright results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: playwright-results-${{ github.sha }}
           path: ${{ env.QA_DIR }}/reports/
         continue-on-error: true
 
       - name: Download security report
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: security-report-${{ github.sha }}
           path: ${{ env.QA_DIR }}/reports/
         continue-on-error: true
 
       - name: Download a11y report
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: a11y-report-${{ github.sha }}
           path: ${{ env.QA_DIR }}/reports/
         continue-on-error: true
 
       - name: Download performance report
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: perf-report-${{ github.sha }}
           path: ${{ env.QA_DIR }}/reports/
