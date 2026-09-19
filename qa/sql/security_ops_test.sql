@@ -26,8 +26,8 @@ update profiles set role='customer',    name='Dup'    where id='22222222-2222-22
 update profiles set role='vendor',       name='Vend'   where id='33333333-3333-3333-3333-333333333333';
 update profiles set role='admin',        name='Admin2' where id='88888888-8888-8888-8888-888888888888';
 
-insert into vendors (id, owner_id, name, category, is_active)
-values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','33333333-3333-3333-3333-333333333333','Vend Store','grocery', true);
+insert into vendors (id, owner_id, name, category, is_active, is_open)
+values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','33333333-3333-3333-3333-333333333333','Vend Store','grocery', true, true);
 insert into products (id, vendor_id, name, price, mrp, unit, stock, is_available, category)
 values ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','Rice', 100, 120, 'kg', 100, true, 'grocery');
 
