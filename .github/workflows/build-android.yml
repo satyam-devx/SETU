@@ -82,6 +82,17 @@ jobs:
             echo "::warning::ANDROID_DEBUG_KEYSTORE_BASE64 is not set. Gradle will generate a NEW debug keystore this run, so its SHA-1 will differ from any you've registered in Google Cloud Console, and native Google Sign-In will fail. See ANDROID_APP.md → 'Native Google Sign-In setup'."
           fi
 
+      # Prints, from inside THIS run, the exact SHA-1 that is about to sign
+      # the APK — so you can compare it character-for-character against the
+      # Android OAuth client in Google Cloud Console instead of trusting
+      # that your local copy of debug.keystore is still the same file you
+      # registered. A mismatch here (even one byte) is why native Google
+      # Sign-In fails with a misleading "Sign-in was cancelled" right after
+      # picking an account — see ANDROID_APP.md → "Native Google Sign-In
+      # setup". Safe to remove once sign-in is confirmed working.
+      - name: Print debug keystore SHA-1 (compare against Google Cloud Console)
+        run: keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android | grep -A2 "Certificate fingerprints"
+
       - name: Grant gradlew execute permission
         run: chmod +x android/gradlew
 
