@@ -113,10 +113,18 @@ export async function signInWithGoogleNative() {
   const hashedNonce = await sha256Hex(rawNonce);
 
   try {
+    // No `scopes` here on purpose: passing any scopes switches this
+    // plugin to its legacy OAuth-activity flow, which requires wiring
+    // MainActivity.java into ModifiedMainActivityForSocialLoginPlugin
+    // ("You CANNOT use scopes without modifying the main activity" is
+    // the plugin's own error for this). We only need the ID token for
+    // Supabase — email + profile are already part of the default OIDC
+    // scopes Google includes in that token — so the plain Credential
+    // Manager path (no scopes, no native changes) is exactly what we
+    // want here.
     const login = await SocialLogin.login({
       provider: 'google',
       options: {
-        scopes: ['email', 'profile'],
         nonce: hashedNonce,
       },
     });

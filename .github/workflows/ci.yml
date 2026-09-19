@@ -36,8 +36,30 @@ jobs:
       - name: Audit production dependencies (blocking — high + critical)
         # Runtime deps that SHIP to users must have no high/critical CVEs.
         # --omit=dev excludes build-only tooling (vite/esbuild), whose
-        # dev-server advisories never reach production. This gate blocks.
-        run: npm audit --omit=dev --audit-level=high
+        # dev-server advisories never reach production. This gate blocks —
+        # except when npm's own advisory-database endpoint is down (a
+        # 503 "performing maintenance" response, not an audit result),
+        # which retries a few times instead of failing CI for a registry
+        # outage that has nothing to do with this repo's dependencies. A
+        # genuine high/critical finding still fails immediately, no retry.
+        run: |
+          for attempt in 1 2 3; do
+            output=$(npm audit --omit=dev --audit-level=high --json 2>&1)
+            code=$?
+            if [ $code -eq 0 ]; then
+              echo "No high/critical vulnerabilities in production dependencies."
+              exit 0
+            fi
+            if echo "$output" | grep -q '"error"'; then
+              echo "::warning::npm's advisory endpoint looked unavailable (attempt $attempt/3, likely registry.npmjs.org maintenance) — retrying in 20s"
+              sleep 20
+              continue
+            fi
+            npm audit --omit=dev --audit-level=high
+            exit $code
+          done
+          echo "::error::npm audit's advisory database was still unavailable after 3 attempts — this run could not verify dependencies. Re-run once https://status.npmjs.org shows it's resolved."
+          exit 1
 
       - name: Audit all dependencies (non-blocking — visibility)
         # Includes dev tooling; surfaces issues without blocking the build.
