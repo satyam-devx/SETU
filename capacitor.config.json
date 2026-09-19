@@ -19,6 +19,14 @@
       "splashFullScreen": true,
       "splashImmersive": true,
       "showSpinner": false
+    },
+    "SocialLogin": {
+      "providers": {
+        "google": true,
+        "facebook": false,
+        "apple": false,
+        "twitter": false
+      }
     }
   }
 }

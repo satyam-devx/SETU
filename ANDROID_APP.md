@@ -195,6 +195,37 @@ still misconfigured, the app shows a specific error (missing env var,
 Play Services unavailable, unregistered client) rather than crashing —
 see the comments in `src/lib/googleAuth.js` for what each one means.
 
+### Plugin note: why `@capgo/capacitor-social-login`, not `@capawesome/capacitor-google-sign-in`
+
+The first implementation used Capawesome's plugin. All four setup steps
+above checked out (SHA-1, package name, project, web client ID, test
+user added) and it *still* failed every single attempt with:
+
+```
+Google sign-in failed. [DEBUG code=SIGN_IN_CANCELED message="[16] Account reauth failed."]
+```
+
+`[16] Account reauth failed` is Android Credential Manager's way of
+reporting a stuck cached-reauth attempt — a documented Credential
+Manager quirk independent of correct config (see e.g.
+github.com/android/identity-samples/issues/90 and
+github.com/flutter/flutter/issues/184918). It survived revoking the
+account's access at myaccount.google.com/permissions, clearing Google
+Play Services + Play Store cache, and a full device restart, which
+rules out stale local state too.
+
+`@capgo/capacitor-social-login` documents this exact error and ships a
+built-in fix: on a `[16]` failure it automatically clears Credential
+Manager's credential-selection state and retries once with
+`filterByAuthorizedAccounts: false` — no app code required. Switched to
+it for that reason. Same Google Cloud setup (steps 1-4 above) works
+for either plugin; only `src/lib/googleAuth.js`'s internals changed.
+
+If sign-in still fails after this switch, the README's own "[16]
+Account reauth failed" section has further checks: the OAuth consent
+screen must be **External** (not Internal/Workspace-only), and Family
+Link / supervised Google accounts need special handling.
+
 ## Files this added
 
 | File | What it does |

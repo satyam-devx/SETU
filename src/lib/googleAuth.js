@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════
-// SETU PLATFORM — NATIVE GOOGLE SIGN-IN (Android)
+// SETU PLATFORM — NATIVE GOOGLE SIGN-IN (Android)  (v2 — @capgo/capacitor-social-login)
 //
 // WHY THIS FILE EXISTS:
 //
@@ -10,45 +10,68 @@
 //  the app's own WebView, not as a real network host Chrome can
 //  reach) — which is why it hard-failed with ERR_CONNECTION_REFUSED.
 //
-//  This replaces that with a fully native flow via
-//  @capawesome/capacitor-google-sign-in: the OS's own account picker
-//  (Android Credential Manager) returns a Google ID token directly,
-//  in-app, with NO browser involved at any point. That ID token is
-//  then handed to Supabase via signInWithIdToken(), which verifies it
-//  and returns a real session — same end result as signInWithOAuth(),
-//  just without ever leaving the app.
+//  This replaces that with a fully native flow: the OS's own account
+//  picker (Android Credential Manager) returns a Google ID token
+//  directly, in-app, with NO browser involved at any point. That ID
+//  token is then handed to Supabase via signInWithIdToken(), which
+//  verifies it and returns a real session — same end result as
+//  signInWithOAuth(), just without ever leaving the app.
 //
 //  The web build is untouched: AuthContext.jsx still uses
 //  signInWithOAuth() there, which works fine in a real browser tab.
 //
-// ONE-TIME SETUP REQUIRED (Google Cloud Console + Supabase + GitHub
-// secrets) — see ANDROID_APP.md → "Native Google Sign-In setup".
-// Without that setup, signIn() below will fail with a clear error
-// (ProviderConfigurationError / UNREGISTERED_ON_API_CONSOLE), not a
-// silent crash.
+// WHY THIS PLUGIN (v2, not @capawesome/capacitor-google-sign-in):
+//
+//  Google Cloud + build config were fully verified correct (SHA-1,
+//  package name, project, web client ID, test users all matched) and
+//  Capawesome's plugin still failed every attempt with:
+//    Google sign-in failed. [DEBUG code=SIGN_IN_CANCELED
+//    message="[16] Account reauth failed."]
+//  "[16] Account reauth failed" is Android Credential Manager's way of
+//  reporting a stuck cached-reauth attempt — well documented as an
+//  intermittent Credential Manager issue independent of correct
+//  config (see multiple upstream reports:
+//  github.com/android/identity-samples/issues/90,
+//  github.com/flutter/flutter/issues/184918). Persisted even after
+//  revoking the account's access + clearing Play Services/Play Store
+//  cache + a device restart, which rules out stale local state too.
+//  @capgo/capacitor-social-login documents this EXACT error and ships
+//  a built-in recovery: on a [16] failure it clears Credential
+//  Manager's credential-selection state and retries once with
+//  filterByAuthorizedAccounts: false automatically, no app code
+//  needed. If sign-in fails AGAIN after this switch, the cause is
+//  something this retry doesn't cover — see the README's "[16]
+//  Account reauth failed" section for the next checks (OAuth consent
+//  screen must be External, Family Link/supervised accounts, the
+//  user's own "Sign in with Google" app setting).
+//
+// ONE-TIME SETUP: unchanged from before — same Google Cloud Console
+// Web + Android OAuth clients, same VITE_GOOGLE_WEB_CLIENT_ID, same
+// stable debug keystore. See ANDROID_APP.md → "Native Google Sign-In
+// setup". Nothing there needs to change for this plugin swap.
 // ═══════════════════════════════════════════════════════════
 
-import { GoogleSignIn, ErrorCode } from '@capawesome/capacitor-google-sign-in';
+import { SocialLogin } from '@capgo/capacitor-social-login';
 
 let initialized = false;
 
 function ensureInitialized() {
   if (initialized) return;
 
-  const clientId = import.meta.env.VITE_GOOGLE_WEB_CLIENT_ID;
-  if (!clientId) {
+  const webClientId = import.meta.env.VITE_GOOGLE_WEB_CLIENT_ID;
+  if (!webClientId) {
     throw new Error(
       'VITE_GOOGLE_WEB_CLIENT_ID is not set in the build environment — ' +
       'native Google Sign-In cannot start. See .env.example / ANDROID_APP.md.'
     );
   }
 
-  // NOTE: this must be the WEB client ID on every platform, Android
-  // included — the plugin passes it as the server client ID to
-  // Android's Credential Manager. The separate Android OAuth client
-  // (package name + SHA-1, registered in Google Cloud Console) has to
-  // exist too, but its ID is never referenced in code.
-  GoogleSignIn.initialize({ clientId });
+  // webClientId must be the WEB application client ID on every
+  // platform, Android included — Credential Manager uses it as the
+  // server client ID / ID-token audience. The separate Android OAuth
+  // client (package name + SHA-1) also has to exist in Google Cloud
+  // Console, but its ID is never referenced here.
+  SocialLogin.initialize({ google: { webClientId } });
   initialized = true;
 }
 
@@ -90,30 +113,27 @@ export async function signInWithGoogleNative() {
   const hashedNonce = await sha256Hex(rawNonce);
 
   try {
-    const result = await GoogleSignIn.signIn({ nonce: hashedNonce });
-    return { idToken: result.idToken, nonce: rawNonce };
-  } catch (error) {
-    // TEMPORARY (remove once sign-in is confirmed working end-to-end,
-    // and restore the plain friendly SignInCanceled message that used
-    // to be the first branch here): Google Play services reports
-    // almost ANY native-side failure — including config problems that
-    // have nothing to do with the user actually tapping cancel — as
-    // SIGN_IN_CANCELED (see Capawesome's own troubleshooting FAQ). The
-    // real cause lives in error.message / error.code, which we can't
-    // read via logcat without root, so every branch below appends it
-    // to the on-screen message instead of hiding it. A real end user
-    // build should never ship with this debug suffix visible.
-    const debug = ` [DEBUG code=${error?.code ?? 'none'} message="${error?.message ?? 'none'}"]`;
+    const login = await SocialLogin.login({
+      provider: 'google',
+      options: {
+        scopes: ['email', 'profile'],
+        nonce: hashedNonce,
+      },
+    });
 
-    if (error?.code === ErrorCode.NoCredentialAvailable) {
-      throw new Error('No Google account found on this device. Add one in Settings and try again.' + debug);
+    // Tokens are nested under `result` for this plugin — not top-level.
+    const idToken = login.result?.idToken;
+    if (!idToken) {
+      throw new Error('Google did not return an ID token.');
     }
-    if (error?.code === ErrorCode.ProviderConfigurationError) {
-      throw new Error('Google Play services is missing or out of date on this device.' + debug);
-    }
-    // Covers SignInCanceled and anything else, including cases where
-    // it's genuinely a user cancelling — that's fine, we'll drop the
-    // debug suffix once we've seen what a real failure looks like here.
+    return { idToken, nonce: rawNonce };
+  } catch (error) {
+    // TEMPORARY (remove once sign-in is confirmed working end-to-end):
+    // surface the raw platform error so we can see exactly what
+    // Android/Play Services reported, since it's not always what the
+    // friendly message below would suggest, and we don't have
+    // logcat/root access to read it another way.
+    const debug = ` [DEBUG code=${error?.code ?? 'none'} message="${error?.message ?? 'none'}"]`;
     throw new Error('Google sign-in failed.' + debug);
   }
 }
