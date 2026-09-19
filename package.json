@@ -25,6 +25,7 @@
   "dependencies": {
     "@capacitor/android": "^8.0.0",
     "@capacitor/app": "^8.0.0",
+    "@capawesome/capacitor-google-sign-in": "^0.1.0",
     "@capacitor/screen-orientation": "^8.0.0",
     "@capacitor/splash-screen": "^8.0.0",
     "@capacitor/core": "^8.0.0",

@@ -123,11 +123,6 @@ failure + rollback, loop prevention, revoked release).
 
 ## What's still missing (being upfront about this)
 
-- **Google Sign-In inside the native app isn't wired up.** It works fine
-  on the web build; inside a Capacitor WebView, OAuth needs a native
-  deep-link redirect (`@capacitor/app`'s `appUrlOpen` + a custom URL
-  scheme) that I haven't built yet. Phone/OTP login (your primary flow
-  already) works as-is with no changes needed.
 - **No custom app icon/splash asset yet** — ships with Capacitor's default
   icon. Once you've got a square PNG logo, `npx @capacitor/assets generate`
   does this in one command — happy to wire that into the build workflow
@@ -135,8 +130,70 @@ failure + rollback, loop prevention, revoked release).
 - **Debug APK only.** Fine for you/testers installing directly. A Play
   Store submission needs a signed *release* build — the workflow has a
   comment stub for this (needs a keystore + 4 GitHub secrets) whenever
-  you're ready for that step.
+  you're ready for that step. Note: once you switch to a release
+  keystore, Google Sign-In's Android OAuth client (below) needs its SHA-1
+  updated to the *release* key's fingerprint — the debug one won't match.
 - **iOS not touched** — Android only, per what you asked for.
+
+## Native Google Sign-In setup (one-time, manual — do this before your next APK build)
+
+Google login now runs fully in-app on Android — the OS's own account
+picker, no Chrome tab, no redirect. See `src/lib/googleAuth.js` for how
+it works. It needs three things set up outside the code, none of which I
+can do from here:
+
+1. **Google Cloud Console** → [Credentials](https://console.cloud.google.com/apis/credentials)
+   (same project as your existing Web OAuth client, if you have one from
+   the old browser-based login):
+   - You should already have a **Web application** OAuth client (Supabase's
+     Google provider needs one regardless). Copy its **Client ID** — this
+     is the value that goes in `VITE_GOOGLE_WEB_CLIENT_ID` below.
+   - Create a **new, separate** OAuth client with type **Android**:
+     package name `in.setu.app`, plus the SHA-1 fingerprint from step 2.
+     Its ID isn't used anywhere in code — creating it is just what
+     authorizes this specific app build to use Google Sign-In at all.
+
+2. **Get a stable debug-keystore SHA-1** (needed for the Android client
+   above). CI runners are ephemeral, so a keystore generated on the fly
+   would have a different SHA-1 every build — generate one yourself once
+   and reuse it:
+   ```
+   keytool -genkeypair -v -keystore debug.keystore -storepass android \
+     -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+     -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+
+   keytool -list -v -keystore debug.keystore -alias androiddebugkey \
+     -storepass android -keypass android
+   ```
+   Copy the **SHA1** line into the Android OAuth client in step 1. Then:
+   ```
+   base64 -w0 debug.keystore
+   ```
+   Copy that output into a new GitHub repo secret named
+   `ANDROID_DEBUG_KEYSTORE_BASE64` (Settings → Secrets and variables →
+   Actions). `build-android.yml` restores this exact keystore on every
+   run, so the SHA-1 — and Google Sign-In — stays working across builds.
+   Skip this and the workflow still builds fine, but Google Sign-In will
+   break on the next run (a fresh random keystore = a new, unregistered
+   SHA-1) and you'd have to re-register it each time.
+
+3. **Supabase Dashboard** → Authentication → Providers → Google:
+   - Confirm the Web client's Client ID/Secret are already filled in
+     (unchanged from before).
+   - Under **Authorized Client IDs**, add the same Web Client ID from
+     step 1 (comma-separate if anything's already there). This is what
+     lets `signInWithIdToken()` trust tokens minted for that client.
+   - `Skip nonce checks` should stay **off** — Android supports proper
+     nonce verification, so leaving it on isn't needed and is less safe.
+
+4. **Add the Web Client ID as a GitHub secret** named
+   `VITE_GOOGLE_WEB_CLIENT_ID` (same secrets page as step 2) — the build
+   workflow already reads it and bakes it into the APK.
+
+Once all four are done, re-run **"Build Android APK"**. If something's
+still misconfigured, the app shows a specific error (missing env var,
+Play Services unavailable, unregistered client) rather than crashing —
+see the comments in `src/lib/googleAuth.js` for what each one means.
 
 ## Files this added
 
@@ -152,3 +209,4 @@ failure + rollback, loop prevention, revoked release).
 | `qa/tests/unit/app-updater.test.js` | Update/rollback/revocation scenario coverage |
 | `src/components/shared/AppUpdateBanner.jsx` | The "Update now" card |
 | `.gitignore` | `android/` excluded — CI regenerates it fresh every build |
+| `src/lib/googleAuth.js` | Native (in-app) Google Sign-In — no browser, see "Native Google Sign-In setup" above |

@@ -149,6 +149,26 @@ export async function upsertVendorProfile(vendorData) {
   );
 }
 
+/**
+ * Vendor: update fields on an EXISTING vendor row (Settings page, etc).
+ * Plain UPDATE, never INSERT — unlike upsertVendorProfile's ON CONFLICT
+ * upsert, this can't fall through to an insert path. It was exactly that
+ * fallthrough that crashed VendorSettings' save with "null value in column
+ * 'name' ... violates not-null constraint": the settings payload never
+ * included name/category (it only ever touches is_open/preferences), which
+ * is fine for an UPDATE but fatal the moment Postgres treats it as a fresh
+ * INSERT. Settings always operates on a vendor row that already exists
+ * (the page can't even render without having fetched it), so there is
+ * never a legitimate reason for that call to be insert-capable.
+ */
+export async function updateVendorSettings(vendorId, updates) {
+  return safeQuery(
+    () => supabase.from('vendors').update(updates).eq('id', vendorId).select().single(),
+    null,
+    'updateVendorSettings'
+  );
+}
+
 export async function getVendorPaymentInfo(vendorId) {
   return safeQuery(
     () => supabase.from('vendor_payment_info').select('account_name,account_number,ifsc,bank_name,upi_id').eq('vendor_id', vendorId).maybeSingle(),

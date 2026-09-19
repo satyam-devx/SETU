@@ -1,5 +1,13 @@
 // ═══════════════════════════════════════════════════════════
-// SETU PLATFORM — AUTH CONTEXT  (v3 — production hardened)
+// SETU PLATFORM — AUTH CONTEXT  (v4 — native Google Sign-In)
+//
+// Fixes over v3:
+//  1. signInWithGoogle() now branches on Capacitor.isNativePlatform().
+//     Native: goes through src/lib/googleAuth.js (OS account picker,
+//     no browser) + supabase.auth.signInWithIdToken(). This is the
+//     "Google Sign-In inside the native app isn't wired up" item from
+//     ANDROID_APP.md's "What's still missing" — now wired up. Web:
+//     unchanged, still signInWithOAuth() below.
 //
 // Fixes over v2:
 //  1. GitHub Pages base path: redirectTo now uses BASE_URL env var
@@ -19,7 +27,9 @@ import React, {
   useEffect,
   useCallback,
 } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { supabase, getProfile, getPortalPath, isSupabaseConfigured } from './supabase';
+import { signInWithGoogleNative } from './googleAuth';
 import { clearCache } from '@/hooks/useDataFetch';
 
 const AuthContext = createContext(null);
@@ -247,8 +257,30 @@ export function AuthProvider({ children }) {
   }, [user]);
 
   // ── signInWithGoogle ──────────────────────────────────
+  // Native (Android/iOS, running inside the Capacitor WebView): fully
+  // in-app via the OS's own account picker — no browser opens at all.
+  // See src/lib/googleAuth.js for why this exists and how it works.
+  //
+  // Web (real browser): unchanged — still Supabase's redirect-based
+  // OAuth flow, which works fine there since a real browser CAN
+  // navigate back to the app's own origin.
   const signInWithGoogle = useCallback(async () => {
     if (!isSupabaseConfigured) return { error: { message: 'Supabase not configured' } };
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { idToken, nonce } = await signInWithGoogleNative();
+        const { error } = await supabase.auth.signInWithIdToken({
+          provider: 'google',
+          token:    idToken,
+          nonce,
+        });
+        return { error };
+      } catch (err) {
+        return { error: { message: err.message || 'Google sign-in failed. Please try again.' } };
+      }
+    }
+
     return await supabase.auth.signInWithOAuth({
       provider: 'google',
       options:  { redirectTo: getCallbackUrl() },

@@ -29,6 +29,15 @@
 //    Authentication → URL Configuration → Redirect URLs:
 //    Add: http://localhost:5173/auth/callback
 //    Add: https://your-production-domain.com/auth/callback
+//
+//  ALSO USED BY: native Google Sign-In (Android — see
+//  src/lib/googleAuth.js + AuthContext.signInWithGoogle). That flow
+//  never touches a browser or a URL hash — it calls
+//  supabase.auth.signInWithIdToken() directly and then just
+//  navigate()s here so Step 2's new-user / incomplete-profile / portal
+//  routing logic runs the same way it does for a web OAuth redirect,
+//  without duplicating it. Step 1 above is a harmless no-op in that
+//  case (no hash to read).
 // ═══════════════════════════════════════════════════════════
 
 import React, { useEffect, useState } from 'react';

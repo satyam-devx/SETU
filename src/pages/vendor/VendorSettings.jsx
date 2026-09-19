@@ -1,9 +1,12 @@
 // ═══════════════════════════════════════════════════════════
-// SETU — VendorSettings (v2)
+// SETU — VendorSettings (v3)
 // Changes:
 //  - Loads vendor profile via getVendorByOwnerId
-//  - All toggles (order_notifs, stock_alerts, auto_accept)
-//    saved to vendors table via upsertVendorProfile
+//  - All toggles (order_notifs, stock_alerts, auto_accept) and
+//    Store Open saved via updateVendorSettings (plain UPDATE —
+//    was upsertVendorProfile's INSERT-capable upsert, which is
+//    what was crashing Save with a not-null violation on
+//    vendors.name; see handleSave for details)
 //  - Business hours loaded from vendor.business_hours (JSON)
 //    and editable with save
 //  - Dark mode toggle wired to document.documentElement class
@@ -23,7 +26,7 @@ import { Input } from '@/components/ui/input';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
 import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendorByOwnerId, upsertVendorProfile, getVendorHours, saveVendorHours } from '@/lib/api';
+import { getVendorByOwnerId, updateVendorSettings, getVendorHours, saveVendorHours } from '@/lib/api';
 
 const DEFAULT_HOURS = [
   { day: 'Monday – Friday', open: '08:00', close: '21:00' },
@@ -35,7 +38,7 @@ export default function VendorSettings() {
   const { signOut, user } = useAuth();
 
   // ── Vendor profile ────────────────────────────────────────
-  const { data: vendor, isLoading: vendorLoading } = useDataFetch(
+  const { data: vendor, isLoading: vendorLoading, invalidate: invalidateVendor } = useDataFetch(
     () => getVendorByOwnerId(user?.id),
     [user?.id],
     { cacheKey: `vendor-profile-${user?.id}`, enabled: !!user?.id }
@@ -103,9 +106,12 @@ export default function VendorSettings() {
     setSaving(true);
     setSaveError(null);
 
-    const { error } = await upsertVendorProfile({
-      id:         vendor.id,
-      owner_id:   user.id,
+    // updateVendorSettings does a plain UPDATE ...eq('id', vendor.id) — it
+    // can never take an INSERT path the way upsertVendorProfile's ON
+    // CONFLICT upsert could, which is what was crashing this save with a
+    // not-null violation on vendors.name (a column this payload never
+    // includes, and never needs to — the row already exists).
+    const { error } = await updateVendorSettings(vendor.id, {
       is_open:    storeOpen,
       preferences: {
         order_notifs: orderNotifs,
@@ -130,6 +136,10 @@ export default function VendorSettings() {
     if (error || hoursError) {
       setSaveError((error || hoursError).message ?? 'Failed to save settings.');
     } else {
+      // Bust the shared vendor-profile cache so Dashboard (and any other
+      // vendor page) picks up the new is_open / preferences on its next
+      // mount instead of serving up to 30s of stale SWR-cached data.
+      invalidateVendor();
       setSaveDone(true);
       setEditHours(false);
       setTimeout(() => setSaveDone(false), 2500);

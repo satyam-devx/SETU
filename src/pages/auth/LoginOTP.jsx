@@ -145,8 +145,15 @@ export default function LoginOTP() {
     if (googleError) {
       setLoading(false);
       setError(googleError.message || 'Could not connect to Google. Please try again.');
+      return;
     }
-    // On success the page redirects; don't reset loading.
+    // Native (Android/iOS): the session is already established in-app
+    // at this point (no browser round-trip) — route through
+    // AuthCallback's existing new-user / incomplete-profile / portal
+    // logic instead of duplicating it here.
+    // Web: the browser has already navigated away via the OAuth
+    // redirect by the time this line would run, so it's a no-op there.
+    navigate('/auth/callback', { replace: true });
   };
 
   const canSend = rawPhone.length === 10 && cooldown === 0 && !loading;

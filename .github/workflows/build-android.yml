@@ -37,6 +37,7 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_GOOGLE_WEB_CLIENT_ID: ${{ secrets.VITE_GOOGLE_WEB_CLIENT_ID }}
         run: npx cross-env VITE_BASE_PATH=/ vite build
 
       # android/ is gitignored and regenerated fresh every run — see the
@@ -60,6 +61,26 @@ jobs:
 
       - name: Sync web assets + plugins into the native project
         run: npx cap sync android
+
+      # Native Google Sign-In needs this app's signing certificate SHA-1
+      # registered as an Android OAuth client in Google Cloud Console.
+      # This runner is ephemeral — without restoring a fixed keystore,
+      # Gradle would generate a BRAND NEW debug.keystore (new SHA-1)
+      # every single run, breaking Google Sign-In until you re-register
+      # it each time. Set the ANDROID_DEBUG_KEYSTORE_BASE64 secret once
+      # (see ANDROID_APP.md → "Native Google Sign-In setup") and every
+      # build after that reuses the same SHA-1.
+      - name: Restore stable debug keystore
+        env:
+          ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p ~/.android
+          if [ -n "$ANDROID_DEBUG_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 -d > ~/.android/debug.keystore
+            echo "Restored the persisted debug keystore — SHA-1 will match every run."
+          else
+            echo "::warning::ANDROID_DEBUG_KEYSTORE_BASE64 is not set. Gradle will generate a NEW debug keystore this run, so its SHA-1 will differ from any you've registered in Google Cloud Console, and native Google Sign-In will fail. See ANDROID_APP.md → 'Native Google Sign-In setup'."
+          fi
 
       - name: Grant gradlew execute permission
         run: chmod +x android/gradlew
