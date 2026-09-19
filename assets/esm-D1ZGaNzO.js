@@ -1,0 +1,2 @@
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/web-BqWUk5UL.js","assets/dist-Btb5Jv1E.js"])))=>i.map(i=>d[i]);
+import{n as e}from"./supabase-vendor-DDoByScj.js";import{r as t}from"./dist-Btb5Jv1E.js";var n=t(`ScreenOrientation`,{web:()=>e(()=>import(`./web-BqWUk5UL.js`).then(e=>new e.ScreenOrientationWeb),__vite__mapDeps([0,1]))});export{n as ScreenOrientation};
