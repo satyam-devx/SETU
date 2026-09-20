@@ -10,32 +10,24 @@
 //  - formatCurrency everywhere
 //  - Bottom CTA above safe area
 // ═══════════════════════════════════════════════════════════
-import React, { useState } from 'react';
+import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Minus, Trash2, ShoppingCart, AlertCircle } from 'lucide-react';
 import EmptyState from '@/components/shared/EmptyState';
+import Img from '@/components/shared/Img';
 import { useCart } from '@/lib/cartContext';
 import { formatCurrency, calcOrderTotals } from '@/lib/utils';
 
 function CartItem({ item }) {
   const { updateQuantity, removeItem } = useCart();
-  const [imgErr, setImgErr] = useState(false);
 
   return (
     <div className="setu-card p-3 flex gap-3">
-      {/* Image */}
+      {/* Image — object-contain, not object-cover: vendor photos vary in
+          aspect ratio and object-cover inside this fixed square box was
+          cropping the top/bottom off anything not already square. */}
       <div className="w-16 h-16 rounded-lg bg-muted shrink-0 overflow-hidden">
-        {item.image_url && !imgErr ? (
-          <img
-            src={item.image_url}
-            alt={item.name}
-            className="w-full h-full object-cover"
-            loading="lazy"
-            onError={() => setImgErr(true)}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-2xl">🛒</div>
-        )}
+        <Img src={item.image_url} alt={item.name} className="w-full h-full object-contain" />
       </div>
 
       {/* Details */}

@@ -59,7 +59,7 @@ function CategoryShelf({ cat }) {
             )}
           </div>
         </div>
-        <Link to={`/customer/search?category=${cat.id}`} className="section-link shrink-0">View all</Link>
+        <Link to={`/customer/category/${cat.id}`} className="section-link shrink-0">View all</Link>
       </div>
 
       <div className="scroll-strip px-4">

@@ -20,8 +20,9 @@ import { Progress } from '@/components/ui/progress';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
 import { useDataFetch } from '@/hooks/useDataFetch';
-import { getCategories, getVendorByOwnerId, upsertProduct } from '@/lib/api';
+import { getCategories, getVendorByOwnerId, upsertProduct, setProductCategories } from '@/lib/api';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import CategoryMultiSelect from '@/components/vendor/CategoryMultiSelect';
 
 const UNITS = ['kg', 'g', 'litre', 'ml', 'piece', 'box', 'pack', 'bag', 'dozen', 'bundle'];
 const MAX_IMAGE_SIZE_MB = 5;
@@ -67,9 +68,13 @@ export default function VendorAddProduct() {
 
   // ── Form state ────────────────────────────────────────────
   const [form, setForm] = useState({
-    name: '', name_hindi: '', category: '', price: '', mrp: '',
+    name: '', name_hindi: '', price: '', mrp: '',
     unit: 'kg', stock: '', description: '', image_url: '', is_seasonal: false, is_available: true,
   });
+  // Multi-category (migration 082) — a product can belong to several
+  // categories, not just one. Saved via setProductCategories after the
+  // product row itself is created/updated below.
+  const [categoryIds,  setCategoryIds]  = useState([]);
   const [errors,       setErrors]       = useState({});
   const [imageFile,    setImageFile]    = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
@@ -104,7 +109,7 @@ export default function VendorAddProduct() {
   const validate = () => {
     const e = {};
     if (!form.name.trim())                                          e.name     = 'Product name is required';
-    if (!form.category)                                             e.category = 'Category is required';
+    if (categoryIds.length === 0)                                   e.category = 'Select at least one category';
     if (!form.price || isNaN(form.price) || Number(form.price) <= 0) e.price  = 'Valid price required';
     if (!form.stock || isNaN(form.stock) || Number(form.stock) < 0)  e.stock  = 'Valid stock quantity required';
     if (form.image_url && !/^https?:\/\//i.test(form.image_url.trim())) e.image_url = 'Image URL must start with http:// or https://';
@@ -132,12 +137,15 @@ export default function VendorAddProduct() {
         setUploadPct(100);
       }
 
-      // 2. Persist product
+      // 2. Persist product — `category` (legacy single field, kept for
+      // existing badges/filters) set to the first pick; the full
+      // multi-select is recorded via setProductCategories just below.
+      const primaryCategoryName = cats.find(c => c.id === categoryIds[0])?.name || '';
       const { data, error } = await upsertProduct({
         vendor_id:    vendor.id,
         name:         form.name.trim(),
         name_hindi:   form.name_hindi.trim() || null,
-        category:     form.category,
+        category:     primaryCategoryName,
         price:        Number(form.price),
         mrp:          form.mrp ? Number(form.mrp) : Number(form.price),
         unit:         form.unit,
@@ -149,6 +157,9 @@ export default function VendorAddProduct() {
       });
 
       if (error) throw error;
+
+      const { error: catErr } = await setProductCategories(data.id, categoryIds);
+      if (catErr) throw catErr;
 
       setSaved(true);
       setTimeout(() => navigate('/vendor/products'), 1800);
@@ -262,21 +273,13 @@ export default function VendorAddProduct() {
           </div>
 
           <div>
-            <Label className="text-xs mb-1 block">Category *</Label>
-            {catsLoading ? (
-              <div className="h-9 bg-muted rounded-md animate-pulse" />
-            ) : (
-              <select
-                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-                value={form.category}
-                onChange={e => set('category', e.target.value)}
-              >
-                <option value="">Select category...</option>
-                {cats.map(c => (
-                  <option key={c.id} value={c.name}>{c.name}</option>
-                ))}
-              </select>
-            )}
+            <Label className="text-xs mb-1 block">Categories *</Label>
+            <CategoryMultiSelect
+              categories={cats}
+              selectedIds={categoryIds}
+              onChange={setCategoryIds}
+              loading={catsLoading}
+            />
             {errors.category && <p className="text-xs text-destructive mt-0.5">{errors.category}</p>}
           </div>
 

@@ -26,7 +26,8 @@ import { Input } from '@/components/ui/input';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
 import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendorByOwnerId, updateVendorSettings, getVendorHours, saveVendorHours } from '@/lib/api';
+import { getVendorByOwnerId, updateVendorSettings, getVendorHours, saveVendorHours, getCategories, getVendorCategories, setVendorCategories } from '@/lib/api';
+import CategoryMultiSelect from '@/components/vendor/CategoryMultiSelect';
 
 const DEFAULT_HOURS = [
   { day: 'Monday – Friday', open: '08:00', close: '21:00' },
@@ -48,6 +49,17 @@ export default function VendorSettings() {
     [vendor?.id],
     { cacheKey: `vendor-hours-${vendor?.id}`, enabled: !!vendor?.id }
   );
+  // Shop categories (migration 082) — the "category-management" ask:
+  // vendors can now belong to several categories, editable here anytime
+  // (not just once, at onboarding).
+  const { data: allCategories, isLoading: allCatsLoading } = useDataFetch(
+    () => getCategories(), [], { cacheKey: 'categories', staleTime: 120000 }
+  );
+  const { data: vendorCats } = useDataFetch(
+    () => getVendorCategories(vendor.id),
+    [vendor?.id],
+    { cacheKey: `vendor-categories-${vendor?.id}`, enabled: !!vendor?.id }
+  );
 
   // ── Toggle states (seeded from DB) ────────────────────────
   const [orderNotifs, setOrderNotifs] = useState(true);
@@ -62,6 +74,9 @@ export default function VendorSettings() {
   // ── Business hours ────────────────────────────────────────
   const [hours,      setHours]      = useState(DEFAULT_HOURS);
   const [editHours,  setEditHours]  = useState(false);
+
+  // ── Shop categories ────────────────────────────────────────
+  const [categoryIds, setCategoryIds] = useState([]);
 
   // ── UI state ──────────────────────────────────────────────
   const [saving,      setSaving]      = useState(false);
@@ -94,6 +109,11 @@ export default function VendorSettings() {
     }
   }, [vendor, storedHours]);
 
+  // Seed selected categories once the vendor's current set loads
+  useEffect(() => {
+    if (vendorCats) setCategoryIds(vendorCats.map(c => c.id));
+  }, [vendorCats]);
+
   // Dark mode toggle wired to DOM
   const handleDarkMode = (val) => {
     setDarkMode(val);
@@ -103,6 +123,10 @@ export default function VendorSettings() {
   // ── Save preferences ──────────────────────────────────────
   const handleSave = async () => {
     if (!vendor) return;
+    if (categoryIds.length === 0) {
+      setSaveError('Select at least one shop category.');
+      return;
+    }
     setSaving(true);
     setSaveError(null);
 
@@ -132,9 +156,11 @@ export default function VendorSettings() {
       { ...(hours[1] || {}), dayIndex: 6 },
     ].map(h => ({...h, open: h.open, close: h.close})));
 
+    const { error: catError } = await setVendorCategories(vendor.id, categoryIds);
+
     setSaving(false);
-    if (error || hoursError) {
-      setSaveError((error || hoursError).message ?? 'Failed to save settings.');
+    if (error || hoursError || catError) {
+      setSaveError((error || hoursError || catError).message ?? 'Failed to save settings.');
     } else {
       // Bust the shared vendor-profile cache so Dashboard (and any other
       // vendor page) picks up the new is_open / preferences on its next
@@ -199,6 +225,20 @@ export default function VendorSettings() {
             </div>
             <Switch checked={storeOpen} onCheckedChange={setStoreOpen} />
           </div>
+        </Card>
+
+        {/* Shop categories */}
+        <Card className="p-4 border-border">
+          <h3 className="text-sm font-semibold mb-1">Shop Categories</h3>
+          <p className="text-xs text-muted-foreground mb-3">
+            Customers browse by category on the home page — select every category your shop belongs to.
+          </p>
+          <CategoryMultiSelect
+            categories={allCategories ?? []}
+            selectedIds={categoryIds}
+            onChange={setCategoryIds}
+            loading={allCatsLoading}
+          />
         </Card>
 
         {/* Order settings */}

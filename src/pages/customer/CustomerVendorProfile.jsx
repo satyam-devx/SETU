@@ -5,8 +5,9 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendorById } from '@/lib/api';
+import { getVendorById, getVendorCategories } from '@/lib/api';
 import Img from '@/components/shared/Img';
+import ProductCard from '@/components/customer/ProductCard';
 import { smartGoBack } from '@/lib/utils';
 
 // ── Skeleton ──────────────────────────────────────────────
@@ -35,6 +36,13 @@ export default function CustomerVendorProfile() {
     () => getVendorById(vendorId),
     [vendorId],
     { cacheKey: `vendor:${vendorId}`, enabled: !!vendorId }
+  );
+  // Full category set (migration 082) — a shop can belong to several
+  // categories now; vendor.category (below) is only ever the first one.
+  const { data: vendorCategories } = useDataFetch(
+    () => getVendorCategories(vendorId),
+    [vendorId],
+    { cacheKey: `vendor-categories-${vendorId}`, enabled: !!vendorId }
   );
 
   if (isLoading) return <VendorSkeleton />;
@@ -92,7 +100,17 @@ export default function CustomerVendorProfile() {
           <div className="flex items-start justify-between">
             <div>
               <h1 className="text-lg font-bold">{name}</h1>
-              <p className="text-sm text-muted-foreground">{category}</p>
+              {vendorCategories?.length ? (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {vendorCategories.map(c => (
+                    <Badge key={c.id} variant="secondary" className="text-[10px] font-normal">
+                      {c.name}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">{category}</p>
+              )}
             </div>
             {isVerified && (
               <Badge className="bg-accent/10 text-accent border-0">✓ Verified</Badge>
@@ -131,25 +149,7 @@ export default function CustomerVendorProfile() {
           <div>
             <h3 className="font-semibold text-sm mb-2">Products</h3>
             <div className="grid grid-cols-2 gap-3">
-              {vendorProducts.map(p => {
-                const pid   = p.id;
-                const pname = p.name;
-                const pimg  = p.image_url ?? p.image ?? '/placeholder-product.jpg';
-                const pPrice = p.price;
-                return (
-                  <Link key={pid} to={`/customer/product/${pid}`}>
-                    <Card className="overflow-hidden border-border">
-                      <div className="h-24 bg-muted">
-                        <Img src={pimg} alt={pname} width={200} height={96} className="w-full h-full object-cover" />
-                      </div>
-                      <div className="p-2">
-                        <p className="text-xs font-semibold line-clamp-1">{pname}</p>
-                        <p className="text-sm font-bold mt-0.5">₹{pPrice}</p>
-                      </div>
-                    </Card>
-                  </Link>
-                );
-              })}
+              {vendorProducts.map(p => <ProductCard key={p.id} product={p} />)}
             </div>
             {hiddenCount > 0 && (
               <p className="text-xs text-muted-foreground text-center mt-3">

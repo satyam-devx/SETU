@@ -23,7 +23,7 @@ export function Skeleton({ className, ...props }) {
 export function ProductCardSkeleton() {
   return (
     <div className="rounded-xl overflow-hidden border border-border bg-card">
-      <Skeleton className="h-28 w-full rounded-none" />
+      <Skeleton className="aspect-square w-full rounded-none" />
       <div className="p-3 space-y-2">
         <Skeleton className="h-3 w-3/4" />
         <Skeleton className="h-3 w-1/2" />

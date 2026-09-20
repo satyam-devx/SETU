@@ -2,16 +2,26 @@
 // SETU — ProductCard
 // Extracted from CustomerHome so it can be shared with the
 // CustomerCategories page's per-category product shelves.
+//
+// Image container: aspect-square + object-contain (not object-cover
+// in a short fixed-height box) — vendor photos come in whatever
+// aspect ratio the vendor shot them in, and object-cover inside a
+// box shorter than the photo's natural proportions was cropping the
+// top and bottom off. object-contain never crops; a photo that
+// isn't square letterboxes against bg-muted instead, which reads as
+// intentional since every card uses the same neutral background.
+// Also switched from a hand-rolled <img>+onError to the shared Img
+// component (lazy-load + fallback already lives there once).
 // ═══════════════════════════════════════════════════════════
-import React, { useState } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, ShoppingCart } from 'lucide-react';
 import { useCart } from '@/lib/cartContext';
 import { formatCurrency } from '@/lib/utils';
+import Img from '@/components/shared/Img';
 
 export default function ProductCard({ product }) {
   const { items, addItem } = useCart();
-  const [imgErr, setImgErr] = useState(false);
   const inCart = items.find(i => i.id === product.id);
 
   const handleAdd = (e) => {
@@ -22,18 +32,12 @@ export default function ProductCard({ product }) {
   return (
     <Link to={`/customer/product/${product.id}`} className="block">
       <div className="setu-card overflow-hidden h-full">
-        <div className="h-28 bg-muted overflow-hidden relative">
-          {product.image_url && !imgErr ? (
-            <img
-              src={product.image_url}
-              alt={product.name}
-              className="w-full h-full object-cover"
-              loading="lazy"
-              onError={() => setImgErr(true)}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-3xl">🛒</div>
-          )}
+        <div className="aspect-square bg-muted overflow-hidden relative">
+          <Img
+            src={product.image_url}
+            alt={product.name}
+            className="w-full h-full object-contain"
+          />
           {product.mrp > product.price && (
             <span className="absolute top-2 right-2 bg-destructive text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
               {Math.round((1 - product.price / product.mrp) * 100)}% OFF

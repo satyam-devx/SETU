@@ -34,8 +34,9 @@ import { Progress } from '@/components/ui/progress';
 import { kyc as kycService } from '@/lib/kyc';
 import { useAuth }  from '@/lib/AuthContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { upsertVendorProfile, upsertProduct, getVillages, getVendorByOwnerId, getProducts } from '@/lib/api';
+import { upsertVendorProfile, upsertProduct, getVillages, getVendorByOwnerId, getProducts, getCategories, setVendorCategories } from '@/lib/api';
 import { setPostLoginRedirect } from '@/lib/postLoginRedirect';
+import CategoryMultiSelect from '@/components/vendor/CategoryMultiSelect';
 
 // ── Constants ─────────────────────────────────────────────
 const STEPS = [
@@ -44,12 +45,6 @@ const STEPS = [
   { id: 3, label: 'Products',     sublabel: 'Your catalog'   },
   { id: 4, label: 'Bank',         sublabel: 'Payments'       },
   { id: 5, label: 'Review',       sublabel: 'Final check'    },
-];
-
-const CATEGORIES = [
-  'Grocery & Essentials', 'Makhana & Dry Fruits', 'Fresh Vegetables',
-  'Dairy & Milk', 'Fish & Meat', 'Sweets & Snacks',
-  'Clothing & Textiles', 'Electronics', 'Hardware & Tools', 'Pharmacy',
 ];
 
 // Numeric delivery radii (Phase 0) — stored as numbers in vendors.delivery_radius
@@ -211,7 +206,7 @@ function Step1({ onNext, user }) {
 // Phase 0 addition: villages fetched from DB, numeric delivery_radius.
 function Step2({ onNext, onBack, onVendorSaved, user }) {
   const [form, setForm] = useState({
-    name: '', category: '', description: '',
+    name: '', description: '',
     village_id: '', landmark: '', delivery_radius: 2,
   });
   // Indexed by fixed slot (0 = Shop front, 1 = Inside, 2 = Products) —
@@ -227,10 +222,25 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
   const [error,      setError]      = useState('');
   const photoRef = useRef(null);
 
+  // Categories: was a hardcoded local list of 10 strings that had no
+  // guaranteed relationship to the real, admin-managed `categories`
+  // table — a vendor could "select" a category whose name matched no
+  // real row. Fetched live here instead, same as Add/Edit Product
+  // already does. Multi-select (migration 082): a shop can belong to
+  // several categories, saved via setVendorCategories after the vendor
+  // row itself is created below.
+  const [categories,   setCategories]   = useState([]);
+  const [catsLoading,  setCatsLoading]  = useState(true);
+  const [categoryIds,  setCategoryIds]  = useState([]);
+
   // Fetch villages from DB (Phase 0) — not hardcoded strings
   useEffect(() => {
     getVillages({ activeOnly: true }).then(({ data }) => {
       if (data?.length) setVillages(data);
+    });
+    getCategories().then(({ data }) => {
+      if (data?.length) setCategories(data);
+      setCatsLoading(false);
     });
   }, []);
 
@@ -269,7 +279,7 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
   const handleSave = async () => {
     if (!user)              { setError('You need to be logged in to continue. Please log in and try again.'); return; }
     if (!form.name.trim()) { setError('Shop name is required.'); return; }
-    if (!form.category)    { setError('Please select a category.'); return; }
+    if (categoryIds.length === 0) { setError('Please select at least one category.'); return; }
     if (!form.village_id)  { setError('Please select your village.'); return; }
 
     setSaving(true); setError('');
@@ -302,11 +312,16 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
 
       // Resolve village name for display
       const selectedVillage = villages.find(v => v.id === form.village_id);
+      // vendors.category is NOT NULL, so the very first save (this is an
+      // INSERT — the vendor row doesn't exist yet) still needs a single
+      // value here. setVendorCategories below records the full
+      // multi-select; this keeps it in sync with the first pick anyway.
+      const primaryCategoryName = categories.find(c => c.id === categoryIds[0])?.name || '';
 
       const { data: vendor, error: saveErr } = await upsertVendorProfile({
         owner_id:         user.id,
         name:             form.name.trim(),
-        category:         form.category,
+        category:         primaryCategoryName,
         description:      form.description.trim() || null,
         village_id:       form.village_id,
         village:          selectedVillage?.name || null,
@@ -322,6 +337,12 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
       });
 
       if (saveErr) throw saveErr;
+
+      // Persist the full multi-category selection (migration 082) — the
+      // upsert above only set the single legacy `category` column.
+      const { error: catErr } = await setVendorCategories(vendor.id, categoryIds);
+      if (catErr) throw catErr;
+
       onVendorSaved(vendor);
       onNext();
     } catch (err) {
@@ -351,14 +372,18 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
         onChange={e => { set('name', e.target.value); setError(''); }}
       />
 
-      <select
-        className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-        value={form.category}
-        onChange={e => { set('category', e.target.value); setError(''); }}
-      >
-        <option value="">Primary Category</option>
-        {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-      </select>
+      <div>
+        <p className="text-sm font-medium mb-2">What does your shop sell? *</p>
+        <CategoryMultiSelect
+          categories={categories}
+          selectedIds={categoryIds}
+          onChange={ids => { setCategoryIds(ids); setError(''); }}
+          loading={catsLoading}
+        />
+        <p className="text-xs text-muted-foreground mt-1.5">
+          Select every category that applies — customers can find your shop under all of them.
+        </p>
+      </div>
 
       <Textarea
         placeholder="Shop description (Hindi/English)"

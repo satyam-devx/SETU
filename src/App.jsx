@@ -64,6 +64,7 @@ const CustomerSupport       = lazy(() => import('@/pages/customer/CustomerSuppor
 const CustomerSettings      = lazy(() => import('@/pages/customer/CustomerSettings'));
 const CustomerSearch        = lazy(() => import('@/pages/customer/CustomerSearch'));
 const CustomerCategories    = lazy(() => import('@/pages/customer/CustomerCategories'));
+const CustomerCategoryDetail = lazy(() => import('@/pages/customer/CustomerCategoryDetail'));
 const CustomerProductDetail = lazy(() => import('@/pages/customer/CustomerProductDetail'));
 const CustomerVendorProfile = lazy(() => import('@/pages/customer/CustomerVendorProfile'));
 const CustomerCart          = lazy(() => import('@/pages/customer/CustomerCart'));
@@ -337,6 +338,7 @@ function App() {
                 <Route path="settings"               element={<Suspense fallback={<PortalFallback />}><CustomerSettings /></Suspense>} />
                 <Route path="search"                 element={<Suspense fallback={<PortalFallback />}><CustomerSearch /></Suspense>} />
                 <Route path="categories"             element={<Suspense fallback={<PortalFallback />}><CustomerCategories /></Suspense>} />
+                <Route path="category/:categoryId"   element={<Suspense fallback={<PortalFallback />}><CustomerCategoryDetail /></Suspense>} />
                 <Route path="product/:productId"     element={<Suspense fallback={<PortalFallback />}><CustomerProductDetail /></Suspense>} />
                 <Route path="vendor/:vendorId"       element={<Suspense fallback={<PortalFallback />}><CustomerVendorProfile /></Suspense>} />
                 <Route path="vendors"                element={<Suspense fallback={<PortalFallback />}><CustomerVendors /></Suspense>} />

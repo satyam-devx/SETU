@@ -27,7 +27,7 @@ export default function CategoryCard({ cat }) {
 
   return (
     <Link
-      to={`/customer/search?category=${cat.id}`}
+      to={`/customer/category/${cat.id}`}
       role="listitem"
       className="flex flex-col gap-1.5 items-center text-center"
     >
@@ -41,7 +41,7 @@ export default function CategoryCard({ cat }) {
               alt=""
               width={120}
               height={120}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
               fallback={<IconTile className="w-full h-full" />}
             />
           </div>
@@ -50,7 +50,7 @@ export default function CategoryCard({ cat }) {
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="aspect-square rounded-lg overflow-hidden bg-card">
                 {samples[i]
-                  ? <Img src={samples[i]} alt="" width={60} height={60} className="w-full h-full object-cover" fallback={<IconTile className="w-full h-full" />} />
+                  ? <Img src={samples[i]} alt="" width={60} height={60} className="w-full h-full object-contain" fallback={<IconTile className="w-full h-full" />} />
                   : <IconTile className="w-full h-full" />}
               </div>
             ))}

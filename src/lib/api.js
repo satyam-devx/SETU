@@ -91,6 +91,43 @@ export async function getCategoryPreviews() {
   );
 }
 
+// Full product list for a single category's dedicated page (migration
+// 082's product_categories junction — a product can be tagged with
+// several categories, so this can't just be `getProducts({category})`,
+// which only ever matches products.category's single legacy value).
+// Two plain queries rather than one PostgREST embedded-filter query:
+// slightly more round trips, but every step here is a plain .eq()/.in()
+// this codebase already uses elsewhere, so there's nothing novel that
+// could silently misbehave.
+export async function getProductsByCategory(categoryId, { page = 0, limit = 20 } = {}) {
+  return safeQuery(async () => {
+    const { data: links, error: linkErr } = await supabaseRead
+      .from('product_categories')
+      .select('product_id')
+      .eq('category_id', categoryId)
+      .order('product_id')
+      .range(page * limit, (page + 1) * limit - 1);
+    if (linkErr) return { data: null, error: linkErr };
+
+    const ids = (links ?? []).map(l => l.product_id);
+    if (ids.length === 0) return { data: [], error: null };
+
+    return supabaseRead
+      .from('products')
+      .select(`
+        id, vendor_id, name, name_hindi, description, price, mrp,
+        unit, stock, image_url, is_available, category, category_id, is_seasonal
+      `)
+      .in('id', ids)
+      .eq('is_available', true)
+      .order('name');
+  }, (() => {
+    const catName = CATEGORIES.find(c => c.id === categoryId)?.name;
+    const all = PRODUCTS.filter(p => p.category === catName && p.isAvailable !== false);
+    return all.slice(page * limit, (page + 1) * limit);
+  })(), 'getProductsByCategory');
+}
+
 // ── Vendors ───────────────────────────────────────────────
 
 export async function getVendors({ villageId, category, page = 0, limit = 20 } = {}) {
@@ -204,6 +241,38 @@ export async function saveVendorHours(vendorId, hours) {
   } catch (e) { return err(e, 'saveVendorHours'); }
 }
 
+// Full category set for a vendor (migration 082) — join through
+// vendor_categories so a vendor with several categories gets all of
+// them, not just vendors.category's single legacy value. PostgREST
+// nests the joined row under a `categories` key per vendor_categories
+// row ([{categories: {...}}, ...]) — flattened here so callers get a
+// plain array of category objects, the same shape getCategories()
+// already returns.
+export async function getVendorCategories(vendorId) {
+  return safeQuery(async () => {
+    const { data, error } = await supabaseRead
+      .from('vendor_categories')
+      .select('categories(id, name, name_hindi, icon, image_url)')
+      .eq('vendor_id', vendorId);
+    if (error) return { data: null, error };
+    return { data: (data ?? []).map(row => row.categories).filter(Boolean), error: null };
+  }, [], 'getVendorCategories');
+}
+
+// Atomically replaces a vendor's full category set via the
+// set_vendor_categories RPC (security definer — also keeps the legacy
+// vendors.category column in sync). categoryIds must be non-empty.
+export async function setVendorCategories(vendorId, categoryIds) {
+  return safeQuery(
+    () => supabase.rpc('set_vendor_categories', {
+      p_vendor_id: vendorId,
+      p_category_ids: categoryIds,
+    }),
+    null,
+    'setVendorCategories'
+  );
+}
+
 // ── Products ──────────────────────────────────────────────
 
 export async function getProducts({ vendorId, category, search, page = 0, limit = 30, includeUnavailable = false } = {}) {
@@ -242,6 +311,34 @@ export async function upsertProduct(productData) {
     () => supabase.from('products').upsert(productData).select().single(),
     null,
     'upsertProduct'
+  );
+}
+
+// Full category set for a product (migration 082) — same flattening
+// as getVendorCategories, for the same reason.
+export async function getProductCategories(productId) {
+  return safeQuery(async () => {
+    const { data, error } = await supabaseRead
+      .from('product_categories')
+      .select('categories(id, name, name_hindi, icon, image_url)')
+      .eq('product_id', productId);
+    if (error) return { data: null, error };
+    return { data: (data ?? []).map(row => row.categories).filter(Boolean), error: null };
+  }, [], 'getProductCategories');
+}
+
+// Atomically replaces a product's full category set via the
+// set_product_categories RPC (security definer — also keeps the legacy
+// products.category/category_id columns in sync). categoryIds must be
+// non-empty.
+export async function setProductCategories(productId, categoryIds) {
+  return safeQuery(
+    () => supabase.rpc('set_product_categories', {
+      p_product_id: productId,
+      p_category_ids: categoryIds,
+    }),
+    null,
+    'setProductCategories'
   );
 }
 

@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { useCart } from '@/lib/cartContext';
 import { useDataFetch } from '@/hooks/useDataFetch';
-import { getProductById } from '@/lib/api';
+import { getProductById, getProductCategories } from '@/lib/api';
 import Img from '@/components/shared/Img';
 import { toast } from '@/components/ui/use-toast';
 import { smartGoBack } from '@/lib/utils';
@@ -16,7 +16,7 @@ function ProductSkeleton() {
   return (
     <div className="pb-24 animate-pulse">
       <div className="h-14 bg-muted" />
-      <div className="h-64 bg-muted" />
+      <div className="aspect-square bg-muted" />
       <div className="px-4 py-4 space-y-4">
         <div className="h-6 bg-muted rounded w-2/3" />
         <div className="h-8 bg-muted rounded w-1/3" />
@@ -38,6 +38,13 @@ export default function CustomerProductDetail() {
     () => getProductById(productId),
     [productId],
     { cacheKey: `product:${productId}`, enabled: !!productId }
+  );
+  // Full category set (migration 082) — product.category (below) is
+  // only ever the first of possibly several.
+  const { data: productCategories } = useDataFetch(
+    () => getProductCategories(productId),
+    [productId],
+    { cacheKey: `product-categories-${productId}`, enabled: !!productId }
   );
 
   if (isLoading) return <ProductSkeleton />;
@@ -113,9 +120,12 @@ export default function CustomerProductDetail() {
         </Button>
       </div>
 
-      {/* Image */}
-      <div className="h-64 bg-muted">
-        <Img src={image} alt={name} width={640} height={256} className="w-full h-full object-cover" />
+      {/* Image — aspect-square + object-contain, not a fixed h-64 box
+          with object-cover: vendor photos come in whatever aspect
+          ratio they were shot in, and cropping to fill a box shorter
+          than the photo was cutting the top and bottom off. */}
+      <div className="aspect-square bg-muted">
+        <Img src={image} alt={name} width={640} className="w-full h-full object-contain" />
       </div>
 
       {/* Details */}
@@ -160,7 +170,11 @@ export default function CustomerProductDetail() {
 
         <div>
           <h3 className="text-sm font-semibold mb-2">Category</h3>
-          <Badge variant="outline">{category}</Badge>
+          <div className="flex flex-wrap gap-1.5">
+            {productCategories?.length
+              ? productCategories.map(c => <Badge key={c.id} variant="outline">{c.name}</Badge>)
+              : <Badge variant="outline">{category}</Badge>}
+          </div>
         </div>
 
         <div>
@@ -172,8 +186,15 @@ export default function CustomerProductDetail() {
         </div>
       </div>
 
-      {/* Bottom Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-background border-t border-border px-4 py-3 flex items-center gap-3">
+      {/* Bottom Bar — was `fixed bottom-0` with no z-index or safe-area
+          handling, so it sat directly behind CustomerLayout's MobileNav
+          (fixed bottom-0, z-50) and its Add to Cart button was
+          unreachable. CustomerLayout now hides MobileNav (and the
+          floating cart FAB) on this route entirely, so this bar is the
+          only fixed-bottom element here — it just needs pb-safe for the
+          phone's own gesture-bar/home-indicator inset, not an offset to
+          clear a nav bar that's no longer there. */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 max-w-lg mx-auto bg-background border-t border-border px-4 pt-3 pb-safe flex items-center gap-3">
         <div className="flex items-center gap-2 border border-border rounded-lg">
           <button
             onClick={() => setQuantity(q => Math.max(1, q - 1))}

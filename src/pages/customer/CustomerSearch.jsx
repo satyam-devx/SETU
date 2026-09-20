@@ -9,6 +9,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { Slider } from '@/components/ui/slider';
 import EmptyState from '@/components/shared/EmptyState';
 import Img from '@/components/shared/Img';
+import ProductCard from '@/components/customer/ProductCard';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { getCategories, getProducts, getVendors } from '@/lib/api';
 import { smartGoBack } from '@/lib/utils';
@@ -242,37 +243,11 @@ export default function CustomerSearch() {
           : !isSearching && products.length === 0
             ? <EmptyState icon={Search} title="No products found" description="Try a different search or remove filters" />
             : <div className="grid grid-cols-2 gap-3">
-                {products.map(p => {
-                  const image = p.image_url ?? p.image ?? '/placeholder-product.jpg';
-                  const mrp   = p.mrp ?? p.price;
-                  const disc  = mrp > p.price ? Math.round((mrp - p.price) / mrp * 100) : 0;
-                  return (
-                    <Link key={p.id} to={`/customer/product/${p.id}`}>
-                      <Card className="overflow-hidden border-border">
-                        <div className="h-28 bg-muted">
-                          <Img src={image} alt={p.name} width={200} height={112} className="w-full h-full object-cover" />
-                        </div>
-                        <div className="p-3">
-                          <h4 className="text-xs font-semibold line-clamp-2">{p.name}</h4>
-                          {p.name_hindi && (
-                            <p className="text-[10px] text-muted-foreground">{p.name_hindi}</p>
-                          )}
-                          <div className="flex items-center gap-2 mt-1.5">
-                            <span className="text-sm font-bold">₹{p.price}</span>
-                            {disc > 0 && (
-                              <>
-                                <span className="text-[10px] text-muted-foreground line-through">₹{mrp}</span>
-                                <Badge className="text-[9px] bg-green-100 text-green-700 border-0 h-4">
-                                  {disc}% off
-                                </Badge>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </Card>
-                    </Link>
-                  );
-                })}
+                {/* Was its own hand-rolled card (duplicating ProductCard,
+                    with an object-cover image box that cropped vendor
+                    photos) — now the same shared card every other product
+                    grid in the app uses, quick-add button included. */}
+                {products.map(p => <ProductCard key={p.id} product={p} />)}
               </div>
         )}
 
