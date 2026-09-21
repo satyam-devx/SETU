@@ -156,6 +156,12 @@
     "dynamic": false
   },
   {
+    "path": "/customer/category/:categoryId",
+    "crawlPath": "/customer/category/crawler-test-id",
+    "role": "customer",
+    "dynamic": true
+  },
+  {
     "path": "/customer/product/:productId",
     "crawlPath": "/customer/product/crawler-test-id",
     "role": "customer",

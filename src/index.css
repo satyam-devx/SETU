@@ -334,6 +334,29 @@
     }
   }
 
+  /* ── SwipeToConfirm (CustomerCheckout's "slide to place order") ──
+     Two infinite idle-state loops, both purely decorative hints that
+     the control is draggable — neither carries information the
+     label text doesn't already say, so both switch off entirely
+     under prefers-reduced-motion rather than just slowing down. */
+  @keyframes swipe-sheen {
+    0%   { transform: translateX(-150%); }
+    100% { transform: translateX(350%); }
+  }
+  @keyframes swipe-nudge {
+    0%, 100% { transform: translateX(0); }
+    50%      { transform: translateX(8px); }
+  }
+  .animate-swipe-sheen { animation: swipe-sheen 2.2s ease-in-out infinite; }
+  .animate-swipe-nudge { animation: swipe-nudge 1.4s ease-in-out infinite; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-swipe-sheen,
+    .animate-swipe-nudge {
+      animation: none;
+    }
+  }
+
   /* Touch target minimum */
   .touch-target {
     min-height: 44px;

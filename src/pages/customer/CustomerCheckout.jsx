@@ -17,6 +17,7 @@ import { useFeatureFlag } from '@/lib/featureFlags';
 import { OrderAPI, PaymentAPI, cancelOrderWithRefund, getFeeConfig, CouponAPI, getAddresses } from '@/lib/api';
 import { loadRazorpayScript, initiatePayment } from '@/lib/payments';
 import { useDataFetch } from '@/hooks/useDataFetch';
+import SwipeToConfirm from '@/components/shared/SwipeToConfirm';
 
 const PAY_METHODS = [
   { id: 'cod',    label: 'Cash on Delivery', sub: 'Pay when order arrives',    icon: CreditCard  },
@@ -387,7 +388,7 @@ export default function CustomerCheckout() {
   }
 
   return (
-    <div className="pb-24 max-w-md mx-auto">
+    <div className="pb-32 max-w-md mx-auto">
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-3">
         <Link
           to="/customer/cart"
@@ -602,17 +603,22 @@ export default function CustomerCheckout() {
       </div>
 
       {/* z-40 + pb-safe: sits above MobileNav (fixed bottom-0, z-50)
-          instead of behind it, and clears the phone's own safe-area inset. */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 max-w-md mx-auto bg-background border-t border-border px-4 pt-3 pb-safe">
-        <Button
-          className="w-full text-sm font-semibold h-12"
-          onClick={handlePlaceOrder}
-          disabled={placing || items.length === 0 || (!addressesLoading && !selectedAddress)}
-        >
-          {placing
-            ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Processing...</>
-            : `Place Order · ₹${grandTotal.toFixed(0)}`}
-        </Button>
+          instead of behind it, and clears the phone's own safe-area
+          inset. MobileNav is dropped entirely on /customer/checkout
+          now (CustomerLayout.jsx) so this no longer even needs to
+          share the bottom edge with it — kept anyway as a harmless
+          safety margin against any future change to that. */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 max-w-md mx-auto bg-background border-t border-border px-4 pt-4 pb-safe">
+        <SwipeToConfirm
+          label="Slide to Place Order"
+          confirmingLabel="Placing your order…"
+          confirmedLabel="Order Placed! ✓"
+          amountLabel={`₹${grandTotal.toFixed(0)}`}
+          onConfirm={handlePlaceOrder}
+          loading={placing}
+          success={placed}
+          disabled={items.length === 0 || (!addressesLoading && !selectedAddress)}
+        />
       </div>
     </div>
   );
