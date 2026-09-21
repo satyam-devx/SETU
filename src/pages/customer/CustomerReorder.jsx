@@ -213,7 +213,9 @@ export default function CustomerReorder() {
         )}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-background border-t border-border px-4 py-3">
+      {/* CTA — z-40 + pb-safe: sits above MobileNav (fixed bottom-0, z-50)
+          instead of behind it, and clears the phone's own safe-area inset. */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 max-w-lg mx-auto bg-background border-t border-border px-4 pt-3 pb-safe">
         <Button
           className="w-full gap-2"
           disabled={!someAvailable}

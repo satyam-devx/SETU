@@ -400,8 +400,14 @@ export default function CustomerOrderDetail() {
         <Card className="p-3 border-border">
           <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Payment</p>
           <p className="text-sm font-bold">{paymentMethod}</p>
+          {/* paid → green, failed/refunded → red (was lumped in with
+              "pending" under the same amber badge, which reads as "still
+              in progress" rather than the distinct problem each of these
+              actually is), pending/anything else → amber. */}
           <Badge variant="outline" className={`text-[9px] mt-1 ${
-            paymentStatus === 'paid' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+            paymentStatus === 'paid' ? 'bg-green-100 text-green-800'
+            : ['failed', 'refunded'].includes(paymentStatus) ? 'bg-red-100 text-red-800'
+            : 'bg-amber-100 text-amber-800'
           }`}>
             {paymentStatus}
           </Badge>

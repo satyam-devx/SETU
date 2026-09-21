@@ -24,6 +24,18 @@ const PAY_METHODS = [
   { id: 'wallet', label: 'SETU Wallet',      sub: 'Pay from balance',          icon: Wallet      },
 ];
 
+// Idempotency key for create_order (migration 083) — only needs to be
+// unique per checkout attempt, not cryptographically unpredictable, so
+// falling back to Math.random when crypto.randomUUID isn't available
+// (older Android WebViews — this app's actual install base) is fine;
+// what matters is never crashing checkout over a missing browser API.
+function newIdempotencyKey() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `ckout-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 // ── Helper: derive complete vendor context from first cart item ──
 function resolveVendor(firstItem) {
   if (!firstItem) return { id: null, name: null };
@@ -92,6 +104,15 @@ export default function CustomerCheckout() {
   const [placing,   setPlacing]   = useState(false);
   const [error,     setError]     = useState(null);
   const [placed,    setPlaced]    = useState(false);
+  // Idempotency key (migration 083) — generated once per mount of this
+  // page (i.e. once per checkout attempt), not per tap of "Place
+  // Order". Reused across every retry of THIS attempt, so if a
+  // request reaches the server and succeeds but its response never
+  // reaches the client (dropped connection, timeout), a second tap
+  // returns the same order create_order already created instead of
+  // placing a duplicate one. A fresh mount (navigating back into
+  // checkout later, a genuinely new attempt) gets a fresh key.
+  const [idempotencyKey, setIdempotencyKey] = useState(() => newIdempotencyKey());
   // Fee parameters — single source of truth (server get_fee_config()).
   // Defaults match the server defaults so the estimate is correct even
   // before the fetch resolves; the authoritative total still comes from
@@ -227,6 +248,7 @@ export default function CustomerCheckout() {
         payment_method:   ({ cod: 'COD', upi: 'UPI', wallet: 'wallet' })[payMethod] ?? 'COD',
         use_credit:       useCredit,
         coupon_code:      appliedCode ?? null,
+        idempotency_key:  idempotencyKey,
         delivery_address: selectedAddress
           ? `${selectedAddress.address}${selectedAddress.landmark ? ', ' + selectedAddress.landmark : ''}`
           : (profile?.village ?? village?.name ?? ''),
@@ -237,6 +259,21 @@ export default function CustomerCheckout() {
 
       // Authoritative amount to charge comes from the server, never the client.
       const serverTotal = order.total ?? grandTotal;
+
+      // A retry (same idempotency key, response to the first attempt
+      // never arrived) can come back already paid — the wallet path
+      // already has its own already_paid check inside
+      // pay_order_from_wallet, but UPI has no equivalent: retrying
+      // would open a SECOND Razorpay checkout for an order that's
+      // already settled. Skip straight to success for any order that
+      // already shows paid, regardless of which payment method this
+      // submission asked for.
+      if (order.payment_status === 'paid') {
+        clearCart();
+        setPlaced(true);
+        setTimeout(() => navigate(`/customer/orders/${order.id}`), 2500);
+        return;
+      }
 
       // 2. Handle payment
       if (payMethod === 'upi') {
@@ -253,6 +290,10 @@ export default function CustomerCheckout() {
           if (rzpResult.cancelled) {
             // Use atomic cancel (no refund needed — payment never captured)
             await cancelOrderWithRefund(order.id, user.id, 'customer', 'Payment cancelled by user');
+            // This order is now dead — reusing the same idempotency key
+            // on the next tap would replay it (cancelled) instead of
+            // creating the fresh order a genuine retry needs.
+            setIdempotencyKey(newIdempotencyKey());
             setPlacing(false);
             return;
           }
@@ -269,6 +310,7 @@ export default function CustomerCheckout() {
           // checkout attempt. Cancel this one before surfacing the error
           // so a retry starts clean.
           await cancelOrderWithRefund(order.id, user.id, 'customer', 'Payment failed').catch(() => {});
+          setIdempotencyKey(newIdempotencyKey()); // see cancelled-branch comment above
           throw payErr;
         }
 
@@ -290,6 +332,7 @@ export default function CustomerCheckout() {
         if (walletError) {
           // Wallet debit failed — cancel the order atomically (nothing captured)
           await cancelOrderWithRefund(order.id, user.id, 'customer', 'Wallet payment failed');
+          setIdempotencyKey(newIdempotencyKey()); // see UPI cancelled-branch comment above
           throw new Error(walletError.message ?? 'Wallet payment failed. Please try again.');
         }
 
@@ -558,7 +601,9 @@ export default function CustomerCheckout() {
         </Card>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-background border-t border-border px-4 py-3">
+      {/* z-40 + pb-safe: sits above MobileNav (fixed bottom-0, z-50)
+          instead of behind it, and clears the phone's own safe-area inset. */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 max-w-md mx-auto bg-background border-t border-border px-4 pt-3 pb-safe">
         <Button
           className="w-full text-sm font-semibold h-12"
           onClick={handlePlaceOrder}

@@ -187,7 +187,7 @@ export default function CustomerCart() {
 
       {/* CTA */}
       {items.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto bg-background/95 backdrop-blur border-t border-border px-4 py-3 pb-safe">
+        <div className="fixed bottom-0 left-0 right-0 z-40 max-w-lg mx-auto bg-background/95 backdrop-blur border-t border-border px-4 py-3 pb-safe">
           <Link to="/customer/checkout" className="block">
             <button className="btn-primary w-full text-sm">
               Proceed to Checkout — {formatCurrency(total)}

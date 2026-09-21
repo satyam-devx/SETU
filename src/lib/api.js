@@ -454,6 +454,14 @@ export async function placeOrder(orderPayload) {
       p_delivery_notes:   orderPayload.delivery_notes ?? null,
       p_use_credit:       !!orderPayload.use_credit,
       p_coupon_code:      orderPayload.coupon_code ?? null,
+      // migration 083: a UUID the caller generates ONCE per checkout
+      // attempt (not per tap) and reuses across retries of that same
+      // attempt. Protects against a network-retry duplicate that the
+      // client's own re-entry guard can't catch — that guard only
+      // stops a second tap while the first request is still in
+      // flight, not a second real submission after the first
+      // response was lost in transit. See CustomerCheckout.jsx.
+      p_idempotency_key:  orderPayload.idempotency_key ?? null,
     });
 
     if (error) return err(error, 'placeOrder/create_order');
