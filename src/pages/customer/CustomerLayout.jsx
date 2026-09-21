@@ -44,13 +44,14 @@ function CustomerContent() {
   ];
 
   const isCartPage = location.pathname === '/customer/cart';
-  // Product detail owns its own full-width Add to Cart bar at the
-  // bottom of the screen — showing MobileNav (or the cart FAB, which
-  // is positioned to sit just above MobileNav) at the same time only
-  // fights that bar for space and was hiding it entirely behind the
-  // nav. Per the request, the bottom nav is dropped on this route
-  // rather than trying to stack two bottom-fixed bars.
+  // Cart and product-detail both own their own full-width CTA bar at
+  // the bottom of the screen (Proceed to Checkout / Add to Cart) —
+  // showing MobileNav at the same time only fights that bar for space
+  // and was hiding it entirely behind the nav. The bottom nav is
+  // dropped on these routes rather than trying to stack two
+  // bottom-fixed bars.
   const isProductDetailPage = location.pathname.startsWith('/customer/product/');
+  const hideBottomNav = isCartPage || isProductDetailPage;
 
   return (
     <div className="page-container relative" role="application">
@@ -68,7 +69,7 @@ function CustomerContent() {
           <span className="text-sm font-bold pr-1">{cartCount}</span>
         </Link>
       )}
-      {!isProductDetailPage && <MobileNav items={navItems} />}
+      {!hideBottomNav && <MobileNav items={navItems} />}
     </div>
   );
 }

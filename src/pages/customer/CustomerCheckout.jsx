@@ -262,7 +262,7 @@ export default function CustomerCheckout() {
 
       // A retry (same idempotency key, response to the first attempt
       // never arrived) can come back already paid — the wallet path
-      // already has its own already_paid check inside
+      // already has its own already-paid check inside
       // pay_order_from_wallet, but UPI has no equivalent: retrying
       // would open a SECOND Razorpay checkout for an order that's
       // already settled. Skip straight to success for any order that
