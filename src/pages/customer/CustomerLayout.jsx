@@ -44,22 +44,24 @@ function CustomerContent() {
   ];
 
   const isCartPage = location.pathname === '/customer/cart';
-  // Cart and product-detail both own their own full-width CTA bar at
-  // the bottom of the screen (Proceed to Checkout / Add to Cart) —
-  // showing MobileNav at the same time only fights that bar for space
-  // and was hiding it entirely behind the nav. The bottom nav is
-  // dropped on these routes rather than trying to stack two
-  // bottom-fixed bars.
+  // Cart, checkout, and product-detail all own their own full-width
+  // CTA bar at the bottom of the screen (Proceed to Checkout / slide
+  // to Place Order / Add to Cart) — showing MobileNav at the same
+  // time only fights that bar for space and was hiding it entirely
+  // behind the nav. The bottom nav is dropped on these routes rather
+  // than trying to stack two bottom-fixed bars.
   const isProductDetailPage = location.pathname.startsWith('/customer/product/');
-  const hideBottomNav = isCartPage || isProductDetailPage;
+  const isCheckoutPage = location.pathname === '/customer/checkout';
+  const hideBottomNav = isCartPage || isProductDetailPage || isCheckoutPage;
 
   return (
     <div className="page-container relative" role="application">
       <OfflineBanner />
       <Outlet />
-      {/* Floating cart button — hide when already on cart page, or on
-          product detail (which has its own Add to Cart bar) */}
-      {cartCount > 0 && !isCartPage && !isProductDetailPage && (
+      {/* Floating cart button — hidden on cart/checkout/product-detail,
+          all of which either show cart contents already or own their
+          own bottom CTA */}
+      {cartCount > 0 && !isCartPage && !isProductDetailPage && !isCheckoutPage && (
         <Link
           to="/customer/cart"
           className="fixed bottom-24 right-4 z-40 bg-primary text-primary-foreground rounded-full p-3 shadow-float flex items-center gap-2 animate-scale-in"
