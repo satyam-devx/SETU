@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { CheckCircle, ChevronRight, Wrench, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Progress } from '@/components/ui/progress';
 import { SevaAPI } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
+import { useVillage } from '@/lib/village';
+import { LoadingScreen } from '@/components/ProtectedRoute';
 import { useToast } from '@/components/ui/use-toast';
+
+const MAX_HOURLY_RATE = 99999; // seva_providers.hourly_rate is numeric(8,2) —
+                                // stays safely under the 999999.99 DB ceiling
+                                // so a mistyped rate fails validation here with
+                                // a clear message, not a raw Postgres error.
 
 const CATEGORIES = [
   'Electrician', 'Plumber', 'Tailoring', 'Beauty & Salon', 'Tutoring',
@@ -24,7 +31,8 @@ const STEPS = [
 
 export default function SevaVerification() {
   const navigate  = useNavigate();
-  const { user, profile, reloadProfile } = useAuth();
+  const { user, profile, reloadProfile, isLoading: authLoading, isAuthenticated } = useAuth();
+  const { village } = useVillage();
   const { toast }  = useToast();
 
   const [step, setStep] = useState(1);
@@ -33,21 +41,37 @@ export default function SevaVerification() {
     category:   '',
     experience: '',
     hourly_rate: '',
-    image_url:  '',
   });
   const [saving, setSaving]       = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError]         = useState('');
+
+  // This route is intentionally outside ProtectedRoute (new users land
+  // here before they have a role), but it still requires being logged
+  // in — handleSubmit below checks `user`. Without this gate, a page
+  // reload/app-resume while sitting on this screen renders the form
+  // immediately with `user` still null (AuthContext hasn't finished
+  // restoring the session yet), so someone genuinely logged in could
+  // fill the whole form and get "You must be logged in" on submit —
+  // a real race, not a permissions issue. Wait for auth to resolve
+  // first, same as ProtectedRoute does for the protected portals.
+  if (authLoading) return <LoadingScreen message="Checking your session..." />;
+  if (!isAuthenticated) {
+    return <Navigate to="/login" state={{ from: '/onboarding/seva' }} replace />;
+  }
 
   const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setError(''); };
   const next = () => setStep(s => Math.min(s + 1, STEPS.length));
   const back = () => setStep(s => Math.max(s - 1, 1));
 
   const step1Valid = form.name.trim().length >= 2 && form.category;
+  const rateNum = Number(form.hourly_rate);
+  const step2Valid = form.hourly_rate !== '' && rateNum > 0 && rateNum <= MAX_HOURLY_RATE;
 
   const handleSubmit = async () => {
     if (!user?.id) { setError('You must be logged in.'); return; }
     if (!step1Valid) { setStep(1); setError('Please enter your name and skill category.'); return; }
+    if (!step2Valid) { setStep(2); setError('Please enter a valid hourly rate.'); return; }
     if (!profile?.village_id) { setError('Please set your village in your profile first.'); return; }
 
     setSaving(true);
@@ -55,10 +79,11 @@ export default function SevaVerification() {
     const { error: e } = await SevaAPI.saveProvider(user.id, {
       name:        form.name.trim(),
       category:    form.category,
+      skills:      [form.category],
       village_id:  profile.village_id,
+      village:     village?.name || null,
       experience:  form.experience.trim() || null,
-      hourly_rate: Number(form.hourly_rate) || 0,
-      image_url:   form.image_url.trim() || null,
+      hourly_rate: rateNum,
     });
     setSaving(false);
 
@@ -128,7 +153,7 @@ export default function SevaVerification() {
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Experience</label>
-                <Textarea placeholder="e.g. 5 years of home wiring and inverter repair" rows={3}
+                <Textarea placeholder="e.g. 5 years of home wiring and inverter repair" rows={3} maxLength={500}
                   value={form.experience} onChange={e => set('experience', e.target.value)} />
               </div>
             </Card>
@@ -145,17 +170,18 @@ export default function SevaVerification() {
             <p className="text-sm text-muted-foreground">Set your base hourly rate. You can change this later in Settings.</p>
             <Card className="p-4 border-border space-y-3">
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Hourly rate (₹)</label>
-                <Input type="number" inputMode="numeric" placeholder="e.g. 300"
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Hourly rate (₹) *</label>
+                <Input type="number" inputMode="numeric" placeholder="e.g. 300" min="1" max={MAX_HOURLY_RATE}
                   value={form.hourly_rate} onChange={e => set('hourly_rate', e.target.value)} />
               </div>
               <p className="text-[10px] text-muted-foreground">
                 SETU fee: 10% per job. Earnings are settled after the customer confirms completion.
               </p>
             </Card>
+            {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={back}>Back</Button>
-              <Button className="flex-1" onClick={next}>Review <ChevronRight className="w-4 h-4 ml-1" /></Button>
+              <Button className="flex-1" onClick={next} disabled={!step2Valid}>Review <ChevronRight className="w-4 h-4 ml-1" /></Button>
             </div>
           </div>
         )}
@@ -169,7 +195,7 @@ export default function SevaVerification() {
               <Row label="Skill" value={form.category} />
               <Row label="Experience" value={form.experience || '—'} />
               <Row label="Hourly rate" value={form.hourly_rate ? `₹${form.hourly_rate}` : '—'} />
-              <Row label="Village" value={profile?.village_id || '— (set in profile)'} />
+              <Row label="Village" value={village?.name || '— (set in profile)'} />
             </Card>
             <Card className="p-3 bg-muted/50 border-border">
               <p className="text-xs text-muted-foreground">
