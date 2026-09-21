@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate, Navigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { CheckCircle, ChevronRight, Wrench, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { SevaAPI } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
 import { useVillage } from '@/lib/village';
 import { LoadingScreen } from '@/components/ProtectedRoute';
+import { setPostLoginRedirect } from '@/lib/postLoginRedirect';
 import { useToast } from '@/components/ui/use-toast';
 
 const MAX_HOURLY_RATE = 99999; // seva_providers.hourly_rate is numeric(8,2) —
@@ -48,17 +49,29 @@ export default function SevaVerification() {
 
   // This route is intentionally outside ProtectedRoute (new users land
   // here before they have a role), but it still requires being logged
-  // in — handleSubmit below checks `user`. Without this gate, a page
-  // reload/app-resume while sitting on this screen renders the form
-  // immediately with `user` still null (AuthContext hasn't finished
-  // restoring the session yet), so someone genuinely logged in could
-  // fill the whole form and get "You must be logged in" on submit —
-  // a real race, not a permissions issue. Wait for auth to resolve
-  // first, same as ProtectedRoute does for the protected portals.
-  if (authLoading) return <LoadingScreen message="Checking your session..." />;
-  if (!isAuthenticated) {
-    return <Navigate to="/login" state={{ from: '/onboarding/seva' }} replace />;
-  }
+  // in — handleSubmit below checks `user`. Two separate things this
+  // guards against:
+  //  1. Genuinely logged-out visitors (e.g. clicked "Register as Seva
+  //     Provider" straight from the landing page) get sent to /login
+  //     and back HERE afterwards — via setPostLoginRedirect, the same
+  //     sessionStorage-based mechanism VendorOnboarding already uses,
+  //     not React Router's navigate state, which doesn't survive
+  //     Google's full-page OAuth redirect and isn't read by LoginOTP's
+  //     post-login routing anyway (it only reads setPostLoginRedirect).
+  //  2. A page reload/app-resume while sitting on this screen, where
+  //     AuthContext hasn't finished restoring the session yet — without
+  //     waiting for isLoading, the form would render immediately with
+  //     `user` still null, so someone genuinely logged in could fill
+  //     the whole thing out and get "You must be logged in" on submit.
+  useEffect(() => {
+    if (authLoading) return;
+    if (!isAuthenticated) {
+      setPostLoginRedirect('/onboarding/seva');
+      navigate('/login', { replace: true });
+    }
+  }, [authLoading, isAuthenticated, navigate]);
+
+  if (authLoading || !isAuthenticated) return <LoadingScreen message="Checking your session..." />;
 
   const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setError(''); };
   const next = () => setStep(s => Math.min(s + 1, STEPS.length));
