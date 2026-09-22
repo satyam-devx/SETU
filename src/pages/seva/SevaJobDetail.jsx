@@ -89,23 +89,30 @@ export default function SevaJobDetail() {
       <AppHeader title={job.title} subtitle={job.category} showBack />
       <div className="px-4 py-4 space-y-4">
 
-        <Card className="p-4 border-border">
-          <div className="flex items-center justify-between mb-1">
-            {stageSteps.map((s, i) => (
-              <React.Fragment key={s.key}>
-                <div className="flex flex-col items-center gap-1">
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${i <= stageIndex ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'}`}>
-                    {i < stageIndex ? '✓' : i + 1}
+        {job.status === 'cancelled' ? (
+          <Card className="p-4 border-destructive/30 bg-destructive/5 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
+            <p className="text-sm text-destructive">This job was cancelled.</p>
+          </Card>
+        ) : (
+          <Card className="p-4 border-border">
+            <div className="flex items-center justify-between mb-1">
+              {stageSteps.map((s, i) => (
+                <React.Fragment key={s.key}>
+                  <div className="flex flex-col items-center gap-1">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${i <= stageIndex ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'}`}>
+                      {i < stageIndex ? '✓' : i + 1}
+                    </div>
+                    <span className="text-[9px] text-center text-muted-foreground max-w-[60px] leading-tight">{s.label}</span>
                   </div>
-                  <span className="text-[9px] text-center text-muted-foreground max-w-[60px] leading-tight">{s.label}</span>
-                </div>
-                {i < stageSteps.length - 1 && (
-                  <div className={`flex-1 h-0.5 mb-4 ${i < stageIndex ? 'bg-primary' : 'bg-muted'}`} />
-                )}
-              </React.Fragment>
-            ))}
-          </div>
-        </Card>
+                  {i < stageSteps.length - 1 && (
+                    <div className={`flex-1 h-0.5 mb-4 ${i < stageIndex ? 'bg-primary' : 'bg-muted'}`} />
+                  )}
+                </React.Fragment>
+              ))}
+            </div>
+          </Card>
+        )}
 
         <Card className="p-4 border-border space-y-3">
           <div className="flex items-center justify-between">

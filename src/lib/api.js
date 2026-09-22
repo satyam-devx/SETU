@@ -1184,9 +1184,13 @@ export const SevaAPI = {
   ),
 
   // Open jobs available to claim (RLS: status='open' visible to seva_providers).
-  getOpenJobs:     async ({ category } = {}) => safeQuery(
+  // Scoped to the caller's own village — without this, every provider
+  // platform-wide saw every open job labelled "near you", regardless of
+  // how far away it actually was.
+  getOpenJobs:     async ({ villageId, category } = {}) => safeQuery(
     () => {
       let q = supabase.from('seva_jobs').select('*').eq('status', 'open');
+      if (villageId) q = q.eq('village_id', villageId);
       if (category && category !== 'All') q = q.eq('category', category);
       return q.order('created_at', { ascending: false });
     },

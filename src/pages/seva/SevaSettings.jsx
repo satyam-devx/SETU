@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Globe, LogOut, Wrench, Loader2 } from 'lucide-react';
+import { Globe, LogOut, Wrench, Loader2, IndianRupee } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
 import { SevaAPI } from '@/lib/api';
 import { useToast } from '@/components/ui/use-toast';
 
 const NOTIF_PREF_KEY = 'setu_seva_job_notifs';
+const MAX_HOURLY_RATE = 99999; // matches seva_providers.hourly_rate numeric(8,2)
 
 export default function SevaSettings() {
   const { user, signOut, userName, userPhone } = useAuth();
@@ -21,11 +24,21 @@ export default function SevaSettings() {
   const [notifs, setNotifs]         = useState(() => localStorage.getItem(NOTIF_PREF_KEY) !== 'false');
   const [signingOut, setSigningOut] = useState(false);
 
+  // Pricing/experience editing — there was previously no way to change
+  // these after onboarding submitted them once.
+  const [rateInput, setRateInput]     = useState('');
+  const [expInput, setExpInput]       = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+
   const load = useCallback(async () => {
     if (!user?.id) return;
     setLoading(true);
     const { data } = await SevaAPI.getMyProvider(user.id);
     setProvider(data);
+    if (data) {
+      setRateInput(String(data.hourly_rate ?? ''));
+      setExpInput(data.experience || '');
+    }
     setLoading(false);
   }, [user?.id]);
 
@@ -51,6 +64,29 @@ export default function SevaSettings() {
     localStorage.setItem(NOTIF_PREF_KEY, String(next));
   };
 
+  const rateNum = Number(rateInput);
+  const rateValid = rateInput !== '' && rateNum > 0 && rateNum <= MAX_HOURLY_RATE;
+  const profileDirty = provider && (
+    rateInput !== String(provider.hourly_rate ?? '') ||
+    expInput  !== (provider.experience || '')
+  );
+
+  const handleSaveProfile = async () => {
+    if (!provider || !rateValid) return;
+    setSavingProfile(true);
+    const { data, error: e } = await SevaAPI.saveProvider(user.id, {
+      hourly_rate: rateNum,
+      experience:  expInput.trim() || null,
+    });
+    setSavingProfile(false);
+    if (e) {
+      toast({ title: 'Could not save changes', description: e.message, variant: 'destructive' });
+      return;
+    }
+    setProvider(data);
+    toast({ title: 'Pricing updated' });
+  };
+
   const handleSignOut = async () => { setSigningOut(true); await signOut(); };
 
   return (
@@ -60,8 +96,8 @@ export default function SevaSettings() {
 
         <Card className="p-4 border-border">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-chart-4/10 flex items-center justify-center">
-              <Wrench className="w-5 h-5 text-chart-4" />
+            <div className="w-11 h-11 rounded-xl bg-secondary/10 flex items-center justify-center">
+              <Wrench className="w-5 h-5 text-secondary" />
             </div>
             <div>
               <p className="text-sm font-semibold">{provider?.name || userName || 'Seva Provider'}</p>
@@ -105,6 +141,26 @@ export default function SevaSettings() {
             </div>
             <span className="text-sm text-muted-foreground">Hindi</span>
           </div>
+        </Card>
+
+        <Card className="p-4 border-border space-y-3">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pricing &amp; Experience</p>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Hourly rate (₹)</label>
+            <Input type="number" inputMode="numeric" min="1" max={MAX_HOURLY_RATE}
+              value={rateInput} onChange={e => setRateInput(e.target.value)}
+              disabled={!provider} />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Experience</label>
+            <Textarea rows={2} maxLength={500} placeholder="e.g. 5 years of home wiring and inverter repair"
+              value={expInput} onChange={e => setExpInput(e.target.value)}
+              disabled={!provider} />
+          </div>
+          <Button size="sm" className="w-full" disabled={!profileDirty || !rateValid || savingProfile} onClick={handleSaveProfile}>
+            <IndianRupee className="w-3.5 h-3.5 mr-1" />
+            {savingProfile ? 'Saving…' : 'Save Changes'}
+          </Button>
         </Card>
 
         <Button

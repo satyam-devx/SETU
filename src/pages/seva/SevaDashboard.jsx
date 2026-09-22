@@ -26,15 +26,21 @@ export default function SevaDashboard() {
     if (!user?.id) return;
     setLoading(true);
     setError(null);
-    const [{ data: prov, error: provErr }, { data: jobList }, { data: open }] = await Promise.all([
+    const [{ data: prov, error: provErr }, { data: jobList }] = await Promise.all([
       SevaAPI.getMyProvider(user.id),
       SevaAPI.getJobs(user.id),
-      SevaAPI.getOpenJobs(),
     ]);
     if (provErr) setError('Could not load your provider profile.');
     setProvider(prov);
     setJobs(jobList ?? []);
-    setOpenCount((open ?? []).length);
+    // Open-jobs count needs the provider's own village + category — fetch
+    // once prov is known instead of an unscoped, platform-wide count.
+    if (prov?.village_id) {
+      const { data: open } = await SevaAPI.getOpenJobs({ villageId: prov.village_id, category: prov.category });
+      setOpenCount((open ?? []).length);
+    } else {
+      setOpenCount(0);
+    }
     setLoading(false);
   }, [user?.id]);
 

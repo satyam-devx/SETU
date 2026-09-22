@@ -110,7 +110,7 @@ export default function SevaEarnings() {
                   </div>
                   <div className="text-right shrink-0 ml-2">
                     <p className="text-sm font-bold">₹{Number(job.amount).toLocaleString()}</p>
-                    <Badge className="text-[9px] bg-green-100 text-green-700 border-0">paid</Badge>
+                    <Badge className="text-[9px] bg-green-100 text-green-700 border-0">Completed</Badge>
                   </div>
                 </Card>
               ))}
@@ -119,7 +119,7 @@ export default function SevaEarnings() {
         </div>
 
         <p className="text-xs text-muted-foreground text-center px-4">
-          Earnings are settled to your registered bank account on the platform payout cycle.
+          This month's earnings and completed-job history are shown above.
         </p>
       </div>
     </div>

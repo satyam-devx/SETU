@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import AppHeader from '@/components/shared/AppHeader';
 import EmptyState from '@/components/shared/EmptyState';
 import { SevaAPI } from '@/lib/api';
+import { useAuth } from '@/lib/AuthContext';
 import { useToast } from '@/components/ui/use-toast';
 
 const urgencyStyle = {
@@ -18,21 +19,36 @@ const urgencyStyle = {
 };
 
 export default function SevaJobs() {
+  const { user }  = useAuth();
   const { toast } = useToast();
   const [jobs, setJobs]       = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
   const [query, setQuery]     = useState('');
   const [accepting, setAccepting] = useState(null);
+  const [noProvider, setNoProvider] = useState(false);
 
   const load = useCallback(async () => {
+    if (!user?.id) return;
     setLoading(true);
     setError(null);
-    const { data, error: e } = await SevaAPI.getOpenJobs();
+    setNoProvider(false);
+    // Jobs are scoped to the provider's own village + category — without
+    // this, every provider platform-wide saw every open job labelled
+    // "near you", including ones far away and outside their skill.
+    const { data: prov, error: provErr } = await SevaAPI.getMyProvider(user.id);
+    if (provErr || !prov) {
+      if (!provErr) setNoProvider(true);
+      else setError('Could not load your provider profile.');
+      setJobs([]);
+      setLoading(false);
+      return;
+    }
+    const { data, error: e } = await SevaAPI.getOpenJobs({ villageId: prov.village_id, category: prov.category });
     if (e) setError('Could not load jobs.');
     setJobs(data ?? []);
     setLoading(false);
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -67,6 +83,12 @@ export default function SevaJobs() {
 
         {loading ? (
           <div className="flex justify-center py-16"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
+        ) : noProvider ? (
+          <div className="flex flex-col items-center gap-3 py-16 text-center">
+            <Briefcase className="w-8 h-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Complete your provider verification to see jobs.</p>
+            <Link to="/onboarding/seva"><Button size="sm">Complete Verification</Button></Link>
+          </div>
         ) : error ? (
           <div className="flex flex-col items-center gap-3 py-16 text-center">
             <AlertCircle className="w-8 h-8 text-muted-foreground" />
