@@ -21,7 +21,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, Loader2 } from 'lucide-react';
+import { ArrowRight, Loader2, Store, Bike, Wrench, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import SplashScreen from '@/pages/SplashScreen';
@@ -34,6 +34,39 @@ const HEADLINE_PHRASES = [
   'Superfast Delivery, Har Gaon Mein',
   'Welcome to SETU',
   'Ghar Baithe Order Karo',
+];
+
+// The three self-registration paths below the main login card. Each
+// one's own onboarding page (Vendor/Rider/SevaVerification) already
+// redirects a logged-out visitor through /login and back to itself
+// via setPostLoginRedirect — so a plain <Link> here is all that's
+// needed; the destination owns getting the person back to the right
+// place after they log in, rather than duplicating that logic here.
+const JOIN_PATHS = [
+  {
+    path:  '/onboarding/vendor',
+    title: 'Vendor',
+    blurb: 'Sell from your shop',
+    Icon:  Store,
+    bg:    'bg-accent/10',
+    fg:    'text-accent',
+  },
+  {
+    path:  '/onboarding/rider',
+    title: 'Rider',
+    blurb: 'Deliver & earn',
+    Icon:  Bike,
+    bg:    'bg-setu-earth/10',
+    fg:    'text-setu-earth',
+  },
+  {
+    path:  '/onboarding/seva',
+    title: 'Seva Provider',
+    blurb: 'Offer your skill',
+    Icon:  Wrench,
+    bg:    'bg-secondary/10',
+    fg:    'text-secondary',
+  },
 ];
 
 export default function RoleSelect() {
@@ -139,31 +172,59 @@ export default function RoleSelect() {
         </div>
       </div>
 
-      {/* Onboarding links */}
+      {/* Other ways to join — four partner paths get equal visual
+          weight here instead of being an afterthought text row, so the
+          choice is obvious before anyone taps into a login flow. */}
       <div
-        className="mt-8 flex flex-wrap justify-center gap-5 animate-fade-in-delayed"
-        style={{ animationDelay: '400ms' }}
+        className="mt-10 w-full max-w-sm sm:max-w-md animate-fade-in-delayed"
+        style={{ animationDelay: '350ms' }}
       >
-        {[
-          { label: 'Become a Vendor →',          path: '/onboarding/vendor', color: 'text-accent'  },
-          { label: 'Become a Rider →',            path: '/onboarding/rider',  color: 'text-chart-3' },
-          { label: 'Register as Seva Provider →', path: '/onboarding/seva',   color: 'text-chart-4' },
-        ].map(link => (
-          <Link
-            key={link.path}
-            to={link.path}
-            className={`text-xs font-medium ${link.color} hover:underline`}
+        <p className="text-center text-[0.65rem] font-semibold tracking-[0.25em] text-muted-foreground/70 mb-4">
+          OTHER WAYS TO JOIN
+        </p>
+
+        <div className="grid grid-cols-2 gap-3">
+          {JOIN_PATHS.map((p, i) => (
+            <Link
+              key={p.path}
+              to={p.path}
+              className="animate-fade-slide-up-lg group flex flex-col gap-2 rounded-2xl border border-border bg-card p-4 text-left shadow-sm transition-transform active:scale-95"
+              style={{ animationDelay: `${450 + i * 80}ms` }}
+            >
+              <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${p.bg}`}>
+                <p.Icon className={`h-4 w-4 ${p.fg}`} />
+              </span>
+              <span className="text-sm font-semibold text-foreground">{p.title}</span>
+              <span className="text-[0.7rem] leading-snug text-muted-foreground">{p.blurb}</span>
+            </Link>
+          ))}
+
+          {/* Village Anchor is deliberately not a link like the three
+              above: it's a role SETU appoints directly (a trusted
+              village coordinator), with no self-registration flow
+              anywhere in the app — so this card describes how to
+              become one instead of pretending to be a working button.
+              The dashed border is the visual cue for that difference. */}
+          <div
+            className="animate-fade-slide-up-lg flex flex-col gap-2 rounded-2xl border border-dashed border-border p-4 text-left"
+            style={{ animationDelay: `${450 + JOIN_PATHS.length * 80}ms` }}
           >
-            {link.label}
-          </Link>
-        ))}
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
+              <Users className="h-4 w-4 text-primary" />
+            </span>
+            <span className="text-sm font-semibold text-foreground">Village Anchor</span>
+            <span className="text-[0.7rem] leading-snug text-muted-foreground">
+              SETU appoints trusted coordinators directly.
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Demo mode notice */}
       {!import.meta.env.VITE_SUPABASE_URL && (
         <div
           className="mt-6 w-full max-w-sm animate-fade-in-delayed"
-          style={{ animationDelay: '600ms' }}
+          style={{ animationDelay: '750ms' }}
         >
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-center">
             <p className="text-xs text-amber-800 font-medium mb-0.5">Demo Mode Active</p>
