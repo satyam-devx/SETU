@@ -5,6 +5,7 @@ import {
   Bike,
   Heart,
   Loader2,
+  MapPin,
   ShieldCheck,
   Store,
   Wrench,
@@ -150,22 +151,12 @@ export default function RoleSelect() {
       <main className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 pb-10 pt-5 sm:px-8 lg:px-10">
         {/* Top brand rail */}
         <header className="setu-reveal flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="relative grid h-11 w-11 place-items-center rounded-2xl border border-border/70 bg-card/75 shadow-lg backdrop-blur-xl">
-              <span className="font-heading text-xl font-black tracking-[-0.08em] text-primary">
-                S
-              </span>
-              <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-primary" />
-            </div>
-            <div>
-              <div className="font-heading text-lg font-black tracking-[-0.04em]">
-                SETU
-              </div>
-              <div className="relative mt-1 inline-flex overflow-hidden rounded-full border border-primary/20 bg-primary/[0.07] px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.2em] text-primary shadow-sm">
-                <span className="absolute inset-y-0 -left-1/2 w-1/3 -skew-x-12 bg-white/30 setu-shimmer" />
-                <span className="relative">Serving Madhubani</span>
-              </div>
-            </div>
+          <div className="relative inline-flex items-center gap-2.5 overflow-hidden rounded-full border border-primary/20 bg-card/75 px-3.5 py-2 shadow-[0_8px_28px_hsl(var(--foreground)/0.06)] backdrop-blur-xl">
+            <span className="absolute inset-y-0 -left-1/2 w-1/3 -skew-x-12 bg-white/35 setu-shimmer" />
+            <MapPin className="relative h-4 w-4 shrink-0 text-primary" strokeWidth={2.5} />
+            <span className="relative text-[11px] font-extrabold uppercase tracking-[0.16em] text-foreground/85">
+              Serving Madhubani
+            </span>
           </div>
         </header>
 
@@ -175,7 +166,7 @@ export default function RoleSelect() {
               <div className="setu-float relative mx-auto mb-5 grid h-16 w-16 place-items-center rounded-[21px] border border-primary/15 bg-card/80 p-2 shadow-[0_14px_34px_hsl(var(--foreground)/0.08)] backdrop-blur-xl">
                 <span className="absolute inset-0 rounded-[21px] bg-primary/[0.06] setu-pulse" />
                 <img
-                  src="/setu-icon.png"
+                  src={new URL('../../setu-icon.png', import.meta.url).href}
                   alt="SETU"
                   className="relative h-full w-full object-contain"
                 />
@@ -281,26 +272,49 @@ export default function RoleSelect() {
 function AmbientBackground() {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-      <div className="absolute left-[-20%] top-[-18%] h-[480px] w-[480px] rounded-full bg-primary/[0.075] blur-[120px]" />
-      <div className="absolute right-[-18%] top-[18%] h-[360px] w-[360px] rounded-full bg-setu-earth/[0.055] blur-[110px]" />
-      <div className="absolute bottom-[-18%] left-[12%] h-[420px] w-[420px] rounded-full bg-secondary/[0.035] blur-[120px]" />
+      {/* Premium ambient lighting */}
+      <div className="absolute -left-32 -top-28 h-[520px] w-[520px] rounded-full bg-primary/[0.11] blur-[115px] setu-pulse" />
+      <div className="absolute -right-36 top-[8%] h-[430px] w-[430px] rounded-full bg-setu-earth/[0.085] blur-[115px] setu-pulse" />
+      <div className="absolute -bottom-44 left-[18%] h-[520px] w-[520px] rounded-full bg-secondary/[0.055] blur-[125px]" />
+
+      {/* Soft light bloom behind the main interaction */}
       <div
-        className="absolute inset-0 opacity-[0.022]"
+        className="absolute left-1/2 top-[43%] h-[430px] w-[430px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-70 blur-[95px]"
+        style={{
+          background:
+            'radial-gradient(circle, hsl(var(--primary) / 0.075) 0%, hsl(var(--primary) / 0.025) 42%, transparent 72%)',
+        }}
+      />
+
+      {/* Subtle premium grid */}
+      <div
+        className="absolute inset-0 opacity-[0.028]"
         style={{
           backgroundImage:
             'linear-gradient(hsl(var(--foreground)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--foreground)) 1px, transparent 1px)',
           backgroundSize: '44px 44px',
           maskImage:
-            'radial-gradient(ellipse at center, black 0%, transparent 78%)',
+            'radial-gradient(ellipse at center, black 0%, transparent 76%)',
           WebkitMaskImage:
-            'radial-gradient(ellipse at center, black 0%, transparent 78%)',
+            'radial-gradient(ellipse at center, black 0%, transparent 76%)',
         }}
       />
+
+      {/* Fine vignette/depth layer */}
       <div
-        className="absolute inset-0 opacity-[0.18]"
+        className="absolute inset-0"
         style={{
           background:
-            'radial-gradient(circle at 50% 42%, transparent 0%, hsl(var(--background)/0.15) 52%, hsl(var(--background)/0.62) 100%)',
+            'radial-gradient(ellipse at center, transparent 28%, hsl(var(--background) / 0.10) 68%, hsl(var(--background) / 0.42) 100%)',
+        }}
+      />
+
+      {/* Almost-imperceptible grain */}
+      <div
+        className="absolute inset-0 opacity-[0.035] mix-blend-multiply dark:mix-blend-screen"
+        style={{
+          backgroundImage:
+            'url("data:image/svg+xml,%3Csvg viewBox=%220 0 180 180%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22n%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.85%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23n)%22 opacity=%22.32%22/%3E%3C/svg%3E")',
         }}
       />
     </div>
