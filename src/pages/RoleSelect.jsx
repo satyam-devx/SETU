@@ -163,7 +163,7 @@ export default function RoleSelect() {
         <section className="flex flex-1 items-center justify-center py-8 sm:py-12">
           <div className="setu-reveal setu-delay-1 w-full max-w-md">
             <div className="mb-7 text-center">
-              <div className="setu-float relative mx-auto mb-5 grid h-16 w-16 place-items-center rounded-[21px] border border-primary/15 bg-card/80 p-2 shadow-[0_14px_34px_hsl(var(--foreground)/0.08)] backdrop-blur-xl">
+              <div className="setu-float relative mx-auto mb-5 grid h-16 w-16 place-items-center overflow-hidden rounded-[21px] border border-primary/15 bg-card/80 shadow-[0_14px_34px_hsl(var(--foreground)/0.08)] backdrop-blur-xl">
                 <span className="absolute inset-0 rounded-[21px] bg-primary/[0.06] setu-pulse" />
                 <img
                   src={new URL('../../setu-icon.png', import.meta.url).href}
