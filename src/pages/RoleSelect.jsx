@@ -169,100 +169,53 @@ export default function RoleSelect() {
             </div>
           </div>
 
-          <div className="hidden items-center gap-2 rounded-full border border-border/60 bg-card/55 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground shadow-sm backdrop-blur-xl sm:flex">
+          <div className="flex items-center gap-2 rounded-full border border-border/60 bg-card/55 px-3 py-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-muted-foreground shadow-sm backdrop-blur-xl">
             <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_10px_hsl(var(--primary)/0.8)]" />
-            Local. Connected. Moving.
+            Ready
           </div>
         </header>
 
-        <section className="grid flex-1 items-center gap-10 py-10 lg:grid-cols-[1.05fr_.95fr] lg:gap-16 lg:py-14">
-          {/* Brand story / visual side */}
-          <div className="setu-reveal setu-delay-1 relative">
-            <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/[0.07] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-primary">
-              <Sparkles className="h-3.5 w-3.5" />
-              One platform. Many possibilities.
-            </div>
-
-            <h1 className="max-w-xl font-heading text-[3.35rem] font-black leading-[.94] tracking-[-0.075em] sm:text-6xl lg:text-[5.5rem]">
-              <span className="block">Your village,</span>
-              <span className="block text-primary">connected.</span>
-            </h1>
-
-            <div className="mt-6 flex min-h-6 items-center text-sm font-medium text-muted-foreground sm:text-base">
-              <RotatingText phrases={HEADLINE_PHRASES} />
-            </div>
-
-            <p className="mt-5 max-w-md text-sm leading-6 text-muted-foreground/80 sm:text-[15px]">
-              Shop local, grow your business, deliver across your community,
-              or turn your skills into a service — all through one connected
-              local network.
-            </p>
-
-            {/* Visual statement */}
-            <div className="relative mt-9 hidden h-40 max-w-lg overflow-hidden rounded-[28px] border border-border/60 bg-card/40 shadow-2xl backdrop-blur-xl sm:block">
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-setu-earth/10" />
-              <div className="absolute -right-10 -top-20 h-44 w-44 rounded-full bg-primary/10 blur-3xl setu-pulse" />
-              <div className="absolute -bottom-24 left-10 h-40 w-40 rounded-full bg-setu-earth/10 blur-3xl setu-pulse" />
-
-              <div className="absolute inset-x-5 bottom-5 flex items-end justify-between">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground">
-                    Built for here
-                  </p>
-                  <p className="mt-1 text-lg font-bold tracking-tight">
-                    Local roots. Digital reach.
-                  </p>
-                </div>
-                <div className="setu-float grid h-12 w-12 place-items-center rounded-2xl border border-border/70 bg-background/65 shadow-lg backdrop-blur-xl">
-                  <ArrowUpRight className="h-5 w-5 text-primary" />
-                </div>
+        <section className="flex flex-1 items-center justify-center py-8 sm:py-12">
+          <div className="setu-reveal setu-delay-1 w-full max-w-md">
+            <div className="mb-7 text-center">
+              <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-[19px] border border-primary/15 bg-primary/[0.07] text-primary shadow-lg shadow-primary/5">
+                <Sparkles className="h-6 w-6" />
               </div>
-
-              <div className="absolute left-6 top-6 h-px w-20 overflow-hidden bg-border/70">
-                <div className="setu-shimmer h-full w-10 bg-primary/70" />
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-primary">
+                Welcome to SETU
+              </p>
+              <h1 className="mt-2 font-heading text-[2.35rem] font-black leading-none tracking-[-0.065em] sm:text-4xl">
+                How would you like
+                <span className="block text-primary">to continue?</span>
+              </h1>
+              <div className="mt-4 flex min-h-5 justify-center text-xs font-medium text-muted-foreground">
+                <RotatingText phrases={HEADLINE_PHRASES} />
               </div>
             </div>
-          </div>
 
-          {/* Role/action side */}
-          <div className="setu-reveal setu-delay-2 w-full lg:justify-self-end">
-            <div className="rounded-[32px] border border-border/70 bg-card/60 p-2 shadow-[0_24px_80px_hsl(var(--foreground)/0.08)] backdrop-blur-2xl sm:p-3">
-              <div className="rounded-[26px] border border-border/50 bg-background/55 p-5 sm:p-6">
-                <div className="mb-6 flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground">
-                      Get started
-                    </p>
-                    <h2 className="mt-2 text-2xl font-black tracking-[-0.045em]">
-                      What brings you to SETU?
-                    </h2>
-                  </div>
-                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-                    <MoveUpRight className="h-4 w-4" />
-                  </div>
-                </div>
-
+            <div className="rounded-[30px] border border-border/70 bg-card/55 p-2 shadow-[0_24px_80px_hsl(var(--foreground)/0.08)] backdrop-blur-2xl sm:p-3">
+              <div className="rounded-[24px] border border-border/50 bg-background/55 p-4 sm:p-5">
                 <Link to="/login" className="group block">
-                  <Button className="relative h-[60px] w-full overflow-hidden rounded-2xl px-5 text-left shadow-lg shadow-primary/15 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-primary/20">
+                  <Button className="relative h-[68px] w-full overflow-hidden rounded-[20px] px-5 text-left shadow-lg shadow-primary/15 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-primary/20 active:scale-[.985]">
                     <span className="absolute inset-y-0 -left-1/2 w-1/3 -skew-x-12 bg-white/15 setu-shimmer" />
                     <span className="flex flex-1 flex-col items-start">
-                      <span className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-75">
-                        Returning or new
+                      <span className="text-[9px] font-bold uppercase tracking-[0.2em] opacity-75">
+                        Existing or new account
                       </span>
-                      <span className="mt-0.5 text-[15px] font-bold">
+                      <span className="mt-1 text-base font-bold tracking-tight">
                         Login / Register
                       </span>
                     </span>
-                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-white/15 transition-transform duration-300 group-hover:translate-x-0.5">
-                      <ArrowUpRight className="h-4 w-4" />
+                    <span className="grid h-10 w-10 place-items-center rounded-[13px] bg-white/15 transition-transform duration-300 group-hover:translate-x-0.5">
+                      <ArrowUpRight className="h-[18px] w-[18px]" />
                     </span>
                   </Button>
                 </Link>
 
-                <div className="my-6 flex items-center gap-3">
+                <div className="my-5 flex items-center gap-3">
                   <span className="h-px flex-1 bg-border/70" />
-                  <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-muted-foreground/60">
-                    or join as
+                  <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground/55">
+                    join SETU
                   </span>
                   <span className="h-px flex-1 bg-border/70" />
                 </div>
@@ -272,37 +225,34 @@ export default function RoleSelect() {
                     <Link
                       key={role.path}
                       to={role.path}
-                      className={`setu-reveal-right setu-delay-${i + 3} group relative flex min-h-[74px] items-center gap-4 overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-r ${roleColors[i]} px-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-lg active:scale-[.99]`}
+                      className={`setu-reveal-right setu-delay-${i + 2} group relative flex min-h-[78px] items-center gap-4 overflow-hidden rounded-[20px] border border-border/70 bg-gradient-to-r ${roleColors[i]} px-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-lg active:scale-[.985]`}
                     >
                       <span className="absolute inset-y-0 left-0 w-0.5 bg-primary/0 transition-all duration-300 group-hover:bg-primary/70" />
-
-                      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[15px] border border-border/60 bg-background/65 shadow-sm backdrop-blur-xl transition-transform duration-300 group-hover:scale-105 group-hover:-rotate-2">
-                        <role.Icon className="h-[18px] w-[18px] text-foreground/80" />
+                      <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[16px] border border-border/60 bg-background/70 shadow-sm backdrop-blur-xl transition-transform duration-300 group-hover:scale-105 group-hover:-rotate-2">
+                        <role.Icon className="h-[19px] w-[19px] text-foreground/80" />
                       </span>
-
                       <span className="min-w-0 flex-1">
                         <span className="block text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
                           {role.eyebrow}
                         </span>
-                        <span className="mt-1 block truncate text-[15px] font-bold tracking-[-0.015em]">
+                        <span className="mt-1 block text-[15px] font-bold tracking-[-0.015em]">
                           {role.title}
                         </span>
-                        <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                        <span className="mt-0.5 block text-[11px] text-muted-foreground">
                           {role.blurb}
                         </span>
                       </span>
-
-                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border/60 bg-background/45 text-muted-foreground transition-all duration-300 group-hover:border-primary/20 group-hover:bg-primary/10 group-hover:text-primary">
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] border border-border/60 bg-background/45 text-muted-foreground transition-all duration-300 group-hover:border-primary/20 group-hover:bg-primary/10 group-hover:text-primary">
                         <ArrowUpRight className="h-4 w-4" />
                       </span>
                     </Link>
                   ))}
                 </div>
 
-                <div className="mt-5 flex items-center gap-2 rounded-2xl border border-border/50 bg-muted/30 px-3.5 py-3">
-                  <ShieldCheck className="h-4 w-4 shrink-0 text-primary" />
-                  <p className="text-[10px] leading-4 text-muted-foreground">
-                    Secure sign-in with a one-time password. No password to remember.
+                <div className="mt-5 flex items-center justify-center gap-2 px-2">
+                  <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  <p className="text-center text-[9px] leading-4 text-muted-foreground">
+                    Secure OTP sign-in · No password required
                   </p>
                 </div>
               </div>
@@ -320,10 +270,9 @@ export default function RoleSelect() {
             )}
           </div>
         </section>
-
-        <footer className="setu-reveal setu-delay-5 flex flex-col gap-2 border-t border-border/50 pt-5 text-[9px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/45 sm:flex-row sm:items-center sm:justify-between">
-          <span>SETU · बिहार में बना</span>
-          <span>Local commerce, services & delivery</span>
+        <footer className="setu-reveal setu-delay-5 flex items-center justify-center gap-2 pb-1 pt-4 text-[9px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/45">
+          <span className="h-1 w-1 rounded-full bg-primary/60" />
+          <span>SETU · Local commerce, services & delivery</span>
         </footer>
       </main>
     </div>
