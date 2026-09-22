@@ -1,21 +1,16 @@
-// ═══════════════════════════════════════════════════════════
-// SETU PLATFORM — ROLE SELECT / LANDING (redesigned)
-//
-// Experience: photo-led role threshold. User picks Shop / Sell /
-// Ride / Serve; one primary CTA continues into the matching flow.
-// Village Anchor is intentionally absent — not a self-registration path.
-//
-// Functional contracts preserved from the production-hardened source:
-//  1. Redirect only after isAuthenticated AND isProfileLoaded
-//  2. Never navigate to '/' (this page) — breaks infinite loops
-//  3. Loading screen while isLoading, even for authenticated users
-//  4. One-time splash via sessionStorage
-//  5. Partner onboarding paths own post-login return via setPostLoginRedirect
-// ═══════════════════════════════════════════════════════════
-
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Loader2 } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  ArrowUpRight,
+  Bike,
+  Check,
+  Loader2,
+  MoveUpRight,
+  ShieldCheck,
+  Sparkles,
+  Store,
+  Wrench,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import SplashScreen from '@/pages/SplashScreen';
@@ -24,314 +19,335 @@ import RotatingText from '@/components/shared/RotatingText';
 const SPLASH_SESSION_KEY = 'setu-splash-seen';
 
 const HEADLINE_PHRASES = [
-  'Rural commerce, for the village',
-  'Superfast delivery, har gaon mein',
-  'गाँव की दुकान, अब डिजिटल',
-  'Ghar baithe order karo',
+  'Rural Commerce Operating System',
+  'Superfast Delivery, Har Gaon Mein',
+  'Welcome to SETU',
+  'Ghar Baithe Order Karo',
 ];
 
-/**
- * Four self-registration roles. Customer is first-class (login → shop).
- * Vendor / Rider / Seva go through their onboarding routes, which already
- * send logged-out visitors through /login and back via setPostLoginRedirect.
- */
-const ROLES = [
+// Keep these routes unchanged. Village Anchor is intentionally excluded:
+// it is an appointed role and has no self-registration flow.
+const JOIN_PATHS = [
   {
-    id: 'customer',
-    short: 'Shop',
-    hindi: 'ग्राहक',
-    kicker: 'For your home',
-    headline: 'Ghar baithe\norder karo',
-    body: 'Kirana, sabzi and daily needs from shops in your village — brought to your door.',
-    cta: 'Continue as customer',
-    // Prefer real assets when present; gradient fallbacks keep the screen usable offline.
-    photo: '/images/role-customer.jpg',
-    photoAlt: 'A woman in a village courtyard with a bag of groceries',
-    continue: { type: 'login', intendedRole: 'customer', redirect: '/shop' },
+    path: '/onboarding/vendor',
+    title: 'Vendor',
+    blurb: 'Sell from your shop',
+    Icon: Store,
+    eyebrow: 'SELL',
   },
   {
-    id: 'vendor',
-    short: 'Sell',
-    hindi: 'दुकान',
-    kicker: 'For shopkeepers',
-    headline: 'Your shop,\nnow on SETU',
-    body: 'List what you sell. Take orders from neighbours. No website, no middleman.',
-    cta: 'Continue as vendor',
-    photo: '/images/role-vendor.jpg',
-    photoAlt: 'A kirana shopkeeper behind a wooden counter',
-    continue: { type: 'path', path: '/onboarding/vendor', intendedRole: 'vendor' },
+    path: '/onboarding/rider',
+    title: 'Rider',
+    blurb: 'Deliver & earn',
+    Icon: Bike,
+    eyebrow: 'DELIVER',
   },
   {
-    id: 'rider',
-    short: 'Ride',
-    hindi: 'राइडर',
-    kicker: 'For delivery',
-    headline: 'Deliver, earn,\nbelong',
-    body: 'Pick up from village shops and drop to homes nearby. Work the hours you have.',
-    cta: 'Continue as rider',
-    photo: '/images/role-rider.jpg',
-    photoAlt: 'A delivery rider on a motorcycle on a village lane',
-    continue: { type: 'path', path: '/onboarding/rider', intendedRole: 'rider' },
-  },
-  {
-    id: 'seva',
-    short: 'Serve',
-    hindi: 'सेवा',
-    kicker: 'For skilled hands',
-    headline: 'Offer your\nskill',
-    body: 'Tailoring, repair, tuition and more. Neighbours book you directly on SETU.',
-    cta: 'Continue as seva provider',
-    photo: '/images/role-seva.jpg',
-    photoAlt: 'A village tailor at a sewing machine on a verandah',
-    continue: { type: 'path', path: '/onboarding/seva', intendedRole: 'seva' },
+    path: '/onboarding/seva',
+    title: 'Seva Provider',
+    blurb: 'Offer your skill',
+    Icon: Wrench,
+    eyebrow: 'SERVE',
   },
 ];
 
-function BridgeMark({ className = 'w-8 h-8' }) {
-  return (
-    <svg viewBox="0 0 32 32" className={className} aria-hidden="true">
-      <rect x="5" y="20" width="2.2" height="7" rx="0.4" fill="currentColor" />
-      <rect x="24.8" y="20" width="2.2" height="7" rx="0.4" fill="currentColor" />
-      <path
-        d="M6 21c5.2-9 14.8-9 20 0"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-      <path
-        d="M7.4 23.2c4.4-7.2 12.8-7.2 17.2 0"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.1"
-        strokeLinecap="round"
-        opacity="0.7"
-      />
-    </svg>
-  );
-}
-
-function SetuWordmark({ tone = 'paper' }) {
-  const color = tone === 'ink' ? 'text-foreground' : 'text-white';
-  return (
-    <div className={`flex items-center gap-2.5 ${color}`}>
-      <BridgeMark className="w-8 h-8" />
-      <span className="font-heading text-2xl font-medium tracking-tight">SETU</span>
-    </div>
-  );
-}
-
-function BootScreen() {
-  return (
-    <div className="min-h-dvh flex flex-col items-center justify-center bg-[#1C1916] text-[#F3EEE4]">
-      <SetuWordmark />
-      <Loader2 className="mt-6 w-5 h-5 animate-spin text-[#B5522A]" />
-    </div>
-  );
-}
-
-function RoleStory({ role }) {
-  return (
-    <div key={role.id} className="animate-in fade-in slide-in-from-bottom-2 duration-400">
-      <p lang="hi" className="font-deva text-sm tracking-[0.28em] text-muted-foreground">
-        {role.hindi}
-      </p>
-      <p className="mt-3 hidden md:block text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-        {role.kicker}
-      </p>
-      <h2 className="mt-2 whitespace-pre-line font-heading text-3xl md:text-5xl font-medium leading-[1.1] tracking-tight text-foreground">
-        {role.headline}
-      </h2>
-      <p className="mt-3 max-w-sm text-sm md:text-base leading-relaxed text-muted-foreground">
-        {role.body}
-      </p>
-    </div>
-  );
-}
+const roleColors = [
+  'from-primary/18 via-primary/5 to-transparent',
+  'from-setu-earth/20 via-setu-earth/5 to-transparent',
+  'from-secondary/18 via-secondary/5 to-transparent',
+];
 
 export default function RoleSelect() {
   const navigate = useNavigate();
-  const auth = useAuth();
-  const {
-    isAuthenticated,
-    isProfileLoaded,
-    isLoading,
-    portalPath,
-    setIntendedRole,
-    setPostLoginRedirect,
-  } = auth;
+  const { isAuthenticated, isProfileLoaded, isLoading, portalPath } = useAuth();
+  const [showSplash, setShowSplash] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      sessionStorage.getItem(SPLASH_SESSION_KEY) !== '1'
+  );
 
-  const [booted, setBooted] = useState(false);
-  const [showSplash, setShowSplash] = useState(false);
-  const [selected, setSelected] = useState('customer');
-  const [photoFailed, setPhotoFailed] = useState({});
-
-  useEffect(() => {
-    const seen = sessionStorage.getItem(SPLASH_SESSION_KEY) === '1';
-    setShowSplash(!seen);
-    setBooted(true);
-  }, []);
-
-  // Wait for BOTH authentication AND profile load before redirecting.
-  // Never navigate to '/' — that is this page and causes a loop.
   useEffect(() => {
     if (isLoading) return;
     if (!isAuthenticated) return;
     if (!isProfileLoaded) return;
+
     if (portalPath && portalPath !== '/') {
       navigate(portalPath, { replace: true });
     }
   }, [isAuthenticated, isProfileLoaded, isLoading, portalPath, navigate]);
 
-  const finishSplash = () => {
-    sessionStorage.setItem(SPLASH_SESSION_KEY, '1');
-    setShowSplash(false);
-  };
-
-  const current = ROLES.find((r) => r.id === selected) ?? ROLES[0];
-
-  const continueAs = (roleId) => {
-    const role = ROLES.find((r) => r.id === roleId) ?? ROLES[0];
-    if (typeof setIntendedRole === 'function') {
-      setIntendedRole(role.continue.intendedRole);
-    }
-    if (role.continue.type === 'path') {
-      if (typeof setPostLoginRedirect === 'function') {
-        setPostLoginRedirect(role.continue.path);
-      }
-      navigate(role.continue.path);
-      return;
-    }
-    if (typeof setPostLoginRedirect === 'function') {
-      setPostLoginRedirect(role.continue.redirect);
-    }
-    navigate('/login');
-  };
-
-  const signInReturning = () => {
-    if (typeof setIntendedRole === 'function') setIntendedRole(null);
-    if (typeof setPostLoginRedirect === 'function') setPostLoginRedirect(null);
-    navigate('/login');
-  };
-
-  if (!booted) return <BootScreen />;
   if (showSplash) {
     return (
       <SplashScreen
-        onFinish={finishSplash}
+        onFinish={() => {
+          sessionStorage.setItem(SPLASH_SESSION_KEY, '1');
+          setShowSplash(false);
+        }}
       />
     );
   }
-  if (isLoading) return <BootScreen />;
-  if (isAuthenticated && portalPath && portalPath !== '/') return <BootScreen />;
+
+  if (isLoading) {
+    return (
+      <div className="relative min-h-screen overflow-hidden bg-background flex flex-col items-center justify-center">
+        <AmbientBackground />
+        <div className="relative z-10 flex flex-col items-center gap-4">
+          <div className="relative grid h-16 w-16 place-items-center rounded-[22px] border border-border/60 bg-card/80 shadow-2xl backdrop-blur-xl">
+            <span className="font-heading text-2xl font-black tracking-[-0.08em] text-primary">
+              S
+            </span>
+            <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-primary shadow-[0_0_18px_hsl(var(--primary)/0.8)]" />
+          </div>
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          <p className="text-xs tracking-[0.22em] text-muted-foreground uppercase">
+            Connecting to SETU
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <main className="min-h-dvh overflow-x-hidden bg-[#1C1916] text-[#F3EEE4] md:grid md:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)]">
-      {/* Photo stage */}
-      <section className="relative isolate flex h-[38vh] min-h-56 flex-col md:h-auto md:min-h-dvh">
-        {ROLES.map((role) => {
-          const failed = photoFailed[role.id];
-          return failed ? (
-            <div
-              key={role.id}
-              aria-hidden={selected !== role.id}
-              className={`absolute inset-0 bg-gradient-to-br from-[#3A342E] via-[#1C1916] to-[#B5522A]/30 transition-opacity duration-500 ${
-                selected === role.id ? 'opacity-100' : 'opacity-0'
-              }`}
-            />
-          ) : (
-            <img
-              key={role.id}
-              src={role.photo}
-              alt={selected === role.id ? role.photoAlt : ''}
-              onError={() => setPhotoFailed((prev) => ({ ...prev, [role.id]: true }))}
-              className={`absolute inset-0 size-full object-cover transition-opacity duration-500 ease-out ${
-                selected === role.id ? 'opacity-100' : 'opacity-0'
-              }`}
-            />
-          );
-        })}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/10 to-black/40 md:from-black/45 md:via-black/10 md:to-black/55" />
+    <div className="relative min-h-screen overflow-x-hidden bg-background text-foreground selection:bg-primary/20">
+      <style>{`
+        @keyframes setu-float {
+          0%, 100% { transform: translate3d(0,0,0) scale(1); }
+          50% { transform: translate3d(0,-12px,0) scale(1.015); }
+        }
+        @keyframes setu-pulse {
+          0%, 100% { opacity: .35; transform: scale(.92); }
+          50% { opacity: .75; transform: scale(1.05); }
+        }
+        @keyframes setu-reveal {
+          from { opacity: 0; transform: translateY(24px) scale(.985); filter: blur(8px); }
+          to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+        }
+        @keyframes setu-reveal-right {
+          from { opacity: 0; transform: translateX(22px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes setu-shimmer {
+          0% { transform: translateX(-120%); }
+          100% { transform: translateX(220%); }
+        }
+        .setu-reveal { animation: setu-reveal .8s cubic-bezier(.22,1,.36,1) both; }
+        .setu-reveal-right { animation: setu-reveal-right .7s cubic-bezier(.22,1,.36,1) both; }
+        .setu-float { animation: setu-float 6s ease-in-out infinite; }
+        .setu-pulse { animation: setu-pulse 4s ease-in-out infinite; }
+        .setu-shimmer { animation: setu-shimmer 2.8s ease-in-out infinite; }
+        .setu-delay-1 { animation-delay: 100ms; }
+        .setu-delay-2 { animation-delay: 180ms; }
+        .setu-delay-3 { animation-delay: 260ms; }
+        .setu-delay-4 { animation-delay: 340ms; }
+        .setu-delay-5 { animation-delay: 420ms; }
+        @media (prefers-reduced-motion: reduce) {
+          .setu-reveal, .setu-reveal-right, .setu-float, .setu-pulse, .setu-shimmer {
+            animation: none !important;
+          }
+        }
+      `}</style>
 
-        <header className="relative z-10 px-5 pt-5 md:px-8 md:pt-8">
-          <SetuWordmark />
-          <p className="mt-2 min-h-5 text-xs text-white/75">
-            <RotatingText phrases={HEADLINE_PHRASES} />
-          </p>
-          <p className="mt-1 text-xs text-white/60">Madhepur · Madhubani · बिहार</p>
-        </header>
-      </section>
+      <AmbientBackground />
 
-      {/* Work surface */}
-      <aside className="relative z-10 -mt-8 flex flex-col rounded-t-3xl bg-[#F3EEE4] px-5 pb-20 pt-5 text-[#1C1916] md:mt-0 md:rounded-none md:px-10 md:py-10 md:pb-10">
-        <div className="mb-4 flex items-center gap-4 md:mb-8">
-          <div
-            className="min-w-0 flex-1"
-            style={{
-              height: 5,
-              borderTop: '1px solid color-mix(in oklab, #B5522A 50%, transparent)',
-              borderBottom: '1px solid color-mix(in oklab, #B5522A 50%, transparent)',
-            }}
-          />
-          <button
-            type="button"
-            onClick={signInReturning}
-            className="h-10 shrink-0 text-sm text-[#6F675E] transition-colors hover:text-[#1C1916]"
-          >
-            Sign in
-          </button>
-        </div>
-
-        <p className="hidden md:block text-xs font-medium uppercase tracking-[0.22em] text-[#6F675E]">
-          How will you use SETU?
-        </p>
-        <div className="md:mt-6">
-          <RoleStory role={current} />
-        </div>
-
-        <div className="mt-6 flex flex-col gap-3 md:mt-auto md:gap-4 md:pt-10">
-          <Button
-            size="lg"
-            className="w-full h-14 justify-between rounded-xl pl-5 pr-4 text-base font-semibold bg-[#B5522A] hover:bg-[#8E3E1F] text-[#FBF7F0]"
-            onClick={() => continueAs(selected)}
-          >
-            {current.cta}
-            <ArrowRight className="w-4 h-4" />
-          </Button>
-
-          <div
-            role="radiogroup"
-            aria-label="Choose how you’ll use SETU"
-            className="grid grid-cols-4 rounded-xl bg-[#1C1916]/5 p-1"
-          >
-            {ROLES.map((role) => {
-              const active = selected === role.id;
-              return (
-                <button
-                  key={role.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => setSelected(role.id)}
-                  className={`flex h-12 items-center justify-center rounded-lg text-xs font-medium transition-colors duration-200 ${
-                    active
-                      ? 'bg-[#1C1916] text-[#F3EEE4]'
-                      : 'text-[#6F675E] hover:text-[#1C1916]'
-                  }`}
-                >
-                  {role.short}
-                </button>
-              );
-            })}
+      <main className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 pb-10 pt-5 sm:px-8 lg:px-10">
+        {/* Top brand rail */}
+        <header className="setu-reveal flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="relative grid h-11 w-11 place-items-center rounded-2xl border border-border/70 bg-card/75 shadow-lg backdrop-blur-xl">
+              <span className="font-heading text-xl font-black tracking-[-0.08em] text-primary">
+                S
+              </span>
+              <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-primary" />
+            </div>
+            <div>
+              <div className="font-heading text-lg font-black tracking-[-0.04em]">
+                SETU
+              </div>
+              <div className="text-[9px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                Madhubani · Bihar
+              </div>
+            </div>
           </div>
-        </div>
 
-        {!import.meta.env?.VITE_SUPABASE_URL && (
-          <p className="mt-4 text-center text-xs text-[#6F675E]/80">
-            Demo: any 10-digit number, OTP <span className="font-medium text-[#1C1916]">1234</span>
-          </p>
-        )}
-      </aside>
-    </main>
+          <div className="hidden items-center gap-2 rounded-full border border-border/60 bg-card/55 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground shadow-sm backdrop-blur-xl sm:flex">
+            <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_10px_hsl(var(--primary)/0.8)]" />
+            Local. Connected. Moving.
+          </div>
+        </header>
+
+        <section className="grid flex-1 items-center gap-10 py-10 lg:grid-cols-[1.05fr_.95fr] lg:gap-16 lg:py-14">
+          {/* Brand story / visual side */}
+          <div className="setu-reveal setu-delay-1 relative">
+            <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/[0.07] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-primary">
+              <Sparkles className="h-3.5 w-3.5" />
+              One platform. Many possibilities.
+            </div>
+
+            <h1 className="max-w-xl font-heading text-[3.35rem] font-black leading-[.94] tracking-[-0.075em] sm:text-6xl lg:text-[5.5rem]">
+              <span className="block">Your village,</span>
+              <span className="block text-primary">connected.</span>
+            </h1>
+
+            <div className="mt-6 flex min-h-6 items-center text-sm font-medium text-muted-foreground sm:text-base">
+              <RotatingText phrases={HEADLINE_PHRASES} />
+            </div>
+
+            <p className="mt-5 max-w-md text-sm leading-6 text-muted-foreground/80 sm:text-[15px]">
+              Shop local, grow your business, deliver across your community,
+              or turn your skills into a service — all through one connected
+              local network.
+            </p>
+
+            {/* Visual statement */}
+            <div className="relative mt-9 hidden h-40 max-w-lg overflow-hidden rounded-[28px] border border-border/60 bg-card/40 shadow-2xl backdrop-blur-xl sm:block">
+              <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-setu-earth/10" />
+              <div className="absolute -right-10 -top-20 h-44 w-44 rounded-full bg-primary/10 blur-3xl setu-pulse" />
+              <div className="absolute -bottom-24 left-10 h-40 w-40 rounded-full bg-setu-earth/10 blur-3xl setu-pulse" />
+
+              <div className="absolute inset-x-5 bottom-5 flex items-end justify-between">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground">
+                    Built for here
+                  </p>
+                  <p className="mt-1 text-lg font-bold tracking-tight">
+                    Local roots. Digital reach.
+                  </p>
+                </div>
+                <div className="setu-float grid h-12 w-12 place-items-center rounded-2xl border border-border/70 bg-background/65 shadow-lg backdrop-blur-xl">
+                  <ArrowUpRight className="h-5 w-5 text-primary" />
+                </div>
+              </div>
+
+              <div className="absolute left-6 top-6 h-px w-20 overflow-hidden bg-border/70">
+                <div className="setu-shimmer h-full w-10 bg-primary/70" />
+              </div>
+            </div>
+          </div>
+
+          {/* Role/action side */}
+          <div className="setu-reveal setu-delay-2 w-full lg:justify-self-end">
+            <div className="rounded-[32px] border border-border/70 bg-card/60 p-2 shadow-[0_24px_80px_hsl(var(--foreground)/0.08)] backdrop-blur-2xl sm:p-3">
+              <div className="rounded-[26px] border border-border/50 bg-background/55 p-5 sm:p-6">
+                <div className="mb-6 flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground">
+                      Get started
+                    </p>
+                    <h2 className="mt-2 text-2xl font-black tracking-[-0.045em]">
+                      What brings you to SETU?
+                    </h2>
+                  </div>
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+                    <MoveUpRight className="h-4 w-4" />
+                  </div>
+                </div>
+
+                <Link to="/login" className="group block">
+                  <Button className="relative h-[60px] w-full overflow-hidden rounded-2xl px-5 text-left shadow-lg shadow-primary/15 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-primary/20">
+                    <span className="absolute inset-y-0 -left-1/2 w-1/3 -skew-x-12 bg-white/15 setu-shimmer" />
+                    <span className="flex flex-1 flex-col items-start">
+                      <span className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-75">
+                        Returning or new
+                      </span>
+                      <span className="mt-0.5 text-[15px] font-bold">
+                        Login / Register
+                      </span>
+                    </span>
+                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-white/15 transition-transform duration-300 group-hover:translate-x-0.5">
+                      <ArrowUpRight className="h-4 w-4" />
+                    </span>
+                  </Button>
+                </Link>
+
+                <div className="my-6 flex items-center gap-3">
+                  <span className="h-px flex-1 bg-border/70" />
+                  <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-muted-foreground/60">
+                    or join as
+                  </span>
+                  <span className="h-px flex-1 bg-border/70" />
+                </div>
+
+                <div className="space-y-2.5">
+                  {JOIN_PATHS.map((role, i) => (
+                    <Link
+                      key={role.path}
+                      to={role.path}
+                      className={`setu-reveal-right setu-delay-${i + 3} group relative flex min-h-[74px] items-center gap-4 overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-r ${roleColors[i]} px-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-lg active:scale-[.99]`}
+                    >
+                      <span className="absolute inset-y-0 left-0 w-0.5 bg-primary/0 transition-all duration-300 group-hover:bg-primary/70" />
+
+                      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[15px] border border-border/60 bg-background/65 shadow-sm backdrop-blur-xl transition-transform duration-300 group-hover:scale-105 group-hover:-rotate-2">
+                        <role.Icon className="h-[18px] w-[18px] text-foreground/80" />
+                      </span>
+
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
+                          {role.eyebrow}
+                        </span>
+                        <span className="mt-1 block truncate text-[15px] font-bold tracking-[-0.015em]">
+                          {role.title}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                          {role.blurb}
+                        </span>
+                      </span>
+
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border/60 bg-background/45 text-muted-foreground transition-all duration-300 group-hover:border-primary/20 group-hover:bg-primary/10 group-hover:text-primary">
+                        <ArrowUpRight className="h-4 w-4" />
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+
+                <div className="mt-5 flex items-center gap-2 rounded-2xl border border-border/50 bg-muted/30 px-3.5 py-3">
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-primary" />
+                  <p className="text-[10px] leading-4 text-muted-foreground">
+                    Secure sign-in with a one-time password. No password to remember.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {!import.meta.env.VITE_SUPABASE_URL && (
+              <div className="mt-3 rounded-2xl border border-amber-200/70 bg-amber-50/80 px-4 py-3 text-center shadow-sm dark:border-amber-500/20 dark:bg-amber-500/10">
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-800 dark:text-amber-300">
+                  Demo Mode Active
+                </p>
+                <p className="mt-0.5 text-[10px] text-amber-700/90 dark:text-amber-200/80">
+                  Use any 10-digit number and OTP <strong>1234</strong> to explore.
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <footer className="setu-reveal setu-delay-5 flex flex-col gap-2 border-t border-border/50 pt-5 text-[9px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/45 sm:flex-row sm:items-center sm:justify-between">
+          <span>SETU · बिहार में बना</span>
+          <span>Local commerce, services & delivery</span>
+        </footer>
+      </main>
+    </div>
+  );
+}
+
+function AmbientBackground() {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+      <div className="absolute left-[-12%] top-[-10%] h-[420px] w-[420px] rounded-full bg-primary/[0.07] blur-[100px]" />
+      <div className="absolute bottom-[-15%] right-[-10%] h-[420px] w-[420px] rounded-full bg-setu-earth/[0.07] blur-[110px]" />
+      <div className="absolute left-[45%] top-[30%] h-56 w-56 rounded-full bg-secondary/[0.035] blur-[90px]" />
+      <div
+        className="absolute inset-0 opacity-[0.025]"
+        style={{
+          backgroundImage:
+            'linear-gradient(hsl(var(--foreground)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--foreground)) 1px, transparent 1px)',
+          backgroundSize: '48px 48px',
+          maskImage:
+            'radial-gradient(circle at center, black 0%, transparent 75%)',
+          WebkitMaskImage:
+            'radial-gradient(circle at center, black 0%, transparent 75%)',
+        }}
+      />
+    </div>
   );
 }
