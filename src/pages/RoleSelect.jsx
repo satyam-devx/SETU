@@ -3,11 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowUpRight,
   Bike,
-  Check,
+  Heart,
   Loader2,
-  MoveUpRight,
   ShieldCheck,
-  Sparkles,
   Store,
   Wrench,
 } from 'lucide-react';
@@ -163,23 +161,24 @@ export default function RoleSelect() {
               <div className="font-heading text-lg font-black tracking-[-0.04em]">
                 SETU
               </div>
-              <div className="text-[9px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                Madhubani · Bihar
+              <div className="relative mt-1 inline-flex overflow-hidden rounded-full border border-primary/20 bg-primary/[0.07] px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.2em] text-primary shadow-sm">
+                <span className="absolute inset-y-0 -left-1/2 w-1/3 -skew-x-12 bg-white/30 setu-shimmer" />
+                <span className="relative">Serving Madhubani</span>
               </div>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2 rounded-full border border-border/60 bg-card/55 px-3 py-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-muted-foreground shadow-sm backdrop-blur-xl">
-            <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_10px_hsl(var(--primary)/0.8)]" />
-            Ready
           </div>
         </header>
 
         <section className="flex flex-1 items-center justify-center py-8 sm:py-12">
           <div className="setu-reveal setu-delay-1 w-full max-w-md">
             <div className="mb-7 text-center">
-              <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-[19px] border border-primary/15 bg-primary/[0.07] text-primary shadow-lg shadow-primary/5">
-                <Sparkles className="h-6 w-6" />
+              <div className="setu-float relative mx-auto mb-5 grid h-16 w-16 place-items-center rounded-[21px] border border-primary/15 bg-card/80 p-2 shadow-[0_14px_34px_hsl(var(--foreground)/0.08)] backdrop-blur-xl">
+                <span className="absolute inset-0 rounded-[21px] bg-primary/[0.06] setu-pulse" />
+                <img
+                  src="/setu-icon.png"
+                  alt="SETU"
+                  className="relative h-full w-full object-contain"
+                />
               </div>
               <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-primary">
                 Welcome to SETU
@@ -270,9 +269,9 @@ export default function RoleSelect() {
             )}
           </div>
         </section>
-        <footer className="setu-reveal setu-delay-5 flex items-center justify-center gap-2 pb-1 pt-4 text-[9px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/45">
-          <span className="h-1 w-1 rounded-full bg-primary/60" />
-          <span>SETU · Local commerce, services & delivery</span>
+        <footer className="setu-reveal setu-delay-5 flex items-center justify-center gap-2 pb-1 pt-4 text-[10px] font-medium tracking-[0.01em] text-muted-foreground/65">
+          <span>Built for Madhubani, with</span>
+          <Heart className="h-3.5 w-3.5 fill-primary text-primary" aria-hidden="true" />
         </footer>
       </main>
     </div>
@@ -282,19 +281,26 @@ export default function RoleSelect() {
 function AmbientBackground() {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-      <div className="absolute left-[-12%] top-[-10%] h-[420px] w-[420px] rounded-full bg-primary/[0.07] blur-[100px]" />
-      <div className="absolute bottom-[-15%] right-[-10%] h-[420px] w-[420px] rounded-full bg-setu-earth/[0.07] blur-[110px]" />
-      <div className="absolute left-[45%] top-[30%] h-56 w-56 rounded-full bg-secondary/[0.035] blur-[90px]" />
+      <div className="absolute left-[-20%] top-[-18%] h-[480px] w-[480px] rounded-full bg-primary/[0.075] blur-[120px]" />
+      <div className="absolute right-[-18%] top-[18%] h-[360px] w-[360px] rounded-full bg-setu-earth/[0.055] blur-[110px]" />
+      <div className="absolute bottom-[-18%] left-[12%] h-[420px] w-[420px] rounded-full bg-secondary/[0.035] blur-[120px]" />
       <div
-        className="absolute inset-0 opacity-[0.025]"
+        className="absolute inset-0 opacity-[0.022]"
         style={{
           backgroundImage:
             'linear-gradient(hsl(var(--foreground)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--foreground)) 1px, transparent 1px)',
-          backgroundSize: '48px 48px',
+          backgroundSize: '44px 44px',
           maskImage:
-            'radial-gradient(circle at center, black 0%, transparent 75%)',
+            'radial-gradient(ellipse at center, black 0%, transparent 78%)',
           WebkitMaskImage:
-            'radial-gradient(circle at center, black 0%, transparent 75%)',
+            'radial-gradient(ellipse at center, black 0%, transparent 78%)',
+        }}
+      />
+      <div
+        className="absolute inset-0 opacity-[0.18]"
+        style={{
+          background:
+            'radial-gradient(circle at 50% 42%, transparent 0%, hsl(var(--background)/0.15) 52%, hsl(var(--background)/0.62) 100%)',
         }}
       />
     </div>
