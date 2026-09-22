@@ -168,7 +168,7 @@ export default function RoleSelect() {
                 <img
                   src={new URL('../../setu-icon.png', import.meta.url).href}
                   alt="SETU"
-                  className="relative h-[135%] w-[135%] max-w-none object-contain"
+                  className="relative h-[115%] w-[115%] max-w-none object-contain"
                 />
               </div>
               <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-primary">
