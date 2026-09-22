@@ -4,7 +4,6 @@ import {
   ArrowUpRight,
   Bike,
   Heart,
-  Loader2,
   MapPin,
   ShieldCheck,
   Store,
@@ -83,26 +82,6 @@ export default function RoleSelect() {
           setShowSplash(false);
         }}
       />
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div className="relative min-h-screen overflow-hidden bg-background flex flex-col items-center justify-center">
-        <AmbientBackground />
-        <div className="relative z-10 flex flex-col items-center gap-4">
-          <div className="relative grid h-16 w-16 place-items-center rounded-[22px] border border-border/60 bg-card/80 shadow-2xl backdrop-blur-xl">
-            <span className="font-heading text-2xl font-black tracking-[-0.08em] text-primary">
-              S
-            </span>
-            <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-primary shadow-[0_0_18px_hsl(var(--primary)/0.8)]" />
-          </div>
-          <Loader2 className="h-5 w-5 animate-spin text-primary" />
-          <p className="text-xs tracking-[0.22em] text-muted-foreground uppercase">
-            Connecting to SETU
-          </p>
-        </div>
-      </div>
     );
   }
 
