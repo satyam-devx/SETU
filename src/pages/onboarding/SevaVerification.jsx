@@ -19,7 +19,11 @@ const MAX_HOURLY_RATE = 99999; // seva_providers.hourly_rate is numeric(8,2) —
                                 // so a mistyped rate fails validation here with
                                 // a clear message, not a raw Postgres error.
 
-const CATEGORIES = [
+// Exported so customer-facing seva pages (browsing/requesting a
+// provider) offer the same category list a provider registers under —
+// a customer picking a category that no provider can ever match would
+// be a dead end.
+export const CATEGORIES = [
   'Electrician', 'Plumber', 'Tailoring', 'Beauty & Salon', 'Tutoring',
   'Carpentry', 'Painting', 'Farming Help', 'AC Repair', 'Mobile Repair', 'Mason', 'Agriculture',
 ];

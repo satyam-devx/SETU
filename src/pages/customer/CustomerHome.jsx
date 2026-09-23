@@ -26,7 +26,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useCart } from '@/lib/cartContext';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import {
-  getCategoryPreviews, getVendors, getProducts, getSchemes,
+  getCategoryPreviews, getVendors, getProducts, getSchemes, getSevaProviders,
 } from '@/lib/api';
 import { useFcmToken } from '@/hooks/useFcmToken';
 import {
@@ -84,6 +84,37 @@ function VendorCard({ vendor }) {
             <span className="text-[10px] font-medium">{vendor.rating?.toFixed(1) || '—'}</span>
             {vendor.review_count > 0 && (
               <span className="text-[10px] text-muted-foreground font-medium">({vendor.review_count})</span>
+            )}
+          </div>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+// ── SevaProviderCard ──────────────────────────────────────
+// Mirrors VendorCard's shape/sizing so the two carousels read as one
+// family, not a bolted-on feature.
+function SevaProviderCard({ p }) {
+  return (
+    <Link to="/customer/seva" className="shrink-0 w-40 block">
+      <div className="setu-card overflow-hidden">
+        <div className="h-24 bg-secondary/10 relative overflow-hidden flex items-center justify-center">
+          <span className="text-3xl">🧰</span>
+          {!p.is_available && (
+            <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+              <span className="text-white text-[10px] font-bold">Unavailable</span>
+            </div>
+          )}
+        </div>
+        <div className="p-3">
+          <h4 className="text-xs font-semibold truncate">{p.name}</h4>
+          <p className="text-[10px] text-muted-foreground">{p.category}</p>
+          <div className="flex items-center gap-1 mt-1">
+            <Star className="w-3 h-3 text-primary fill-primary" />
+            <span className="text-[10px] font-medium">{p.rating > 0 ? p.rating.toFixed(1) : 'New'}</span>
+            {p.review_count > 0 && (
+              <span className="text-[10px] text-muted-foreground font-medium">({p.review_count})</span>
             )}
           </div>
         </div>
@@ -175,6 +206,12 @@ export default function CustomerHome() {
   } = useDataFetch(
     () => getVendors({ villageId: village?.id }),
     [village?.id], { cacheKey: `vendors-${village?.id}` }
+  );
+  const {
+    data: sevaProviders, isLoading: sevaLoading,
+  } = useDataFetch(
+    () => getSevaProviders({ villageId: village?.id }),
+    [village?.id], { cacheKey: `seva-providers-home-${village?.id}` }
   );
   const {
     data: products, isLoading: productsLoading,
@@ -445,6 +482,36 @@ export default function CustomerHome() {
             ))}
             {vendors.filter(v => !v.is_open).map(v => (
               <div key={v.id} role="listitem"><VendorCard vendor={v} /></div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* ── Seva Providers ────────────────────────────── */}
+      <section className="mb-6" aria-labelledby="seva-title">
+        <div className="section-header px-4">
+          <h3 id="seva-title" className="section-title">Local Services Near You</h3>
+          <Link to="/customer/seva" className="section-link">See All</Link>
+        </div>
+        {sevaLoading ? (
+          <div className="scroll-strip px-4" aria-busy="true">
+            {[1,2,3].map(i => <VendorCardSkeleton key={i} />)}
+          </div>
+        ) : !sevaProviders?.length ? (
+          <div className="px-4">
+            <EmptyState
+              emoji="🧰"
+              title="No providers yet"
+              description="Be the first to request an electrician, plumber or tailor for your village."
+              size="sm"
+              action={() => navigate('/customer/seva')}
+              actionLabel="Browse Services"
+            />
+          </div>
+        ) : (
+          <div className="scroll-strip px-4" role="list" aria-label="Local service providers">
+            {sevaProviders.slice(0, 8).map(p => (
+              <div key={p.id} role="listitem"><SevaProviderCard p={p} /></div>
             ))}
           </div>
         )}

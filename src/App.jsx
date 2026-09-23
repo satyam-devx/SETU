@@ -51,6 +51,9 @@ const CustomerHome          = lazy(() => import('@/pages/customer/CustomerHome')
 const CustomerOrders        = lazy(() => import('@/pages/customer/CustomerOrders'));
 const CustomerOrderDetail   = lazy(() => import('@/pages/customer/CustomerOrderDetail'));
 const CustomerWallet        = lazy(() => import('@/pages/customer/CustomerWallet'));
+const CustomerSeva          = lazy(() => import('@/pages/customer/CustomerSeva'));
+const CustomerSevaRequest   = lazy(() => import('@/pages/customer/CustomerSevaRequest'));
+const CustomerSevaBookings  = lazy(() => import('@/pages/customer/CustomerSevaBookings'));
 const CustomerCredit        = lazy(() => import('@/pages/customer/CustomerCredit'));
 const CustomerSchemes       = lazy(() => import('@/pages/customer/CustomerSchemes'));
 const CustomerVoice         = lazy(() => import('@/pages/customer/CustomerVoice'));
@@ -64,7 +67,6 @@ const CustomerSupport       = lazy(() => import('@/pages/customer/CustomerSuppor
 const CustomerSettings      = lazy(() => import('@/pages/customer/CustomerSettings'));
 const CustomerSearch        = lazy(() => import('@/pages/customer/CustomerSearch'));
 const CustomerCategories    = lazy(() => import('@/pages/customer/CustomerCategories'));
-const CustomerCategoryDetail = lazy(() => import('@/pages/customer/CustomerCategoryDetail'));
 const CustomerProductDetail = lazy(() => import('@/pages/customer/CustomerProductDetail'));
 const CustomerVendorProfile = lazy(() => import('@/pages/customer/CustomerVendorProfile'));
 const CustomerCart          = lazy(() => import('@/pages/customer/CustomerCart'));
@@ -325,6 +327,9 @@ function App() {
                 <Route path="orders"                 element={<Suspense fallback={<PortalFallback />}><CustomerOrders /></Suspense>} />
                 <Route path="orders/:orderId"        element={<Suspense fallback={<PortalFallback />}><CustomerOrderDetail /></Suspense>} />
                 <Route path="wallet"                 element={<Suspense fallback={<PortalFallback />}><CustomerWallet /></Suspense>} />
+                <Route path="seva"                   element={<Suspense fallback={<PortalFallback />}><CustomerSeva /></Suspense>} />
+                <Route path="seva/request"            element={<Suspense fallback={<PortalFallback />}><CustomerSevaRequest /></Suspense>} />
+                <Route path="seva/bookings"           element={<Suspense fallback={<PortalFallback />}><CustomerSevaBookings /></Suspense>} />
                 <Route path="credit"                 element={<Suspense fallback={<PortalFallback />}><CustomerCredit /></Suspense>} />
                 <Route path="schemes"                element={<Suspense fallback={<PortalFallback />}><CustomerSchemes /></Suspense>} />
                 <Route path="voice"                  element={<Suspense fallback={<PortalFallback />}><CustomerVoice /></Suspense>} />
@@ -338,7 +343,6 @@ function App() {
                 <Route path="settings"               element={<Suspense fallback={<PortalFallback />}><CustomerSettings /></Suspense>} />
                 <Route path="search"                 element={<Suspense fallback={<PortalFallback />}><CustomerSearch /></Suspense>} />
                 <Route path="categories"             element={<Suspense fallback={<PortalFallback />}><CustomerCategories /></Suspense>} />
-                <Route path="category/:categoryId"   element={<Suspense fallback={<PortalFallback />}><CustomerCategoryDetail /></Suspense>} />
                 <Route path="product/:productId"     element={<Suspense fallback={<PortalFallback />}><CustomerProductDetail /></Suspense>} />
                 <Route path="vendor/:vendorId"       element={<Suspense fallback={<PortalFallback />}><CustomerVendorProfile /></Suspense>} />
                 <Route path="vendors"                element={<Suspense fallback={<PortalFallback />}><CustomerVendors /></Suspense>} />

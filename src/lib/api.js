@@ -813,19 +813,93 @@ export async function getSchemes({ category } = {}) {
 // ── Seva Providers ────────────────────────────────────────
 
 export async function getSevaProviders({ villageId, category, page = 0, limit = 20 } = {}) {
+  // NOTE: this previously filtered on `is_active`, a column that has
+  // never existed on seva_providers — every call errored and silently
+  // fell back to the SEVA_PROVIDERS demo constant below. Nothing ever
+  // surfaced this because nothing in the customer-facing app called
+  // this function either (see the new customer Seva pages that now
+  // do). `is_verified` is the real gate: only KYC-approved providers
+  // should be customer-visible. Unavailable providers are still
+  // included (not hard-filtered out) — same as CustomerHome's vendor
+  // list, which shows closed vendors too rather than hiding them —
+  // callers can sort/badge on is_available instead.
   return safeQuery(() => {
     let q = supabase
       .from('seva_providers')
       .select('*')
-      .eq('is_active', true)
-      .eq('is_available', true)
+      .eq('is_verified', true)
       .range(page * limit, (page + 1) * limit - 1)
+      .order('is_available', { ascending: false })
       .order('rating', { ascending: false });
 
     if (villageId) q = q.eq('village_id', villageId);
     if (category)  q = q.eq('category', category);
     return q;
   }, SEVA_PROVIDERS, 'getSevaProviders');
+}
+
+// ── Seva Jobs (customer-facing: request/track/cancel/rate) ─
+//
+// seva_jobs_customer_insert/_read have allowed this since the very
+// first migration, but nothing in the app ever created or read a
+// customer's own request — the provider side (accept/complete) had
+// no real input. provider_id is left null/unassigned here on purpose:
+// this posts an OPEN request in the customer's own village+category,
+// the same open-jobs pool SevaJobs.jsx (provider side) already reads
+// from — not a request aimed at one specific provider.
+export async function createSevaJob(customerId, job) {
+  return safeQuery(
+    () => supabase
+      .from('seva_jobs')
+      .insert({
+        customer_id:   customerId,
+        customer_name: job.customerName || null,
+        village_id:    job.villageId,
+        title:         job.title,
+        description:   job.description || null,
+        category:      job.category,
+        amount:        job.amount,
+        urgency:       job.urgency || 'flexible',
+        address:       job.address || null,
+        phone:         job.phone || null,
+        scheduled_at:  job.scheduledAt || null,
+      })
+      .select()
+      .single(),
+    null,
+    'createSevaJob'
+  );
+}
+
+export async function getMySevaJobs(customerId) {
+  return safeQuery(
+    () => supabase
+      .from('seva_jobs')
+      .select('*, seva_providers(name, phone, category)')
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false }),
+    [],
+    'getMySevaJobs'
+  );
+}
+
+// Only lets go of an 'open', unclaimed request — see the RPC's own
+// guard (migration 090) for why an already-accepted job isn't
+// cancellable this way.
+export async function cancelSevaJob(jobId) {
+  return safeQuery(
+    () => supabase.rpc('cancel_seva_job', { p_job_id: jobId }),
+    null,
+    'cancelSevaJob'
+  );
+}
+
+export async function rateSevaJob(jobId, rating, comment = null) {
+  return safeQuery(
+    () => supabase.rpc('rate_seva_job', { p_job_id: jobId, p_rating: rating, p_comment: comment }),
+    null,
+    'rateSevaJob'
+  );
 }
 
 // ── Admin / Analytics ─────────────────────────────────────
