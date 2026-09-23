@@ -293,6 +293,7 @@ export default function RiderOnboarding() {
           vehicle_number: vehicleNo || null,
           zone:           zone      || null,
           kyc_status:     'submitted',
+          training_completed: true,
           is_online:      false,
           is_active:      true,
           is_verified:    false,

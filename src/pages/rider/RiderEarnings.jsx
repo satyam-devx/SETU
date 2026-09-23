@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { IndianRupee, TrendingUp, Star, Loader2 } from 'lucide-react';
+import { IndianRupee, TrendingUp, Star, Loader2, AlertCircle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -39,6 +39,7 @@ export default function RiderEarnings() {
   const [transactions, setTransactions] = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [period,       setPeriod]       = useState('week');
+  const [showWithdrawInfo, setShowWithdrawInfo] = useState(false);
 
   // ── Load rider + wallet transactions ────────────────────
   useEffect(() => {
@@ -199,9 +200,29 @@ export default function RiderEarnings() {
           )}
         </div>
 
-        <Button variant="outline" className="w-full gap-2">
+        <Button
+          variant="outline"
+          className="w-full gap-2"
+          onClick={() => setShowWithdrawInfo(true)}
+        >
           <IndianRupee className="w-4 h-4" /> Withdraw Earnings
         </Button>
+        {/* This used to be a plain tap-and-nothing-happens button — for
+            a page about real money, a dead click that gives no
+            feedback at all reads as broken rather than "not built
+            yet". There's no payout/bank-transfer mechanism anywhere in
+            this codebase to wire it to (no withdraw RPC, no bank
+            details on file), so the honest fix is telling the rider
+            that plainly instead of pretending to submit a request. */}
+        {showWithdrawInfo && (
+          <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+            <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              Self-serve withdrawals aren't available yet — contact SETU Support to request a payout of your earnings.
+            </div>
+            <button onClick={() => setShowWithdrawInfo(false)} className="text-amber-800 font-bold shrink-0">×</button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,7 +12,9 @@ import { useNavigate } from 'react-router-dom';
 import RiderNavigationMap from '@/components/maps/RiderNavigationMap';
 import { useAuth } from '@/lib/AuthContext';
 import { RiderAPI } from '@/lib/api';
-import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
+import { useStore, useRiderState } from '@/lib/store';
+import { useDataFetch } from '@/hooks/useDataFetch';
+import { useRiderLocation } from '@/hooks/useRiderLocation';
 import { supabase } from '@/lib/supabase';
 
 const ACTIVE_STATUSES = ['accepted', 'picked_up', 'on_the_way', 'ready'];
@@ -33,8 +35,40 @@ export default function RiderDeliveries() {
     });
   }, [user?.id]);
 
-  // ── Live active orders ───────────────────────────────────
-  const { orders: liveOrders, isLoading: ordersLoading } = useRealtimeOrders('rider', riderId);
+  // Live GPS position for the map's rider marker — this page's map
+  // usage was passing a `riderUuid` prop that RiderNavigationMap has
+  // never actually accepted (only currentLocation/destination/onArrived
+  // are used), so the rider's own position never appeared or tracked
+  // on this specific map. isOnline reads from the same shared store
+  // Dashboard's online toggle writes to, so no duplicate toggle needed
+  // here.
+  const { isOnline } = useRiderState();
+  const { location: currentLocation } = useRiderLocation(user?.id, isOnline);
+
+  // ── Active orders ──────────────────────────────────────────
+  // RiderLayout already holds the one live realtime channel for this
+  // portal and keeps state.orders current for every rider page. This
+  // page used to open a SECOND subscription on the exact same topic
+  // via useRealtimeOrders — the same duplicate-subscription bug found
+  // and fixed on RiderDashboard (which is also this page's twin: both
+  // raced the layout to subscribe/unsubscribe the same channel name
+  // while riderId was still resolving). A plain REST fetch (which also
+  // now includes the customer's phone for the "call customer" button
+  // below — see getOrdersByRider) seeds/refreshes the store instead;
+  // live updates still arrive through the layout's single channel.
+  const { state, dispatch } = useStore();
+  const { data: fetchedOrders, isLoading: ordersLoading } = useDataFetch(
+    () => RiderAPI.getOrders(riderId, { limit: 50 }),
+    [riderId],
+    { cacheKey: `rider-orders-${riderId}`, enabled: !!riderId }
+  );
+  useEffect(() => {
+    if (fetchedOrders?.length) dispatch({ type: 'SET_ORDERS', payload: { orders: fetchedOrders } });
+  }, [fetchedOrders, dispatch]);
+  const liveOrders = useMemo(
+    () => riderId ? state.orders.filter(o => (o.riderId ?? o.rider_id) === riderId) : [],
+    [state.orders, riderId]
+  );
 
   const activeDeliveries = liveOrders.filter(o =>
     ACTIVE_STATUSES.includes(o.status)
@@ -128,30 +162,44 @@ export default function RiderDeliveries() {
                     Close Map
                   </button>
                 </div>
+                {/* customer_location has never existed on an order — there's
+                    nowhere it could come from: customer_addresses only ever
+                    stores text (label/address/landmark), never
+                    coordinates, so this always silently fell back to the
+                    same fixed point regardless of where the delivery
+                    actually is. Kept as a fallback so the map still centers
+                    on something sensible, but now says so honestly instead
+                    of quietly pretending the pin is the real address —
+                    rely on the address text on the order card below. */}
+                {!navigating.customer_location && (
+                  <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-700">
+                    Exact delivery pin isn't available — map is centered on the area only. Use the address on the order card.
+                  </div>
+                )}
                 <div className="h-64 rounded-2xl overflow-hidden border-2 border-primary/20 shadow-lg">
                   <RiderNavigationMap
-                    riderUuid={riderId}
-                    destination={navigating.customer_location ?? { lat: 26.35, lng: 86.07 }}
+                    currentLocation={currentLocation}
+                    destination={navigating.customer_location ?? { lat: 26.35, lng: 86.07, address: navigating.delivery_address }}
                   />
                 </div>
               </div>
             ) : (
-              <div className="p-4 bg-primary/5 rounded-2xl border border-primary/10 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                    <Navigation className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-tight opacity-70">Queue</p>
-                    <p className="text-sm font-black">{activeDeliveries.length} Orders Pending</p>
-                  </div>
+              <div className="p-4 bg-primary/5 rounded-2xl border border-primary/10 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                  <Navigation className="w-5 h-5 text-primary" />
                 </div>
-                <div className="text-right">
-                  <p className="text-xs font-bold text-green-600">
-                    ₹{(activeDeliveries.length * 40).toLocaleString()}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground font-medium">Est. Fee</p>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-tight opacity-70">Queue</p>
+                  <p className="text-sm font-black">{activeDeliveries.length} Orders Pending</p>
                 </div>
+                {/* Removed a "Est. Fee" figure that was activeDeliveries.length
+                    * ₹40 — a flat per-order guess with no connection to how
+                    * rider payouts actually work (Onboarding's own Earnings
+                    * Structure shows distance-tiered ₹30/₹50/₹70, which isn't
+                    * data available per order here). One made-up number
+                    * standing in for another isn't a real fix — the real
+                    * figure belongs on the Earnings page, which computes it
+                    * from actual wallet_transactions. */}
               </div>
             )}
 

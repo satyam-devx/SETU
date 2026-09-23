@@ -389,12 +389,12 @@ export async function getOrdersByVendor(vendorId, { page = 0, limit = 20, status
 }
 
 export async function getOrdersByRider(riderId, { page = 0, limit = 20, status } = {}) {
-  return safeQuery(() => {
+  return safeQuery(async () => {
     let q = supabase
       .from('orders')
       .select(`
-        id, order_number, status, total, payment_method, is_cod,
-        customer_name, delivery_address, vendor_name, created_at,
+        id, order_number, status, total, payment_method, is_cod, delivery_fee,
+        customer_id, customer_name, delivery_address, vendor_name, created_at,
         order_items(id, name, qty)
       `)
       .eq('rider_id', riderId)
@@ -402,7 +402,33 @@ export async function getOrdersByRider(riderId, { page = 0, limit = 20, status }
       .order('created_at', { ascending: false });
 
     if (status) q = q.eq('status', status);
-    return q;
+    const { data: orders, error } = await q;
+    if (error || !orders?.length) return { data: orders, error };
+
+    // Customer phone (for the rider's "call customer" buttons) lives on
+    // profiles, not orders — orders.customer_id references auth.users,
+    // not profiles, so PostgREST can't auto-embed it as a nested
+    // select; fetched separately and merged in here instead. Only
+    // active orders are eligible under RLS (migration 086's
+    // profiles_rider_read_active_customer policy), so this only ever
+    // asks for customers on orders that are actually still active —
+    // asking for a delivered/cancelled order's customer would just
+    // come back empty anyway.
+    const activeCustomerIds = [...new Set(
+      orders.filter(o => !['delivered', 'cancelled'].includes(o.status)).map(o => o.customer_id).filter(Boolean)
+    )];
+    if (activeCustomerIds.length === 0) return { data: orders, error: null };
+
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, phone')
+      .in('id', activeCustomerIds);
+    const phoneById = new Map((profiles ?? []).map(p => [p.id, p.phone]));
+
+    return {
+      data: orders.map(o => ({ ...o, customer_phone: phoneById.get(o.customer_id) ?? null })),
+      error: null,
+    };
   }, ORDERS.filter(o => o.riderId === riderId), 'getOrdersByRider');
 }
 
@@ -536,6 +562,20 @@ export async function getRiderByUserId(userId) {
     () => supabase.from('riders').select('*').eq('user_id', userId).maybeSingle(),
     null,
     'getRiderByUserId'
+  );
+}
+
+// Plain UPDATE on an existing rider row — RiderSettings.jsx's toggles
+// (migration 086's riders.preferences) previously had no persistence
+// call of any kind. Mirrors updateVendorSettings's own reasoning: a
+// plain .update().eq('id', riderId) can never take an insert path the
+// way an upsert could, and this only ever needs to touch a row that
+// already exists (the settings page can't render without one).
+export async function updateRiderSettings(riderId, updates) {
+  return safeQuery(
+    () => supabase.from('riders').update(updates).eq('id', riderId).select().single(),
+    null,
+    'updateRiderSettings'
   );
 }
 
@@ -1159,6 +1199,38 @@ export async function updateRiderLocation(riderId, lat, lng, isOnDelivery = fals
   );
 }
 
+// SOS: real, persisted, admin-visible alert (migration 086's
+// sos_alerts table) instead of a local-only boolean. Rider's own
+// active alert, if any, so the UI can reflect real state on reload
+// rather than always starting from "off".
+export async function createSOSAlert(riderId, location) {
+  return safeQuery(
+    () => supabase.from('sos_alerts').insert({
+      rider_id: riderId,
+      lat: location?.lat ?? null,
+      lng: location?.lng ?? null,
+    }).select().single(),
+    null,
+    'createSOSAlert'
+  );
+}
+
+export async function cancelSOSAlert(alertId) {
+  return safeQuery(
+    () => supabase.from('sos_alerts').update({ status: 'cancelled' }).eq('id', alertId).select().single(),
+    null,
+    'cancelSOSAlert'
+  );
+}
+
+export async function getActiveSOSAlert(riderId) {
+  return safeQuery(
+    () => supabase.from('sos_alerts').select('*').eq('rider_id', riderId).eq('status', 'active').maybeSingle(),
+    null,
+    'getActiveSOSAlert'
+  );
+}
+
 export const RiderAPI = {
   getProfile:         (userId)                        => getRiderByUserId(userId),
   updateStatus:       (riderId, online)               => updateRiderStatus(riderId, online),
@@ -1171,6 +1243,9 @@ export const RiderAPI = {
   getOrders:          (riderId, opts)                 => getOrdersByRider(riderId, opts),
   submitCODDeposit:   (riderId, amount, denomMap)     => submitCODDeposit(riderId, amount, denomMap),
   getEarnings:        (userId, opts)                  => getRiderEarnings(userId, opts),
+  createSOSAlert:     (riderId, location)             => createSOSAlert(riderId, location),
+  cancelSOSAlert:     (alertId)                       => cancelSOSAlert(alertId),
+  getActiveSOSAlert:  (riderId)                       => getActiveSOSAlert(riderId),
 };
 
 export const SevaAPI = {

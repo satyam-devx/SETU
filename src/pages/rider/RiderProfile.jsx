@@ -38,6 +38,25 @@ export default function RiderProfile() {
     });
   }, [user?.id]);
 
+  // ── Real per-document verification status ─────────────────
+  // The checklist below used to read rider.aadhaar_verified,
+  // rider.dl_verified, rider.rc_verified and rider.bg_check_done —
+  // none of which have ever existed as columns on riders, so every
+  // one of them silently evaluated to undefined -> false, permanently,
+  // for every rider. kyc_records (populated by RiderOnboarding.jsx's
+  // document uploads — this session's earlier fix) has the real,
+  // per-document status; fetched here and matched by type below.
+  const [kycRecords, setKycRecords] = useState([]);
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase
+      .from('kyc_records')
+      .select('type, status')
+      .eq('user_id', user.id)
+      .then(({ data }) => setKycRecords(data ?? []));
+  }, [user?.id]);
+  const kycVerified = (type) => kycRecords.some(r => r.type === type && r.status === 'verified');
+
   // ── Save phone ───────────────────────────────────────────
   const handleSave = async () => {
     if (!rider?.id) return;
@@ -92,12 +111,23 @@ export default function RiderProfile() {
     ? new Date(rider.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
     : '—';
 
+  // Aadhaar/DL/Vehicle RC now come from real kyc_records rows (see
+  // above) instead of columns that never existed on riders and always
+  // evaluated to false. "Background Check" has no dedicated tracking
+  // anywhere (Police Verification is explicitly admin-handled per
+  // Onboarding's own copy, with no digital submission path) — using
+  // the rider's real overall kyc_status as the closest honest signal
+  // rather than a column that doesn't exist either. "Training" now
+  // reads the real training_completed flag (migration 086, set when
+  // RiderOnboarding's Step 4 genuinely required watching all training
+  // videos) instead of a rating threshold that had no logical
+  // connection to whether training was ever completed.
   const verifications = [
-    { label: 'Aadhaar',          done: !!rider.aadhaar_verified   },
-    { label: 'Driving License',  done: !!rider.dl_verified        },
-    { label: 'Vehicle RC',       done: !!rider.rc_verified        },
-    { label: 'Background Check', done: !!rider.bg_check_done      },
-    { label: 'Training',         done: (rider.rating ?? 0) >= 4.5 },
+    { label: 'Aadhaar',          done: kycVerified('aadhaar')          },
+    { label: 'Driving License',  done: kycVerified('driving_license')  },
+    { label: 'Vehicle RC',       done: kycVerified('vehicle_rc')       },
+    { label: 'Background Check', done: rider.kyc_status === 'approved' },
+    { label: 'Training',         done: !!rider.training_completed      },
   ];
 
   return (

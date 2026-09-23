@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   MapPin, Navigation, IndianRupee, Package,
-  Clock, AlertTriangle, CheckCircle, Phone, Loader2
+  Clock, AlertTriangle, CheckCircle, Phone, Loader2, ChevronRight,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,12 +11,10 @@ import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
 import StatusBadge from '@/components/shared/StatusBadge';
-import { useRiderState } from '@/lib/store';
+import { useRiderState, useStore } from '@/lib/store';
 import { useAuth } from '@/lib/AuthContext';
 import { useDataFetch } from '@/hooks/useDataFetch';
-import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
 import { useRiderLocation } from '@/hooks/useRiderLocation';
-import RiderNavigationMap from '@/components/maps/RiderNavigationMap';
 import { RiderAPI } from '@/lib/api';
 
 // ── Loading skeleton ──────────────────────────────────────
@@ -43,7 +41,15 @@ export default function RiderDashboard() {
   );
   const riderId = rider?.id ?? null;
 
-  const { location: currentLocation } = useRiderLocation(riderId, isOnline);
+  // useRiderLocation resolves riders.id internally from the auth user
+  // id passed in — it does its own `riders.select('id').eq('user_id',
+  // userId)` lookup. This was passing riderId (already riders.id, the
+  // PK) instead of user.id (auth.users.id, what user_id actually
+  // stores), so that internal lookup could never match anything —
+  // resolvedRiderId never resolved, the GPS watch never started, and
+  // currentLocation has been permanently null. No rider's live
+  // location has ever actually been tracked.
+  const { location: currentLocation } = useRiderLocation(user?.id, isOnline);
   const [accepting, setAccepting]     = useState(null);
   const [delivering, setDelivering]   = useState(null);
   const [availableOrders, setAvailableOrders] = useState([]);
@@ -52,9 +58,33 @@ export default function RiderDashboard() {
   const riderName = rider?.name ?? profile?.name ?? 'Rider';
   const riderZone = rider?.zone ?? profile?.zone  ?? 'Village Zone';
 
-  // ── Realtime: orders assigned to this rider (active) ──────
-  const { orders: myOrders, isLoading: loadingMine, refetch: refetchMine } =
-    useRealtimeOrders({ mode: 'rider', riderId });
+  // ── My active orders ───────────────────────────────────────
+  // RiderLayout already holds the one live realtime channel for this
+  // portal (`orders-rider-{riderId}`) and keeps state.orders current
+  // for every rider page. This page used to open a SECOND subscription
+  // on that exact same topic via useRealtimeOrders — the same bug
+  // already found and fixed in the vendor portal's Orders page: while
+  // riderId is still resolving (null -> rider.id), this component and
+  // the layout race to subscribe/unsubscribe the same channel name
+  // within the same tick, which is exactly the kind of thing that
+  // crashes a page intermittently — and this is the FIRST screen a
+  // rider sees after logging in, not a secondary page, so it's worse
+  // here than it was for vendor. A plain REST fetch seeds/refreshes
+  // the store instead; live updates still arrive through the layout's
+  // single channel.
+  const { state, dispatch } = useStore();
+  const { data: fetchedOrders, isLoading: loadingMine, refetch: refetchMine } = useDataFetch(
+    () => RiderAPI.getOrders(riderId, { limit: 50 }),
+    [riderId],
+    { cacheKey: `rider-orders-${riderId}`, enabled: !!riderId }
+  );
+  useEffect(() => {
+    if (fetchedOrders?.length) dispatch({ type: 'SET_ORDERS', payload: { orders: fetchedOrders } });
+  }, [fetchedOrders, dispatch]);
+  const myOrders = React.useMemo(
+    () => riderId ? state.orders.filter(o => (o.riderId ?? o.rider_id) === riderId) : [],
+    [state.orders, riderId]
+  );
 
   // ── Available (unassigned, ready) orders in the rider's village ──
   // These are NOT in the rider's realtime store (which is filtered to
@@ -66,6 +96,60 @@ export default function RiderDashboard() {
   }, [riderId, rider?.village_id, isOnline]);
 
   useEffect(() => { loadAvailable(); }, [loadAvailable]);
+
+  // ── Auto-decline countdown ──────────────────────────────────
+  // The card already claimed "45s to auto-decline" next to each
+  // available order, but nothing ever actually counted down or
+  // removed anything — the text was decorative. This is a real,
+  // ticking per-order countdown; hitting zero genuinely removes that
+  // order from view here (an order card no longer being able to be
+  // accepted from THIS phone is exactly what "auto-decline" claims;
+  // the order itself stays available for other riders to pick up
+  // through village-wide polling regardless — this only affects what
+  // this rider currently sees).
+  const DECLINE_SECONDS = 45;
+  const [countdowns, setCountdowns] = useState({});
+
+  useEffect(() => {
+    setCountdowns(prev => {
+      const next = { ...prev };
+      for (const o of availableOrders) {
+        if (!(o.id in next)) next[o.id] = DECLINE_SECONDS;
+      }
+      for (const id of Object.keys(next)) {
+        if (!availableOrders.some(o => o.id === id)) delete next[id];
+      }
+      return next;
+    });
+  }, [availableOrders]);
+
+  useEffect(() => {
+    if (Object.keys(countdowns).length === 0) return;
+    const t = setInterval(() => {
+      setCountdowns(prev => {
+        const next = {};
+        let expired = [];
+        for (const [id, secs] of Object.entries(prev)) {
+          if (secs <= 1) expired.push(id);
+          else next[id] = secs - 1;
+        }
+        if (expired.length) {
+          setAvailableOrders(cur => cur.filter(o => !expired.includes(o.id)));
+        }
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [countdowns]);
+
+  const handleDecline = (orderId) => {
+    setAvailableOrders(prev => prev.filter(o => o.id !== orderId));
+    setCountdowns(prev => {
+      const next = { ...prev };
+      delete next[orderId];
+      return next;
+    });
+  };
 
   // ── Accept order ──────────────────────────────────────────
   const handleAccept = async (orderId) => {
@@ -133,12 +217,20 @@ export default function RiderDashboard() {
       )}
 
       {/* Stats */}
+      {/* "Today's Earnings" used to also pass trend="15% above avg" +
+          trendUp — StatCard's actual props are trend ('up'/'neutral')
+          + trendValue (the text), not trendUp + arbitrary trend text.
+          Passing the wrong shape meant trend evaluated to "not up, not
+          neutral" and rendered a red down-arrow with no text at all —
+          a real rendering bug on top of the number itself being a
+          hardcoded claim with nothing behind it (no data source this
+          rider's earnings were ever actually compared against).
+          Removed rather than fixed with a real comparison — there's no
+          "average rider earnings" query anywhere to compute one from. */}
       <div className="px-4 py-3 grid grid-cols-2 gap-2">
         <StatCard
           title="Today's Earnings"
           value={`₹${rider?.today_earnings ?? 0}`}
-          trend="15% above avg"
-          trendUp
           icon={IndianRupee}
         />
         <StatCard
@@ -149,13 +241,27 @@ export default function RiderDashboard() {
         />
       </div>
 
-      {/* Map */}
-      <div className="px-4 mb-4 h-48">
-        <RiderNavigationMap
-          currentLocation={currentLocation}
-          destination={{ lat: 26.355, lng: 86.075, address: 'Customer Address' }}
-        />
-      </div>
+      {/* Quick nav — the small embedded preview map here always showed
+          a single hardcoded point (26.355, 86.075, "Customer Address")
+          regardless of which order was actually active, which is
+          actively misleading rather than just incomplete — a map that
+          never reflects reality is worse than no map. Real per-order
+          navigation (with the rider's live position) already lives on
+          the Deliveries page; this links there instead of duplicating
+          a fake preview. */}
+      {myOrders.length > 0 && (
+        <div className="px-4 mb-4">
+          <Link to="/rider/deliveries">
+            <Card className="p-3 border-border flex items-center justify-between hover:bg-muted/40 transition-colors">
+              <div className="flex items-center gap-2">
+                <Navigation className="w-4 h-4 text-primary shrink-0" />
+                <span className="text-sm font-medium">Navigate your next delivery</span>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+            </Card>
+          </Link>
+        </div>
+      )}
 
       {/* Active deliveries */}
       <div className="px-4 mb-4">
@@ -196,7 +302,13 @@ export default function RiderDashboard() {
                     <span className="text-sm font-bold">₹{total}</span>
                   </div>
                   <div className="flex gap-1">
-                    <Button size="sm" variant="outline" className="h-7 w-7 p-0">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 w-7 p-0"
+                      disabled={!(order.customerPhone ?? order.customer_phone)}
+                      onClick={() => { window.location.href = `tel:${order.customerPhone ?? order.customer_phone}`; }}
+                    >
                       <Phone className="w-3 h-3" />
                     </Button>
                     {canDeliver && (
@@ -254,7 +366,7 @@ export default function RiderDashboard() {
                   <div className="flex items-center justify-between mt-2">
                     <div className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Clock className="w-3 h-3" />
-                      <span>45s to auto-decline</span>
+                      <span>{countdowns[order.id] ?? DECLINE_SECONDS}s to auto-decline</span>
                     </div>
                     <div className="flex gap-1">
                       <Button
@@ -267,7 +379,12 @@ export default function RiderDashboard() {
                           ? <Loader2 className="w-3 h-3 animate-spin" />
                           : 'Accept'}
                       </Button>
-                      <Button size="sm" variant="outline" className="h-7 text-xs">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => handleDecline(order.id)}
+                      >
                         Decline
                       </Button>
                     </div>
