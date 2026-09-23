@@ -156,7 +156,7 @@ begin
   v := create_order(
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
     '[{"product_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","qty":2}]'::jsonb,
-    'COD', 'House 1', 'vtest', 'ffffffff-ffff-ffff-ffff-ffffffffffff', false
+    'COD', 'House 1', 'vtest', null, false, null, null, 'ffffffff-ffff-ffff-ffff-ffffffffffff'
   );
   if not (v->>'success')::boolean then raise exception 'FAIL A2: create_order failed: %', v->>'error'; end if;
   if (v->>'subtotal')::numeric <> 200 then raise exception 'FAIL A2: subtotal expected 200 got %', v->>'subtotal'; end if;
@@ -257,7 +257,7 @@ begin
   begin
     v := create_order('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
          '[{"product_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","qty":2}]'::jsonb,
-         'COD','House 1','vtest','ffffffff-ffff-ffff-ffff-ffffffffffff', true);
+         'COD','House 1','vtest',null, true, null, null, 'ffffffff-ffff-ffff-ffff-ffffffffffff');
     raise exception 'FAIL C1: free discount granted with no credit account: %', v::text;
   exception
     when others then
@@ -276,7 +276,7 @@ begin
   begin
     v := create_order('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
          '[{"product_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","qty":2}]'::jsonb,
-         'COD','House 1','vtest','ffffffff-ffff-ffff-ffff-ffffffffffff', true);
+         'COD','House 1','vtest',null, true, null, null, 'ffffffff-ffff-ffff-ffff-ffffffffffff');
     raise exception 'FAIL C2: discount granted despite insufficient credit: %', v::text;
   exception
     when others then
@@ -295,7 +295,7 @@ declare v jsonb;
 begin
   v := create_order('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
        '[{"product_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","qty":2}]'::jsonb,
-       'COD','House 1','vtest','ffffffff-ffff-ffff-ffff-ffffffffffff', true);
+       'COD','House 1','vtest',null, true, null, null, 'ffffffff-ffff-ffff-ffff-ffffffffffff');
   if not (v->>'success')::boolean then raise exception 'FAIL C3: create_order failed: %', v->>'error'; end if;
   if (v->>'credit_discount')::numeric <> 20  then raise exception 'FAIL C3: discount expected 20 got %', v->>'credit_discount'; end if;
   if (v->>'total')::numeric           <> 182 then raise exception 'FAIL C3: total expected 182 got %',   v->>'total'; end if;
@@ -325,7 +325,7 @@ begin
   -- subtotal 100, delivery 20 (<200), platform round(1.0)=1, total 121.
   v := create_order('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
        '[{"product_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","qty":1}]'::jsonb,
-       'wallet','House 1','vtest','ffffffff-ffff-ffff-ffff-ffffffffffff',false);
+       'wallet','House 1','vtest',null,false,null,null,'ffffffff-ffff-ffff-ffff-ffffffffffff');
   if not (v->>'success')::boolean then raise exception 'FAIL D: create_order failed: %', v->>'error'; end if;
   if (v->>'total')::numeric <> 121 then raise exception 'FAIL D: total expected 121 got %', v->>'total'; end if;
   insert into _t values ('D_order', v->>'id');
@@ -369,7 +369,7 @@ begin
   -- subtotal 100 (<200) → delivery 20; platform round(100*5/100)=5; total 125.
   v := create_order('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
        '[{"product_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","qty":1}]'::jsonb,
-       'COD','House 1','vtest','ffffffff-ffff-ffff-ffff-ffffffffffff',false);
+       'COD','House 1','vtest',null,false,null,null,'ffffffff-ffff-ffff-ffff-ffffffffffff');
   if not (v->>'success')::boolean then raise exception 'FAIL E: create_order failed: %', v->>'error'; end if;
   if (v->>'platform_fee')::numeric <> 5 then raise exception 'FAIL E: platform_fee expected 5 (5%% via config) got %', v->>'platform_fee'; end if;
   if (v->>'total')::numeric <> 125 then raise exception 'FAIL E: total expected 125 got %', v->>'total'; end if;
@@ -423,7 +423,7 @@ declare v jsonb;
 begin
   v := create_order('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
        '[{"product_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","qty":1}]'::jsonb,
-       'COD','House 1','vtest','ffffffff-ffff-ffff-ffff-ffffffffffff',false);
+       'COD','House 1','vtest',null,false,null,null,'ffffffff-ffff-ffff-ffff-ffffffffffff');
   if not (v->>'success')::boolean then raise exception 'FAIL G: create_order failed: %', v->>'error'; end if;
   insert into _t values ('G_order', v->>'id');
 end $$;
