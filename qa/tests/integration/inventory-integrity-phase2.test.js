@@ -106,7 +106,7 @@ describe('Phase 2 — inventory integrity source contracts', () => {
     expect(PAYMENT).toMatch(/update orders set[\s\S]*payment_status = 'paid'/i);
     expect(MIGRATION).toMatch(/trg_commit_inventory_on_payment/i);
     expect(MIGRATION).toMatch(/the database transaction is the recovery boundary/i);
-    expect(MIGRATION).toMatch(/legacy fallback/i);
+    expect(MIGRATION).toMatch(/legacy_fallback/i);
   });
 
   it('backfills active pre-Phase-2 orders and preserves committed state for already-paid orders', () => {

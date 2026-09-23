@@ -144,7 +144,8 @@ create or replace function create_order(
   p_delivery_notes  text    default null,
   p_use_credit      boolean default false,
   p_coupon_code     text    default null,
-  p_idempotency_key text    default null
+  p_idempotency_key text    default null,
+  p_address_id      uuid    default null
 )
 returns jsonb
 language plpgsql
@@ -367,7 +368,22 @@ begin
     update coupons set used_count = used_count + 1, updated_at = now() where id = v_coupon_id;
   end if;
 
-  
+  insert into audit_log (actor_id, actor, action, target, detail)
+  values (v_uid, coalesce(v_customer_name, 'customer'), 'order_created', v_order_number,
+    format('subtotal=₹%s credit=₹%s coupon=₹%s delivery=₹%s platform=₹%s total=₹%s method=%s zone=%s',
+           v_subtotal, v_credit_discount, v_coupon_discount, v_delivery_fee, v_platform_fee, v_total, p_payment_method, v_zone.id));
+
+  return jsonb_build_object(
+    'success', true, 'id', v_order_id, 'order_number', v_order_number,
+    'status', 'pending', 'payment_status', 'pending', 'payment_method', p_payment_method,
+    'vendor_id', v_vendor.id, 'vendor_name', v_vendor.name,
+    'subtotal', v_subtotal, 'credit_discount', v_credit_discount, 'coupon_discount', v_coupon_discount,
+    'delivery_fee', v_delivery_fee, 'platform_fee', v_platform_fee, 'total', v_total,
+    'address_id', v_address.id, 'delivery_zone_id', v_zone.id
+  );
+end;
+$$;
+
 insert into audit_log(actor_id,actor,action,target,detail) values (null,'system','security_migration','address_serviceability','Phase 6: customer-owned address binding, delivery zones, vendor/rider service zones, and immutable order address snapshots.');
 
 -- Dispatch matching now respects the customer's immutable delivery zone and

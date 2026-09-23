@@ -69,7 +69,7 @@ describe('Phase 1 payment integrity — source contracts', () => {
     expect(cancelMigration).toContain("elsif v_order.payment_method = 'UPI' then");
     expect(cancelMigration).toContain("v_refund_method := 'razorpay';");
     expect(cancelMigration).toContain('order_refunds');
-    expect(cancelMigration).toContain('do NOT change payment_status to refunded');
+    expect(cancelMigration).toMatch(/do not change payment_status to refunded/i);
     expect(cancelMigration).not.toContain("v_order.payment_method in ('UPI', 'wallet')");
   });
 

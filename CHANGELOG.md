@@ -402,3 +402,9 @@ Consolidated from `SECURITY_FIXES.md` ("Round 2" audit response) and prior sessi
 - Fixed Phase 1 payment-integrity QA assertion to tolerate normal PostgreSQL whitespace while still requiring the unique `provider_payment_id` constraint.
 - Fixed Phase 2–7 integration static tests to resolve the repository root from `import.meta.url` instead of `process.cwd()`. The QA workflow runs Vitest with `working-directory: qa`, so the previous paths incorrectly looked under `qa/supabase/...` and caused six suites to fail before executing assertions.
 - Kept test sources independent of CI working-directory so local `npm test` and GitHub Actions use the same paths.
+
+### 2026-09-23 — CI / Deploy / QA follow-up fixes
+
+- Fixed Phase 6 migration 095 `create_order()` definition: restored the missing function body terminator/return path and added the required optional `p_address_id` 10th parameter so the Phase 6 address-binding logic and final grant target the same function signature.
+- Converted Phase 3–6 static integration contract files into real Vitest suites; previously they executed assertions at module scope and Vitest reported `No test suite found`.
+- Relaxed two brittle source-contract assertions to match the actual implementation semantics/casing (`legacy_fallback` and the UPI refund confirmation comment) without changing runtime behavior.
