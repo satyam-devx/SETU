@@ -342,3 +342,57 @@ Consolidated from `SECURITY_FIXES.md` ("Round 2" audit response) and prior sessi
 - Initial React/Vite scaffold, mock-data-only demo across 7 portals (Customer, Vendor, Rider, Seva, Anchor, Admin, Super Admin) + onboarding flows.
 - Full PostgreSQL schema (18 tables), RLS policies, atomic RPCs (`place_order`, `pay_from_wallet`).
 - Real Supabase backend, Razorpay Edge Functions, Realtime hooks, FCM push, Whisper transcription, Anthropic API integration replacing the original stub.
+
+## 2026-09-23 — Phase 1 Payment Integrity
+
+- Added durable `payment_intents` for Razorpay checkout-attempt lifecycle and active-attempt reuse.
+- Added canonical `payment_transactions` ledger keyed by Razorpay payment ID.
+- Added stateful webhook processing metadata, retry counters, and dead-letter/manual-review state.
+- Added atomic capture reconciliation that locks the order before deciding between confirmation and refund.
+- Fixed the captured-after-cancel race: cancelled orders are never credited to vendor escrow; a durable Razorpay refund request is created instead.
+- Corrected paid UPI cancellation to use Razorpay refunds rather than SETU wallet credit.
+- Added idempotent Razorpay refund claim/finalize/failure RPCs and `process-order-refund` Edge Function.
+- Added recovery discovery for existing Razorpay refunds before issuing another refund after a stale processing lease.
+- Added authenticated `checkout_open` payment-intent transition.
+- Added Phase 1 payment-integrity/race contract tests.
+
+## 2026-09-23 — Phase 2: Inventory Integrity
+
+- Added `inventory_reservations` as the canonical inventory-hold ledger.
+- New order items automatically create backed reservations; the existing atomic `products.stock` decrement remains the physical sellable-stock boundary, so reservations do not double-decrement inventory.
+- Added reservation lifecycle: `reserved → committed`, `reserved → released/expired`, and `committed → released` for post-payment cancellation/restock.
+- Added 15-minute expiry for UPI/wallet/credit checkout attempts and a 24-hour operational hold for COD orders.
+- Added service-role `expire_stale_inventory_reservations()` worker with `FOR UPDATE SKIP LOCKED`, scheduled every minute through `pg_cron`.
+- Added atomic inventory release to cancellation, including protection for the existing `update_order_status(..., 'cancelled')` path and a legacy fallback for pre-Phase-2 orders with no reservation ledger.
+- Added automatic reservation commit when the authoritative order payment status becomes `paid`/`collected`; stock is not decremented twice.
+- Added active-order backfill for existing orders so the reservation ledger covers current inventory state without guessing about cancelled history.
+- Added Phase 2 inventory source-contract/concurrency tests covering reservation creation, expiry, release, commit, cancellation races, payment timeout, partial-failure recovery, and trusted-server mutation boundaries.
+- Validation: migration validator passes all 90 migrations; JS test file syntax and Phase 2 static source checks pass. Full live Postgres/Razorpay concurrency tests still require a running Supabase/Postgres environment.
+
+## Phase 3 — Delivery Integrity
+- Added hashed, salted delivery OTPs with 15-minute expiry and five-attempt lockout.
+- Bound delivery completion to the order's assigned active rider.
+- Added delivery attempt audit ledger and private delivery-proof storage.
+- Added idempotent delivery financial finalization ledger.
+- Replaced rider direct-delivery path with OTP + proof completion RPC.
+- Customer order detail now exposes the delivery OTP only to the authenticated order owner.
+- Rider dashboard now requires OTP and a delivery proof photo before finalizing delivery.
+
+## Phase 4 — Dispatch Integrity
+
+- Added server-side `dispatch_events`, `rider_offers`, and `dispatch_assignment_events` ledgers.
+- Vendor `ready` transition now emits a canonical ready-order dispatch event and notifies the vendor that rider matching has started.
+- Added deterministic rider matching using active/verified/online riders in the order village, excluding riders with active deliveries and riders already offered the dispatch.
+- Added 45-second rider offers with atomic accept/decline handling and server-side expiry validation.
+- Added one-minute timeout processing with reassignment to the next eligible rider and explicit dispatch-exhausted state.
+- Rider assignment now occurs only through an authorized offer response; legacy `claim_order` is retained as a compatibility wrapper and cannot bypass the offer system.
+- Added realtime publication for dispatch and assignment ledgers plus rider-side realtime offer refresh.
+- Added vendor/customer/rider in-app notifications for ready dispatch, rider offers, assignment, and dispatch exhaustion.
+- Added Phase 4 source-contract/concurrency-oriented tests in `qa/tests/integration/dispatch-integrity-phase4.test.js`.
+
+## Phase 7 — Analytics & Observability
+- Added immutable order, payment, delivery, and financial event streams.
+- Added append-only mutation guards and canonical event triggers.
+- Added derived daily analytics views from immutable facts.
+- Added admin reconciliation dashboard RPC covering payment dead letters, unmatched captures, refunds, settlements, payout exceptions, and delivery/financial gaps.
+- Added admin analytics reconciliation cards and API client integration.

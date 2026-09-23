@@ -14,7 +14,7 @@ import { useRealtimeOrder } from '@/hooks/useRealtimeOrders';
 import { useStore, canTransition, ORDER_STATUS } from '@/lib/store';
 import { useAuth } from '@/lib/AuthContext';
 import { useDataFetch } from '@/hooks/useDataFetch';
-import { getOrderById, rateOrder, cancelOrderWithRefund } from '@/lib/api';
+import { getOrderById, rateOrder, cancelOrderWithRefund, getDeliveryOTP } from '@/lib/api';
 
 // ── Timeline config per status ──────────────────────────
 const TIMELINE = {
@@ -117,6 +117,9 @@ export default function CustomerOrderDetail() {
   const navigate     = useNavigate();
   const { state, dispatch } = useStore();
   const { user } = useAuth();
+  const [deliveryOtp, setDeliveryOtp] = useState(null);
+  const [otpError, setOtpError] = useState('');
+  const [otpLoading, setOtpLoading] = useState(false);
 
   // 1. Check global store first (hydrated by CustomerOrders)
   const storeOrder = state.orders.find(o => o.id === orderId);
@@ -329,6 +332,40 @@ export default function CustomerOrderDetail() {
           <p className="text-sm text-red-600 mt-2 font-medium">Reason: {cancelReason2}</p>
         )}
       </div>
+
+      {(order.status === 'picked_up' || order.status === 'on_the_way') && (
+        <div className="px-4 pt-4">
+          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold">Delivery OTP</p>
+                <p className="text-xs text-muted-foreground mt-1">Show this code to your rider only when they arrive.</p>
+              </div>
+              <Button
+                size="sm"
+                disabled={otpLoading}
+                onClick={async () => {
+                  setOtpLoading(true); setOtpError('');
+                  const { data, error } = await getDeliveryOTP(orderId);
+                  if (error) setOtpError(error.message);
+                  else if (data?.otp) setDeliveryOtp(data);
+                  else setOtpError(data?.error || 'Could not generate OTP');
+                  setOtpLoading(false);
+                }}
+              >
+                {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : deliveryOtp?.otp ? 'Refresh' : 'Show OTP'}
+              </Button>
+            </div>
+            {deliveryOtp?.otp && (
+              <div className="mt-3 text-center rounded-xl bg-background border border-border py-3">
+                <p className="text-2xl font-mono font-bold tracking-[0.35em]">{deliveryOtp.otp}</p>
+                <p className="text-[10px] text-muted-foreground mt-1">Expires {new Date(deliveryOtp.expires_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
+              </div>
+            )}
+            {otpError && <p className="text-xs text-red-600 mt-2">{otpError}</p>}
+          </div>
+        </div>
+      )}
 
       {/* Timeline */}
       <div className="px-4 py-4">

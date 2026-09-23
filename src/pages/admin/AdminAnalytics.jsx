@@ -36,18 +36,21 @@ export default function AdminAnalytics() {
   const [rev,       setRev]       = useState(null);
   const [loading,   setLoading]   = useState(true);
   const [refreshing,setRefreshing]= useState(false);
+  const [observability, setObservability] = useState(null);
 
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
     else setLoading(true);
 
-    const [analyticsRes, revRes] = await Promise.all([
+    const [analyticsRes, revRes, observabilityRes] = await Promise.all([
       AdminAPI.getLiveAnalytics(),
       AdminAPI.getRevenueAnalytics({ days: Number(period) }),
+      AdminAPI.getObservabilityDashboard(),
     ]);
 
     if (analyticsRes.data) setAnalytics(analyticsRes.data);
     if (revRes.data)       setRev(revRes.data);
+    if (observabilityRes.data) setObservability(observabilityRes.data);
 
     setLoading(false);
     setRefreshing(false);
@@ -225,6 +228,27 @@ export default function AdminAnalytics() {
             )}
           </Card>
         </div>
+
+        {/* Reconciliation dashboard */}
+        <Card className="p-4 border-border">
+          <h3 className="font-semibold text-sm mb-3">Reconciliation & Observability</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[
+              ['Payment dead letters', observability?.reconciliation?.payment_dead_letters],
+              ['Unmatched captures', observability?.reconciliation?.unmatched_captures],
+              ['Pending refunds', observability?.reconciliation?.pending_refunds],
+              ['Payout exceptions', observability?.reconciliation?.payout_reconciliation_exceptions],
+              ['Missing financials', observability?.reconciliation?.delivered_without_financials],
+              ['Missing finalization', observability?.reconciliation?.delivered_without_finalization],
+              ['Open settlements', observability?.reconciliation?.open_settlements],
+            ].map(([label,value]) => (
+              <div key={label} className="rounded-xl bg-muted/40 p-3">
+                <p className="text-lg font-bold">{loading ? '…' : Number(value ?? 0)}</p>
+                <p className="text-[11px] text-muted-foreground">{label}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
 
         {/* Platform fee summary */}
         <Card className="p-4 border-border">

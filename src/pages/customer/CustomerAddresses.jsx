@@ -120,6 +120,9 @@ function AddressCard({ addr, onEdit, onDelete, onSetDefault, busy }) {
           {addr.landmark && (
             <p className="text-xs text-muted-foreground mt-0.5">Near: {addr.landmark}</p>
           )}
+          {addr.zoneName && (
+            <p className="text-[11px] text-muted-foreground mt-1">Service zone: {addr.zoneName}</p>
+          )}
         </div>
 
         {/* Action icons */}
@@ -211,6 +214,7 @@ export default function CustomerAddresses() {
         address:   a.address,
         landmark:  a.landmark || '',
         isDefault: a.is_default,
+        zoneName: a.zone_name || '',
       })));
     }
     setLoading(false);
@@ -263,7 +267,7 @@ export default function CustomerAddresses() {
       } else if (data) {
         setAddresses(prev => [
           ...prev,
-          { id: data.id, label: data.label, address: data.address, landmark: data.landmark || '', isDefault: data.is_default },
+          { id: data.id, label: data.label, address: data.address, landmark: data.landmark || '', isDefault: data.is_default, zoneName: data.zone_name || '' },
         ]);
         closeForm();
       }

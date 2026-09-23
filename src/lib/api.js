@@ -488,6 +488,7 @@ export async function placeOrder(orderPayload) {
       // flight, not a second real submission after the first
       // response was lost in transit. See CustomerCheckout.jsx.
       p_idempotency_key:  orderPayload.idempotency_key ?? null,
+      p_address_id:       orderPayload.address_id ?? null,
     });
 
     if (error) return err(error, 'placeOrder/create_order');
@@ -533,6 +534,23 @@ export async function cancelOrderWithRefund(orderId, actorId, actorRole = 'custo
     });
     if (error) return err(error, 'cancelOrderWithRefund');
     if (!data?.success) return err({ message: data?.error ?? 'Cancel failed' }, 'cancelOrderWithRefund');
+
+    // Paid UPI orders are refunded through Razorpay, never by minting
+    // wallet balance. The DB RPC creates the durable refund request first;
+    // this Edge Function performs the provider call idempotently. A failed
+    // provider call leaves the refund retryable and must not undo the
+    // already-committed cancellation.
+    if (data.refund_method === 'razorpay' && data.refund_pending) {
+      const { data: refundData, error: refundError } = await supabase.functions.invoke('process-order-refund', {
+        body: { orderId },
+      });
+      if (refundError || !refundData?.success) {
+        console.warn('[SETU Payments] Razorpay refund remains pending:', refundError ?? refundData?.error);
+        return ok({ ...data, refund_pending: true, refund_error: refundError?.message ?? refundData?.error ?? null });
+      }
+      return ok({ ...data, refund_pending: false, refund: refundData });
+    }
+
     return ok(data);
   } catch (e) {
     return err(e, 'cancelOrderWithRefund');
@@ -580,36 +598,52 @@ export async function updateRiderSettings(riderId, updates) {
 }
 
 export async function updateRiderStatus(riderId, isOnline) {
-  return safeQuery(
+  const result = await safeQuery(
     () => supabase.from('riders').update({ is_online: isOnline }).eq('id', riderId).select().single(),
     null,
     'updateRiderStatus'
   );
+  if (!result?.error && isOnline) {
+    // Phase 4: entering the online pool also re-evaluates existing ready
+    // dispatches, so riders who came online after the vendor marked an order
+    // ready can receive a legitimate server-generated offer.
+    await supabase.rpc('request_rider_dispatch');
+  }
+  return result;
 }
 
-export async function getAvailableOrders(villageId) {
-  // Orders that are 'ready' and have no rider assigned
+export async function getAvailableOrders(riderId) {
+  // Phase 4: riders no longer browse a village-wide pool and race to claim
+  // arbitrary ready orders. The server matcher creates a time-bound offer
+  // for this exact rider; the UI reads only those offers.
   return safeQuery(
     () => supabase
-      .from('orders')
-      .select('*, order_items(name, qty)')
-      .eq('status', 'ready')
-      .is('rider_id', null)
-      .eq('village_id', villageId)
-      .order('created_at'),
+      .from('rider_offers')
+      .select('id, expires_at, status, offered_at, order:orders!inner(*, order_items(name, qty))')
+      .eq('rider_id', riderId)
+      .eq('status', 'offered')
+      .gt('expires_at', new Date().toISOString())
+      .order('expires_at'),
     [],
     'getAvailableOrders'
-  );
+  ).then(result => ({
+    ...result,
+    data: (result.data ?? []).map(row => ({
+      ...(row.order ?? {}),
+      offer_id: row.id,
+      offer_expires_at: row.expires_at,
+    })),
+  }));
 }
 
-export async function assignRider(orderId, _riderId, _riderName) {
-  // Rider self-claim of an unassigned 'ready' order. Routed through the
-  // claim_order RPC (security definer): the rider is derived server-side
-  // from auth.uid() and the order is row-locked, so a client can neither
-  // claim on another rider's behalf nor double-claim. The riderId/riderName
-  // args are ignored (kept for call-site compatibility). See migration 050.
+export async function assignRider(orderId, _riderId, _riderName, offerId = null) {
+  // Phase 4: acceptance is an atomic response to a server-generated offer.
+  // Keep the order id arguments for call-site compatibility; the offer id is
+  // the actual authorization token.
   return safeQuery(
-    () => supabase.rpc('claim_order', { p_order_id: orderId }),
+    () => offerId
+      ? supabase.rpc('respond_to_rider_offer', { p_offer_id: offerId, p_action: 'accept' })
+      : supabase.rpc('claim_order', { p_order_id: orderId }),
     null,
     'assignRider'
   );
@@ -704,6 +738,10 @@ export async function createAddress(userId, address) {
         address:    address.address,
         landmark:   address.landmark || null,
         is_default: !!address.isDefault,
+        village_id: address.villageId ?? null,
+        zone_id: address.zoneId ?? null,
+        lat: address.lat ?? null,
+        lng: address.lng ?? null,
       })
       .select()
       .single(),
@@ -718,6 +756,10 @@ export async function updateAddress(addressId, updates) {
   if (updates.address    !== undefined) payload.address    = updates.address;
   if (updates.landmark   !== undefined) payload.landmark   = updates.landmark || null;
   if (updates.isDefault  !== undefined) payload.is_default = updates.isDefault;
+  if (updates.villageId  !== undefined) payload.village_id = updates.villageId;
+  if (updates.zoneId     !== undefined) payload.zone_id = updates.zoneId;
+  if (updates.lat        !== undefined) payload.lat = updates.lat;
+  if (updates.lng        !== undefined) payload.lng = updates.lng;
 
   return safeQuery(
     () => supabase
@@ -1305,6 +1347,52 @@ export async function getActiveSOSAlert(riderId) {
   );
 }
 
+
+export async function getDeliveryOTP(orderId) {
+  return safeQuery(
+    () => supabase.rpc('get_delivery_otp', { p_order_id: orderId }),
+    null,
+    'getDeliveryOTP'
+  );
+}
+
+export async function completeDelivery(orderId, otp, proofFile, location = null) {
+  if (!isSupabaseConfigured) return err({ message: 'Supabase is not configured' }, 'completeDelivery');
+  try {
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData?.user?.id) return err(authError || { message: 'Authentication required' }, 'completeDelivery/auth');
+    if (!(proofFile instanceof File)) return err({ message: 'Delivery proof photo is required' }, 'completeDelivery/proof');
+    if (!/^image\/(jpeg|png|webp)$/.test(proofFile.type)) return err({ message: 'Proof must be JPG, PNG, or WebP' }, 'completeDelivery/proof');
+    if (proofFile.size > 8 * 1024 * 1024) return err({ message: 'Proof image must be 8 MB or smaller' }, 'completeDelivery/proof');
+
+    const bytes = new Uint8Array(await proofFile.arrayBuffer());
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    const sha256 = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+    const ext = proofFile.type === 'image/png' ? 'png' : proofFile.type === 'image/webp' ? 'webp' : 'jpg';
+    const path = `${authData.user.id}/${orderId}/${crypto.randomUUID()}.${ext}`;
+    const { error: uploadError } = await supabase.storage.from('delivery-proofs').upload(path, proofFile, {
+      contentType: proofFile.type, upsert: false, cacheControl: '3600'
+    });
+    if (uploadError) return err(uploadError, 'completeDelivery/uploadProof');
+
+    const { data, error } = await supabase.rpc('complete_delivery', {
+      p_order_id: orderId, p_otp: String(otp || '').trim(), p_proof_type: 'photo',
+      p_storage_path: path, p_sha256: sha256,
+      p_lat: location?.lat ?? null, p_lng: location?.lng ?? null,
+      p_metadata: { file_type: proofFile.type, file_size: proofFile.size, captured_client_at: new Date().toISOString() }
+    });
+    if (error || !data?.success) {
+      // The DB transaction may reject the completion; remove the orphaned
+      // upload so a failed OTP never accumulates unreferenced proof files.
+      await supabase.storage.from('delivery-proofs').remove([path]);
+      return err(error || { message: data?.error || 'Delivery completion failed' }, 'completeDelivery');
+    }
+    return ok(data);
+  } catch (e) {
+    return err(e, 'completeDelivery');
+  }
+}
+
 export const RiderAPI = {
   getProfile:         (userId)                        => getRiderByUserId(userId),
   updateStatus:       (riderId, online)               => updateRiderStatus(riderId, online),
@@ -1312,7 +1400,7 @@ export const RiderAPI = {
   getAvailableOrders: (villageId)                     => getAvailableOrders(villageId),
   acceptOrder:        (orderId, riderId, riderName)   => assignRider(orderId, riderId, riderName),
   updateOrder:        (orderId, status, extra)        => updateOrderStatus(orderId, status, extra),
-  markDelivered:      (orderId, meta)                 => updateOrderStatus(orderId, 'delivered', meta),
+  markDelivered:      (orderId, otp, proofFile, location) => completeDelivery(orderId, otp, proofFile, location),
   updateLocation:     (riderId, lat, lng)             => updateRiderLocation(riderId, lat, lng),
   getOrders:          (riderId, opts)                 => getOrdersByRider(riderId, opts),
   submitCODDeposit:   (riderId, amount, denomMap)     => submitCODDeposit(riderId, amount, denomMap),
@@ -2173,6 +2261,14 @@ export async function reviewImage(imageId, status, reason = null) {
 
 // ── Live analytics ────────────────────────────────────────
 
+export async function getObservabilityDashboard() {
+  return safeQuery(
+    () => supabase.rpc('get_observability_dashboard'),
+    null,
+    'getObservabilityDashboard'
+  );
+}
+
 export async function getLiveAnalytics() {
   // First try the RPC (migration 011) for rich aggregated data
   try {
@@ -2331,6 +2427,7 @@ export const AdminAPI = {
   getStats:             ()                         => getAdminDashboardStats(),
   getHourlyOrders:      ()                         => getTodayHourlyOrders(),
   getLiveAnalytics:     ()                         => getLiveAnalytics(),
+  getObservabilityDashboard: ()                  => getObservabilityDashboard(),
   getDailyTrend:        ()                         => getDailyOrderTrend(),
   getHourlyTrend:       ()                         => getHourlyOrderTrend(),
 

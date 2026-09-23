@@ -165,60 +165,174 @@ serve(async (req) => {
     )
   }
 
-  // Create Razorpay Order via server-side API (secret never touches client)
-  const auth = btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`)
+  // ── Durable payment intent ────────────────────────────────
+  // The DB owns the lifecycle of the gateway attempt. A concurrent retry
+  // reuses the same active Razorpay order instead of opening a second one.
+  if (type === 'order_payment') {
+    const { data: intent, error: intentErr } = await supabase.rpc('create_payment_intent', {
+      p_order_id: orderId,
+      p_user_id: user.id,
+    })
 
+    if (intentErr || !intent?.success) {
+      console.error('[create-razorpay-order] payment intent failed:', intentErr ?? intent?.error)
+      return new Response(
+        JSON.stringify({ error: intent?.error ?? 'Could not create payment intent' }),
+        { status: 409, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    if (intent.reused && intent.provider_order_id) {
+      return new Response(JSON.stringify({
+        id: intent.provider_order_id,
+        amount: Math.round(Number(intent.amount) * 100),
+        currency: intent.currency ?? 'INR',
+        intent_id: intent.intent_id,
+        reused: true,
+      }), {
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        status: 200,
+      })
+    }
+
+    if (intent.reused && !intent.provider_order_id) {
+      return new Response(
+        JSON.stringify({ error: 'Payment attempt is already being created. Please retry in a moment.' }),
+        { status: 409, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const auth = btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`)
+    let razorpayOrder: any
+    try {
+      const response = await fetch('https://api.razorpay.com/v1/orders', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: Math.round(serverAmount * 100),
+          currency: 'INR',
+          receipt: `SETU-${orderId}-${intent.attempt_no}`,
+          notes: {
+            customerId: user.id,
+            orderId,
+            paymentIntentId: intent.intent_id,
+            type,
+          },
+        }),
+      })
+      razorpayOrder = await response.json()
+    } catch (fetchErr) {
+      await supabase.rpc('fail_payment_intent', {
+        p_intent_id: intent.intent_id,
+        p_failure_code: 'gateway_unreachable',
+        p_failure_reason: 'Failed to reach Razorpay API',
+      }).catch(() => {})
+      console.error('[create-razorpay-order] Razorpay API fetch failed:', fetchErr)
+      return new Response(
+        JSON.stringify({ error: 'Failed to reach payment gateway' }),
+        { status: 502, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    if (razorpayOrder.error) {
+      await supabase.rpc('fail_payment_intent', {
+        p_intent_id: intent.intent_id,
+        p_failure_code: razorpayOrder.error.code ?? 'gateway_error',
+        p_failure_reason: razorpayOrder.error.description ?? 'Payment order creation failed',
+      }).catch(() => {})
+      console.error('[create-razorpay-order] Razorpay returned error:', razorpayOrder.error)
+      return new Response(
+        JSON.stringify({ error: razorpayOrder.error.description ?? 'Payment order creation failed' }),
+        { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const { data: bound, error: bindErr } = await supabase.rpc('bind_payment_intent', {
+      p_intent_id: intent.intent_id,
+      p_provider_order_id: razorpayOrder.id,
+      p_metadata: { razorpay_order: razorpayOrder },
+    })
+
+    if (bindErr || !bound?.success) {
+      console.error('[create-razorpay-order] payment intent bind failed:', bindErr ?? bound?.error)
+      return new Response(
+        JSON.stringify({ error: 'Payment order created but could not be reconciled. Please retry.' }),
+        { status: 503, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Keep legacy payment_orders as a compatibility/read model, but the
+    // canonical lifecycle is payment_intents + payment_transactions.
+    const { error: dbErr } = await supabase.from('payment_orders').insert({
+      razorpay_order_id: razorpayOrder.id,
+      order_id: orderId,
+      user_id: user.id,
+      amount: serverAmount,
+      status: 'created',
+      notes: { type, payment_intent_id: intent.intent_id },
+    })
+
+    if (dbErr && dbErr.code !== '23505') {
+      console.error('[create-razorpay-order] legacy payment_orders insert failed:', dbErr)
+    }
+
+    return new Response(JSON.stringify({
+      ...razorpayOrder,
+      intent_id: intent.intent_id,
+    }), {
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+      status: 200,
+    })
+  }
+
+  // Wallet top-up / credit repayment retain their existing gateway-order
+  // path, but remain bounded by server-side amount validation above.
+  const auth = btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`)
   let razorpayOrder: any
   try {
     const response = await fetch('https://api.razorpay.com/v1/orders', {
-      method:  'POST',
+      method: 'POST',
       headers: {
         'Authorization': `Basic ${auth}`,
-        'Content-Type':  'application/json',
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        amount:   Math.round(serverAmount * 100), // Razorpay uses paise
+        amount: Math.round(serverAmount * 100),
         currency: 'INR',
-        receipt:  orderId ?? `topup_${Date.now()}`,
-        notes: {
-          customerId,
-          orderId: orderId ?? null,
-          type,
-        },
+        receipt: orderId ?? `${type}_${Date.now()}`,
+        notes: { customerId: user.id, orderId: orderId ?? null, type },
       }),
     })
-
     razorpayOrder = await response.json()
   } catch (fetchErr) {
     console.error('[create-razorpay-order] Razorpay API fetch failed:', fetchErr)
     return new Response(
-      JSON.stringify({ error: "Failed to reach payment gateway" }),
-      { status: 502, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      JSON.stringify({ error: 'Failed to reach payment gateway' }),
+      { status: 502, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
     )
   }
 
   if (razorpayOrder.error) {
     console.error('[create-razorpay-order] Razorpay returned error:', razorpayOrder.error)
     return new Response(
-      JSON.stringify({ error: razorpayOrder.error.description ?? "Payment order creation failed" }),
-      { status: 400, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      JSON.stringify({ error: razorpayOrder.error.description ?? 'Payment order creation failed' }),
+      { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
     )
   }
 
-  // Log to payment_orders for internal tracking
   const { error: dbErr } = await supabase.from('payment_orders').insert({
     razorpay_order_id: razorpayOrder.id,
-    order_id:          orderId ?? null,
-    user_id:           customerId,
-    amount:            serverAmount,
-    status:            'created',
-    notes:             { type },
+    order_id: orderId ?? null,
+    user_id: user.id,
+    amount: serverAmount,
+    status: 'created',
+    notes: { type },
   })
 
-  if (dbErr) {
-    console.error('[create-razorpay-order] DB insert failed:', dbErr)
-    // Non-fatal — order exists in Razorpay; proceed
-  }
+  if (dbErr) console.error('[create-razorpay-order] DB insert failed:', dbErr)
 
   return new Response(JSON.stringify(razorpayOrder), {
     headers: { ...CORS_HEADERS, "Content-Type": "application/json" },

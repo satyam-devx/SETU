@@ -250,6 +250,7 @@ export default function CustomerCheckout() {
         use_credit:       useCredit,
         coupon_code:      appliedCode ?? null,
         idempotency_key:  idempotencyKey,
+        address_id: selectedAddress?.id ?? null,
         delivery_address: selectedAddress
           ? `${selectedAddress.address}${selectedAddress.landmark ? ', ' + selectedAddress.landmark : ''}`
           : (profile?.village ?? village?.name ?? ''),

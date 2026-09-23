@@ -48,8 +48,6 @@ const WEBHOOK_SECRET = Deno.env.get("RAZORPAY_WEBHOOK_SECRET");
 
 // Allow a small amount of float/rounding drift between what Razorpay
 // captured (in paise, converted to rupees) and the stored order total.
-const AMOUNT_RECONCILIATION_TOLERANCE = 0.01;
-
 // ── helpers ────────────────────────────────────────────────
 
 function ok(headers: Record<string, string>, msg = "OK"): Response {
@@ -95,6 +93,63 @@ async function rpc(
     console.error(`[webhook] RPC ${fn} failed:`, result.error);
   }
   return result;
+}
+
+
+async function processRazorpayRefund(
+  supabase: ReturnType<typeof createClient>, orderId: string, paymentId: string, amount: number
+): Promise<{ success: boolean; refundId?: string; error?: string }> {
+  const keyId = Deno.env.get("RAZORPAY_KEY_ID");
+  const keySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
+  if (!keyId || !keySecret) return { success: false, error: "Razorpay credentials unavailable" };
+  const { data: claim, error: claimErr } = await rpc(supabase, "claim_razorpay_refund", { p_order_id: orderId });
+  if (claimErr || !(claim as any)?.success) return { success: false, error: (claim as any)?.error ?? "Could not claim refund" };
+  const claimed = claim as any;
+  if (claimed.already_completed || claimed.in_progress || claimed.razorpay_refund_id) return { success: true, refundId: claimed.razorpay_refund_id };
+  const auth = btoa(`${keyId}:${keySecret}`);
+
+  // Recovery guard: if a previous refund request reached Razorpay but the
+  // HTTP response was lost, discover the existing provider refund before
+  // issuing another one. This closes the stale-lease duplicate-refund gap.
+  try {
+    const existingResponse = await fetch(`https://api.razorpay.com/v1/payments/${encodeURIComponent(paymentId)}/refunds`, {
+      headers: { Authorization: `Basic ${auth}` },
+    });
+    if (existingResponse.ok) {
+      const existingBody = await existingResponse.json();
+      const existingRefund = (existingBody?.items ?? []).find((item: any) =>
+        Number(item.amount) === Math.round(amount * 100) &&
+        item.status !== "failed"
+      );
+      if (existingRefund?.id) {
+        const { error: completeErr } = await rpc(supabase, "complete_razorpay_refund", {
+          p_refund_id: claimed.refund_id,
+          p_razorpay_refund_id: existingRefund.id,
+          p_provider_payload: existingRefund,
+        });
+        if (!completeErr) return { success: true, refundId: existingRefund.id };
+      }
+    }
+  } catch {
+    // A failed discovery call is not proof that no refund exists; the
+    // normal POST is still attempted and the durable DB state remains.
+  }
+
+  let response: Response; let body: any;
+  try {
+    response = await fetch(`https://api.razorpay.com/v1/payments/${encodeURIComponent(paymentId)}/refund`, { method: "POST", headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" }, body: JSON.stringify({ amount: Math.round(amount * 100), notes: { setu_order_id: orderId } }) });
+    body = await response.json();
+  } catch {
+    await rpc(supabase, "fail_razorpay_refund", { p_refund_id: claimed.refund_id, p_failure_reason: "Failed to reach Razorpay refund API", p_provider_payload: {} });
+    return { success: false, error: "Refund gateway unreachable" };
+  }
+  if (!response.ok || body?.error) {
+    await rpc(supabase, "fail_razorpay_refund", { p_refund_id: claimed.refund_id, p_failure_reason: body?.error?.description ?? `Razorpay refund HTTP ${response.status}`, p_provider_payload: body ?? {} });
+    return { success: false, error: body?.error?.description ?? "Razorpay refund failed" };
+  }
+  const { error: completeErr } = await rpc(supabase, "complete_razorpay_refund", { p_refund_id: claimed.refund_id, p_razorpay_refund_id: body.id, p_provider_payload: body });
+  if (completeErr) return { success: false, error: "Refund created but SETU reconciliation failed" };
+  return { success: true, refundId: body.id };
 }
 
 // ── main handler ───────────────────────────────────────────
@@ -164,9 +219,22 @@ serve(async (req) => {
     console.log(`[webhook] Event ${eventId} exists but not yet processed — retrying`);
   } else if (insertErr) {
     console.error("[webhook] Failed to log event:", insertErr);
-    // Idempotency tracking is degraded but we must not drop a real
-    // payment event over a logging failure — continue processing.
   }
+
+  // Atomically claim the event row before running any financial side effect.
+  // claim_payment_event() uses SELECT ... FOR UPDATE, so concurrent duplicate
+  // deliveries serialize and only one request becomes the active processor.
+  const { data: eventClaim, error: eventClaimErr } = await rpc(supabase, "claim_payment_event", {
+    p_event_id: eventId,
+  });
+  if (eventClaimErr || !(eventClaim as any)?.success) {
+    console.error("[webhook] Could not claim event state:", eventClaimErr ?? eventClaim);
+    return err(CORS_HEADERS, "Webhook state unavailable", 500);
+  }
+  if ((eventClaim as any).already_processed || (eventClaim as any).dead_letter) {
+    return ok(CORS_HEADERS, (eventClaim as any).already_processed ? "Already processed" : "Accepted for manual reconciliation");
+  }
+  const attemptCount = Number((eventClaim as any).attempt_count ?? 1);
 
   // 3. Route on event type
   let handlerOk = true;
@@ -174,232 +242,72 @@ serve(async (req) => {
     switch (eventType) {
       // ── payment.captured ──────────────────────────────────
       case "payment.captured": {
-        const payment = (payload.payload as any).payment.entity;
-        const razorpayOrderId: string = payment.order_id;
-        const paymentId: string = payment.id;
-        const amount: number = payment.amount / 100; // paise → rupees
-        const notes: Record<string, string> = payment.notes ?? {};
-        const paymentType = notes.type ?? "order_payment";
-
-        // Mark payment_orders row as paid (direct update by service_role is allowed)
-        await supabase
-          .from("payment_orders")
-          .update({ status: "paid", updated_at: new Date().toISOString() })
-          .eq("razorpay_order_id", razorpayOrderId);
-
-        if (paymentType === "order_payment" && notes.orderId) {
-          const orderId = notes.orderId;
-
-          // ── CRITICAL-1 FIX ──────────────────────────────────
-          // Never confirm an order on payment_status alone. Reload
-          // the order's authoritative total from the DB and compare
-          // it to what Razorpay actually captured. Without this, a
-          // client that requested a Razorpay order for ₹1 against an
-          // order whose real total is ₹10,000 would get the full
-          // order confirmed and escrow released on a ₹1 payment.
-          const { data: orderRow, error: loadErr } = await supabase
-            .from("orders")
-            .select("id, total, payment_status")
-            .eq("id", orderId)
-            .single();
-
-          if (loadErr || !orderRow) {
-            console.error(`[webhook] CRITICAL: payment.captured for unknown order ${orderId}`, loadErr);
-            await supabase.from("audit_log").insert({
-              actor: "system",
-              action: "payment_amount_mismatch",
-              target: orderId,
-              detail: `payment.captured for ${paymentId} referenced unknown order ${orderId}`,
-            });
-            break;
+        const payment = (payload.payload as any)?.payment?.entity;
+        if (!payment?.id || !payment?.order_id || typeof payment.amount !== "number") throw new Error("Malformed payment.captured payload");
+        const razorpayOrderId: string = payment.order_id; const paymentId: string = payment.id; const amount: number = payment.amount / 100;
+        const notes: Record<string, string> = payment.notes ?? {}; const paymentType = notes.type ?? "order_payment";
+        await supabase.from("payment_orders").update({ status: "paid", updated_at: new Date().toISOString() }).eq("razorpay_order_id", razorpayOrderId);
+        await supabase.from("payment_events").update({ order_id: notes.orderId ?? null, payment_id: paymentId }).eq("event_id", eventId);
+        if (paymentType === "order_payment") {
+          if (!notes.orderId) throw new Error("payment.captured missing orderId note");
+          const { data: result, error: reconcileErr } = await rpc(supabase, "reconcile_razorpay_capture", { p_order_id: notes.orderId, p_payment_intent_id: notes.paymentIntentId ?? null, p_razorpay_order_id: razorpayOrderId, p_payment_id: paymentId, p_amount: amount, p_method: payment.method ?? null, p_gateway_payload: payment });
+          if (reconcileErr) { handlerOk = false; break; }
+          const reconciliation = result as any;
+          if (reconciliation?.manual_review) { handlerOk = false; break; }
+          if (!reconciliation?.refund_required) {
+            const gatewayFee = typeof payment.fee === "number" ? payment.fee / 100 : 0;
+            const { error: financeErr } = await rpc(supabase, "finalize_order_financial_capture", { p_order_id: notes.orderId, p_payment_id: paymentId, p_gateway_fee: gatewayFee });
+            if (financeErr) { handlerOk = false; break; }
           }
-
-          const expectedTotal = Number((orderRow as any).total);
-          const amountMismatch = Math.abs(expectedTotal - amount) > AMOUNT_RECONCILIATION_TOLERANCE;
-
-          if (amountMismatch) {
-            // Do NOT confirm the order or release escrow. Flag loudly
-            // for manual review instead — this is exactly the fraud
-            // pattern from the audit (pay ₹1, order says ₹10,000).
-            console.error(
-              `[webhook] CRITICAL: amount mismatch on order ${orderId} — captured ₹${amount}, expected ₹${expectedTotal}`
-            );
-            await supabase.from("audit_log").insert({
-              actor: "system",
-              action: "payment_amount_mismatch",
-              target: orderId,
-              detail: `Razorpay payment ${paymentId} captured ₹${amount} but order total is ₹${expectedTotal}. Order NOT confirmed — manual review required.`,
-            });
-            handlerOk = false;
-            break;
-          }
-
-          console.log(`[webhook] Order payment captured for ${orderId}`);
-
-          // Update order status + payment_status via service_role direct update
-          // (service_role bypasses the guard trigger)
-          const { error: orderErr } = await supabase
-            .from("orders")
-            .update({
-              payment_status: "paid",
-              status: "confirmed",
-              confirmed_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", orderId)
-            .in("payment_status", ["pending", "failed"]); // guard: only advance from pending/failed
-
-          if (orderErr) {
-            console.error("[webhook] Order update failed:", orderErr);
-            handlerOk = false;
-          } else {
-            // Record fee split + credit vendor escrow (idempotent RPC)
-            const { error: splitErr } = await rpc(supabase, "record_delivery_split", {
-              p_order_id: orderId,
-              p_razorpay_payment_id: paymentId,
-            });
-            if (splitErr) handlerOk = false;
+          if (reconciliation?.refund_required) {
+            const refundResult = await processRazorpayRefund(supabase, reconciliation.order_id, paymentId, Number(reconciliation.refund_amount));
+            if (!refundResult.success) handlerOk = false;
           }
         } else if (paymentType === "wallet_topup" && notes.customerId) {
-          // ── Wallet top-up ──────────────────────────────────
-          // Uses the canonical topup_wallet RPC (supabase/migrations/
-          // 20240101000001_initial_schema.sql) — NOT credit_wallet.
-          // (PASS 5 correction: credit_wallet() does exist in this
-          // migration tree — supabase/migrations/20240101000017_
-          // order_integrity.sql — but it is an INTERNAL helper called
-          // only by cancel_order_with_refund() to credit a refund back
-          // to the wallet. It is not appropriate for top-ups and is
-          // not directly callable from here — see migration 035, which
-          // revokes its PUBLIC/authenticated/anon execute and grants
-          // only service_role. A same-named, top-up-purpose
-          // credit_wallet function did once exist only in the legacy
-          // database/ tree that CI doesn't deploy — that is the
-          // function this comment originally warned against, not the
-          // one that lives in this migration tree today.)
-          console.log(`[webhook] Wallet topup for ${notes.customerId} ₹${amount}`);
-
-          const { error: creditErr } = await rpc(supabase, "topup_wallet", {
-            p_user_id: notes.customerId,
-            p_amount: amount,
-            p_reference: paymentId,
-          });
+          const { error: creditErr } = await rpc(supabase, "topup_wallet", { p_user_id: notes.customerId, p_amount: amount, p_reference: paymentId });
           if (creditErr) handlerOk = false;
-
-          await supabase
-            .from("wallet_topups")
-            .update({
-              status: "completed",
-              payment_id: paymentId,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("razorpay_order_id", razorpayOrderId);
+          const { error: topupErr } = await supabase.from("wallet_topups").update({ status: "completed", payment_id: paymentId, updated_at: new Date().toISOString() }).eq("razorpay_order_id", razorpayOrderId);
+          if (topupErr) handlerOk = false;
         } else if (paymentType === "credit_repayment" && notes.customerId) {
-          // ── Credit repayment ───────────────────────────────
-          console.log(`[webhook] Credit repayment for ${notes.customerId} ₹${amount}`);
-
-          const { data: account, error: acctErr } = await supabase
-            .from("credit_accounts")
-            .select("id, outstanding")
-            .eq("user_id", notes.customerId)
-            .single();
-
-          if (acctErr || !account) {
-            console.error("[webhook] Credit account not found:", acctErr);
-            handlerOk = false;
-          } else {
-            const newOutstanding = Math.max(
-              0,
-              Number((account as any).outstanding) - amount
-            );
-
-            await supabase
-              .from("credit_accounts")
-              .update({
-                outstanding: newOutstanding,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", (account as any).id);
-
-            await supabase.from("credit_transactions").insert({
-              account_id: (account as any).id,
-              user_id: notes.customerId,
-              type: "repayment",
-              amount,
-              status: "repaid",
-              reference: paymentId,
-              repaid_at: new Date().toISOString(),
-            });
+          const { data: account, error: acctErr } = await supabase.from("credit_accounts").select("id, outstanding").eq("user_id", notes.customerId).single();
+          if (acctErr || !account) handlerOk = false; else {
+            const newOutstanding = Math.max(0, Number((account as any).outstanding) - amount);
+            const { error: accountErr } = await supabase.from("credit_accounts").update({ outstanding: newOutstanding, updated_at: new Date().toISOString() }).eq("id", (account as any).id);
+            if (accountErr) handlerOk = false;
+            const { error: txErr } = await supabase.from("credit_transactions").insert({ account_id: (account as any).id, user_id: notes.customerId, type: "repayment", amount, status: "repaid", reference: paymentId, repaid_at: new Date().toISOString() });
+            if (txErr && txErr.code !== "23505") handlerOk = false;
           }
-        } else {
-          console.warn(`[webhook] Unhandled payment type: ${paymentType}`);
-        }
+        } else console.warn(`[webhook] Unhandled payment type: ${paymentType}`);
         break;
       }
 
       // ── payment.failed ────────────────────────────────────
       case "payment.failed": {
-        const payment = (payload.payload as any).payment.entity;
-        const razorpayOrderId: string = payment.order_id;
-        const notes: Record<string, string> = payment.notes ?? {};
-
-        await supabase
-          .from("payment_orders")
-          .update({ status: "failed", updated_at: new Date().toISOString() })
-          .eq("razorpay_order_id", razorpayOrderId);
-
-        // Only update payment_status; keep order 'pending' so customer can retry
-        if ((notes.type ?? "order_payment") === "order_payment" && notes.orderId) {
-          await supabase
-            .from("orders")
-            .update({
-              payment_status: "failed",
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", notes.orderId)
-            .eq("payment_status", "pending"); // only move from pending → failed
+        const payment = (payload.payload as any)?.payment?.entity;
+        if (!payment?.order_id) throw new Error("Malformed payment.failed payload");
+        const razorpayOrderId: string = payment.order_id; const paymentId: string | null = payment.id ?? null; const notes: Record<string, string> = payment.notes ?? {};
+        await supabase.from("payment_orders").update({ status: "failed", updated_at: new Date().toISOString() }).eq("razorpay_order_id", razorpayOrderId);
+        await supabase.from("payment_events").update({ order_id: notes.orderId ?? null, payment_id: paymentId }).eq("event_id", eventId);
+        if ((notes.type ?? "order_payment") === "order_payment") {
+          const { error: failureErr } = await rpc(supabase, "reconcile_razorpay_failure", { p_razorpay_order_id: razorpayOrderId, p_payment_id: paymentId, p_failure_code: payment.error_code ?? payment.error?.code ?? null, p_failure_reason: payment.error_description ?? payment.error?.description ?? null, p_gateway_payload: payment });
+          if (failureErr) handlerOk = false;
         }
         break;
       }
 
-      // ── refund.created (Razorpay-initiated refund) ────────
-      case "refund.created": {
-        const refund = (payload.payload as any).refund.entity;
-        const rzpRefundId: string = refund.id;
-        const rzpPaymentId: string = refund.payment_id;
-
-        console.log(`[webhook] Refund created: ${rzpRefundId} for payment ${rzpPaymentId}`);
-
-        // Find the order_refund by matching payment → payment_orders → order
-        const { data: po } = await supabase
-          .from("payment_orders")
-          .select("order_id")
-          .eq("razorpay_order_id", refund.notes?.razorpay_order_id ?? "")
-          .single();
-
-        if (po && (po as any).order_id) {
-          const orderId = (po as any).order_id;
-
-          // Update refund record
-          await supabase
-            .from("order_refunds")
-            .update({
-              status: "completed",
-              razorpay_refund_id: rzpRefundId,
-              completed_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .eq("order_id", orderId)
-            .eq("status", "processing");
-
-          // Mark order refunded
-          await supabase
-            .from("orders")
-            .update({
-              payment_status: "refunded",
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", orderId);
+      // ── refund.created / refund.processed ──────────────────
+      case "refund.created":
+      case "refund.processed": {
+        const refund = (payload.payload as any)?.refund?.entity;
+        if (!refund?.id || !refund?.payment_id) throw new Error("Malformed refund webhook payload");
+        const { data: refundRow, error: refundLookupErr } = await supabase.from("order_refunds").select("id, order_id").eq("razorpay_payment_id", refund.payment_id).in("status", ["pending", "processing", "failed"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (refundLookupErr) throw refundLookupErr;
+        if (!refundRow) {
+          await supabase.from("audit_log").insert({ actor: "system", action: "refund_unmatched", target: refund.id, detail: `Razorpay refund ${refund.id} references payment ${refund.payment_id}, but no pending SETU refund was found. Manual reconciliation required.` });
+          handlerOk = false; break;
         }
+        const { error: completeErr } = await rpc(supabase, "complete_razorpay_refund", { p_refund_id: (refundRow as any).id, p_razorpay_refund_id: refund.id, p_provider_payload: refund });
+        if (completeErr) handlerOk = false;
         break;
       }
 
@@ -417,6 +325,7 @@ serve(async (req) => {
           .single();
 
         if (vp) {
+          await rpc(supabase, "reconcile_financial_payout", { p_type: "vendor", p_payout_id: (vp as any).id, p_provider_payout_id: rzpPayoutId, p_provider_amount: typeof payout.amount === "number" ? payout.amount / 100 : null, p_provider_status: "processed", p_payload: payout });
           const { error: confirmErr } = await rpc(supabase, "confirm_vendor_payout", {
             p_payout_id: (vp as any).id,
             p_status: "paid",
@@ -452,6 +361,7 @@ serve(async (req) => {
           .single();
 
         if (vp) {
+          await rpc(supabase, "reconcile_financial_payout", { p_type: "vendor", p_payout_id: (vp as any).id, p_provider_payout_id: rzpPayoutId, p_provider_amount: typeof payout.amount === "number" ? payout.amount / 100 : null, p_provider_status: eventType === "payout.reversed" ? "reversed" : "failed", p_payload: payout });
           const { error: confirmErr } = await rpc(supabase, "confirm_vendor_payout", {
             p_payout_id: (vp as any).id,
             p_status: "failed",
@@ -471,17 +381,20 @@ serve(async (req) => {
     handlerOk = false;
   }
 
-  // 4. Mark event processed ONLY if the handler actually succeeded.
-  //    If it failed, leave processed_at null and return 500 so
-  //    Razorpay's webhook retry mechanism tries again later instead
-  //    of us silently dropping a payment/payout/refund event (H3).
+  // 4. Durable webhook outcome. After repeated failures, move the event
+  // to dead-letter/manual-review state so a broken downstream dependency
+  // does not create an invisible infinite retry loop.
   if (handlerOk) {
-    await supabase
-      .from("payment_events")
-      .update({ processed_at: new Date().toISOString() })
-      .eq("event_id", eventId);
+    await supabase.from("payment_events").update({ processed_at: new Date().toISOString(), processing_status: "succeeded", last_error: null }).eq("event_id", eventId);
     return ok(CORS_HEADERS, "OK");
   }
 
-  return err(CORS_HEADERS, "Handler failed — will retry", 500);
+  const deadLetter = attemptCount >= 5;
+  await supabase.from("payment_events").update({
+    processing_status: deadLetter ? "dead_letter" : "failed",
+    dead_letter_at: deadLetter ? new Date().toISOString() : null,
+    last_error: deadLetter ? "Webhook moved to dead-letter/manual review after 5 failed attempts" : "Handler failed; provider retry expected",
+  }).eq("event_id", eventId);
+
+  return deadLetter ? ok(CORS_HEADERS, "Accepted for manual reconciliation") : err(CORS_HEADERS, "Handler failed — will retry", 500);
 });

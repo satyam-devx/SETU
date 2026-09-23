@@ -2,12 +2,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   MapPin, Navigation, IndianRupee, Package,
-  Clock, AlertTriangle, CheckCircle, Phone, Loader2, ChevronRight,
+  Clock, AlertTriangle, CheckCircle, Phone, Loader2, ChevronRight, X,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
 import StatusBadge from '@/components/shared/StatusBadge';
@@ -16,6 +17,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { useRiderLocation } from '@/hooks/useRiderLocation';
 import { RiderAPI } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 
 // ── Loading skeleton ──────────────────────────────────────
 function OrdersSkeleton() {
@@ -52,6 +54,10 @@ export default function RiderDashboard() {
   const { location: currentLocation } = useRiderLocation(user?.id, isOnline);
   const [accepting, setAccepting]     = useState(null);
   const [delivering, setDelivering]   = useState(null);
+  const [deliveryTarget, setDeliveryTarget] = useState(null);
+  const [deliveryOtp, setDeliveryOtp] = useState('');
+  const [deliveryProof, setDeliveryProof] = useState(null);
+  const [deliveryError, setDeliveryError] = useState('');
   const [availableOrders, setAvailableOrders] = useState([]);
 
   // ── Display values from the real rider row ────────────────
@@ -86,27 +92,42 @@ export default function RiderDashboard() {
     [state.orders, riderId]
   );
 
-  // ── Available (unassigned, ready) orders in the rider's village ──
-  // These are NOT in the rider's realtime store (which is filtered to
-  // orders already assigned to this rider), so fetch them directly.
+  // ── Server-matched rider offers ───────────────────────────
+  // Phase 4: only server-generated, time-bound offers are shown. This
+  // prevents a village-wide claim race and lets the backend reassign
+  // expired offers deterministically.
   const loadAvailable = useCallback(async () => {
     if (!riderId || !rider?.village_id || !isOnline) { setAvailableOrders([]); return; }
-    const { data } = await RiderAPI.getAvailableOrders(rider.village_id);
+    const { data } = await RiderAPI.getAvailableOrders(riderId);
     setAvailableOrders(data ?? []);
   }, [riderId, rider?.village_id, isOnline]);
 
   useEffect(() => { loadAvailable(); }, [loadAvailable]);
 
+  // Phase 4 realtime: server-generated rider offers are authoritative.
+  // Notifications are useful as a secondary signal, but this subscription
+  // makes the offer card itself appear/disappear immediately on insert,
+  // acceptance, expiry, cancellation, or reassignment.
+  useEffect(() => {
+    if (!riderId) return undefined;
+    const channel = supabase
+      .channel(`rider-dispatch-offers-${riderId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'rider_offers',
+        filter: `rider_id=eq.${riderId}`,
+      }, () => { loadAvailable(); })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'dispatch_assignment_events',
+        filter: `rider_id=eq.${riderId}`,
+      }, () => { loadAvailable(); })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [riderId, loadAvailable]);
+
   // ── Auto-decline countdown ──────────────────────────────────
-  // The card already claimed "45s to auto-decline" next to each
-  // available order, but nothing ever actually counted down or
-  // removed anything — the text was decorative. This is a real,
-  // ticking per-order countdown; hitting zero genuinely removes that
-  // order from view here (an order card no longer being able to be
-  // accepted from THIS phone is exactly what "auto-decline" claims;
-  // the order itself stays available for other riders to pick up
-  // through village-wide polling regardless — this only affects what
-  // this rider currently sees).
+  // Offers carry a server expiry. The local countdown is only presentation;
+  // the database checks expires_at again inside respond_to_rider_offer, so
+  // a stale client can never accept an expired offer.
   const DECLINE_SECONDS = 45;
   const [countdowns, setCountdowns] = useState({});
 
@@ -114,7 +135,7 @@ export default function RiderDashboard() {
     setCountdowns(prev => {
       const next = { ...prev };
       for (const o of availableOrders) {
-        if (!(o.id in next)) next[o.id] = DECLINE_SECONDS;
+        if (!(o.id in next)) next[o.id] = Math.max(1, Math.ceil((new Date(o.offer_expires_at || Date.now() + DECLINE_SECONDS * 1000).getTime() - Date.now()) / 1000));
       }
       for (const id of Object.keys(next)) {
         if (!availableOrders.some(o => o.id === id)) delete next[id];
@@ -155,7 +176,8 @@ export default function RiderDashboard() {
   const handleAccept = async (orderId) => {
     if (!riderId) return;
     setAccepting(orderId);
-    const { error } = await RiderAPI.acceptOrder(orderId, riderId, riderName);
+    const offerId = availableOrders.find(o => o.id === orderId)?.offer_id;
+    const { error } = await RiderAPI.acceptOrder(orderId, riderId, riderName, offerId);
     if (!error && currentLocation) {
       await RiderAPI.updateLocation(riderId, currentLocation.lat, currentLocation.lng);
     }
@@ -164,15 +186,21 @@ export default function RiderDashboard() {
   };
 
   // ── Mark delivered ────────────────────────────────────────
-  const handleDeliver = async (orderId, total) => {
-    if (!riderId) return;
-    setDelivering(orderId);
-    await RiderAPI.markDelivered(orderId, {
-      rider_id:      riderId,
-      cod_collected: true,
-      amount:        total,
-    });
-    await refetchMine();
+  const handleDeliver = async () => {
+    if (!riderId || !deliveryTarget) return;
+    if (!/^[0-9]{6}$/.test(deliveryOtp)) { setDeliveryError('Enter the 6-digit customer OTP.'); return; }
+    if (!deliveryProof) { setDeliveryError('Take/select a delivery proof photo before completing delivery.'); return; }
+    setDelivering(deliveryTarget.id);
+    setDeliveryError('');
+    const { error } = await RiderAPI.markDelivered(
+      deliveryTarget.id, deliveryOtp, deliveryProof, currentLocation
+    );
+    if (error) {
+      setDeliveryError(error.message);
+    } else {
+      setDeliveryTarget(null); setDeliveryOtp(''); setDeliveryProof(null);
+      await refetchMine();
+    }
     setDelivering(null);
   };
 
@@ -316,7 +344,7 @@ export default function RiderDashboard() {
                         size="sm"
                         className="h-7 text-xs bg-accent hover:bg-accent/90"
                         disabled={delivering === order.id}
-                        onClick={() => handleDeliver(order.id, total)}
+                        onClick={() => { setDeliveryTarget(order); setDeliveryOtp(''); setDeliveryProof(null); setDeliveryError(''); }}
                       >
                         <CheckCircle className="w-3 h-3 mr-1" />
                         {delivering === order.id
@@ -331,6 +359,40 @@ export default function RiderDashboard() {
           })
         )}
       </div>
+
+      <Dialog open={!!deliveryTarget} onOpenChange={(open) => { if (!open && !delivering) setDeliveryTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Complete delivery</DialogTitle>
+            <DialogDescription>Verify the customer's OTP and attach proof. Delivery and rider earnings are finalized together.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-medium">Customer OTP</label>
+              <input
+                inputMode="numeric" maxLength={6} value={deliveryOtp}
+                onChange={e => setDeliveryOtp(e.target.value.replace(/\D/g, '').slice(0,6))}
+                placeholder="6-digit OTP"
+                className="mt-1 w-full h-11 rounded-xl border border-border bg-background px-3 text-center text-lg tracking-[0.35em] font-mono"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium">Delivery proof photo</label>
+              <input
+                type="file" accept="image/jpeg,image/png,image/webp" capture="environment"
+                onChange={e => setDeliveryProof(e.target.files?.[0] || null)}
+                className="mt-1 block w-full text-xs"
+              />
+              {deliveryProof && <p className="text-[10px] text-muted-foreground mt-1 truncate">{deliveryProof.name}</p>}
+            </div>
+            {deliveryError && <p className="text-xs text-red-600">{deliveryError}</p>}
+            <Button className="w-full" disabled={!!delivering} onClick={handleDeliver}>
+              {delivering ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+              {delivering ? 'Finalizing…' : 'Verify & Deliver'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Available orders (unassigned) */}
       {isOnline && (

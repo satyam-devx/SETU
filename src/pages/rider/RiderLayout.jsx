@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Home, Navigation, IndianRupee, User, Wallet } from 'lucide-react';
 import MobileNav from '@/components/shared/MobileNav';
@@ -9,6 +9,7 @@ import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/AuthContext';
 import { useDataFetch } from '@/hooks/useDataFetch';
 import { getRiderByUserId } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 
 function RiderContent() {
   const { user }  = useAuth();
@@ -23,7 +24,19 @@ function RiderContent() {
   useRealtimeOrders('rider', rider?.id);
   useRealtimeNotifications();
 
-  const available = state.orders.filter(o => o.status === 'ready' && !o.riderId && !o.rider_id).length;
+  const [offerCount, setOfferCount] = useState(0);
+  useEffect(() => {
+    if (!rider?.id) return undefined;
+    const load = async () => {
+      const { count } = await supabase.from('rider_offers').select('id', { count: 'exact', head: true }).eq('rider_id', rider.id).eq('status', 'offered').gt('expires_at', new Date().toISOString());
+      setOfferCount(count ?? 0);
+    };
+    load();
+    const ch = supabase.channel(`rider-dispatch-badge-${rider.id}`).on('postgres_changes', { event: '*', schema: 'public', table: 'rider_offers', filter: `rider_id=eq.${rider.id}` }, load).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [rider?.id]);
+
+  const available = offerCount;
 
   const navItems = [
     { path: '/rider',            label: 'Home',       icon: Home },

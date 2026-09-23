@@ -42,7 +42,20 @@ export async function initiatePayment({ amount, orderId, customerId, customerNam
       return { error: 'Payment could not start — check your internet connection and try again, or choose Cash on Delivery.' };
     }
 
-    // 2. Open Razorpay Checkout
+    // 2. Mark the durable payment intent as checkout_open before the
+    // browser opens the gateway. Capture/failure transitions remain
+    // server/webhook controlled.
+    if (rzpOrder.intent_id) {
+      const { error: intentStateError } = await supabase.rpc('mark_payment_intent_checkout_open', {
+        p_intent_id: rzpOrder.intent_id,
+      });
+      if (intentStateError) {
+        console.error('[SETU Payments] Could not mark payment intent checkout_open:', intentStateError);
+        return { error: 'Payment session could not be initialized. Please try again.' };
+      }
+    }
+
+    // 3. Open Razorpay Checkout
     return await new Promise((resolve) => {
       try {
         const options = {
@@ -59,6 +72,7 @@ export async function initiatePayment({ amount, orderId, customerId, customerNam
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_order_id: response.razorpay_order_id,
               razorpay_signature: response.razorpay_signature,
+              payment_intent_id: rzpOrder.intent_id ?? null,
             });
           },
           prefill: {
