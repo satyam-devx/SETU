@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(process.cwd());
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const migration = fs.readFileSync(path.join(root, 'supabase/migrations/20240101000096_analytics_observability_phase7.sql'), 'utf8');
 const api = fs.readFileSync(path.join(root, 'src/lib/api.js'), 'utf8');
 const admin = fs.readFileSync(path.join(root, 'src/pages/admin/AdminAnalytics.jsx'), 'utf8');

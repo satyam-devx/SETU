@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 
-const root = process.cwd();
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const sql = fs.readFileSync(path.join(root, 'supabase/migrations/20240101000093_dispatch_integrity_phase4.sql'), 'utf8');
 const api = fs.readFileSync(path.join(root, 'src/lib/api.js'), 'utf8');
 const rider = fs.readFileSync(path.join(root, 'src/pages/rider/RiderDashboard.jsx'), 'utf8');

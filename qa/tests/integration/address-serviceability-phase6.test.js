@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '../../../');
+const root = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const migration = join(root, 'supabase/migrations/20240101000095_address_serviceability_phase6.sql');
 const sql = readFileSync(migration, 'utf8');
 

@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 
-const root = path.resolve(process.cwd());
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const migration = fs.readFileSync(path.join(root,'supabase/migrations/20240101000094_financial_ledger_phase5.sql'),'utf8');
 const webhook = fs.readFileSync(path.join(root,'supabase/functions/razorpay-webhook/index.ts'),'utf8');
 

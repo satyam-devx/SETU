@@ -46,7 +46,7 @@ describe('Phase 1 payment integrity — source contracts', () => {
 
   it('has a canonical payment transaction ledger keyed by provider payment ID', () => {
     expect(migration).toContain('create table if not exists payment_transactions');
-    expect(migration).toContain('provider_payment_id text unique');
+    expect(migration).toMatch(/provider_payment_id\s+text\s+unique/i);
     expect(migration).toContain('reconciliation_state');
   });
 

@@ -396,3 +396,9 @@ Consolidated from `SECURITY_FIXES.md` ("Round 2" audit response) and prior sessi
 - Added derived daily analytics views from immutable facts.
 - Added admin reconciliation dashboard RPC covering payment dead letters, unmatched captures, refunds, settlements, payout exceptions, and delivery/financial gaps.
 - Added admin analytics reconciliation cards and API client integration.
+
+## CI / Deploy / QA workflow fixes — 2026-09-23
+- Fixed Phase 2 inventory migration trigger to use the project's canonical `update_updated_at()` function instead of the nonexistent `set_updated_at()` function. This unblocks local Supabase startup, CI DB-integrity migrations, and production `supabase db push`.
+- Fixed Phase 1 payment-integrity QA assertion to tolerate normal PostgreSQL whitespace while still requiring the unique `provider_payment_id` constraint.
+- Fixed Phase 2–7 integration static tests to resolve the repository root from `import.meta.url` instead of `process.cwd()`. The QA workflow runs Vitest with `working-directory: qa`, so the previous paths incorrectly looked under `qa/supabase/...` and caused six suites to fail before executing assertions.
+- Kept test sources independent of CI working-directory so local `npm test` and GitHub Actions use the same paths.

@@ -74,7 +74,7 @@ revoke insert, update, delete on inventory_reservations from anon, authenticated
 drop trigger if exists trg_inventory_reservations_updated_at on inventory_reservations;
 create trigger trg_inventory_reservations_updated_at
 before update on inventory_reservations
-for each row execute function set_updated_at();
+for each row execute function update_updated_at();
 
 -- ───────────────────────────────────────────────────────────────────────
 -- Create a reservation entry for every order item.

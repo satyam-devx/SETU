@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const ROOT = path.resolve(process.cwd());
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const MIGRATION = fs.readFileSync(
   path.join(ROOT, 'supabase/migrations/20240101000091_inventory_integrity_phase2.sql'),
   'utf8'
