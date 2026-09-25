@@ -5,11 +5,15 @@
   "type": "module",
   "scripts": {
     "start": "node index.mjs",
-    "dev": "node --watch index.mjs"
+    "dev": "node --watch index.mjs",
+    "worker": "node kafka-worker.mjs",
+    "domain-workers": "node domain-consumers.mjs",
+    "replay-dlq": "node replay-dlq.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.107.0",
     "redis": "^5.8.2",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "kafkajs": "^2.2.4"
   }
 }

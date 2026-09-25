@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: setu-otel-collector-config
+  namespace: setu
+data:
+  otel-collector.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc: {endpoint: 0.0.0.0:4317}
+          http: {endpoint: 0.0.0.0:4318}
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+      batch:
+        timeout: 5s
+        send_batch_size: 512
+    exporters:
+      debug: {}
+      otlp/jaeger:
+        endpoint: setu-jaeger:4317
+        tls:
+          insecure: true
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlp/jaeger, debug]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: setu-otel-collector
+  namespace: setu
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: setu-otel-collector}}
+  template:
+    metadata: {labels: {app: setu-otel-collector}}
+    spec:
+      containers:
+        - name: collector
+          image: otel/opentelemetry-collector-contrib:0.136.0
+          args: ["--config=/etc/otel/otel-collector.yaml"]
+          ports:
+            - {name: otlp-grpc, containerPort: 4317}
+            - {name: otlp-http, containerPort: 4318}
+          volumeMounts:
+            - {name: config, mountPath: /etc/otel}
+      volumes:
+        - name: config
+          configMap: {name: setu-otel-collector-config}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: setu-otel-collector
+  namespace: setu
+spec:
+  selector: {app: setu-otel-collector}
+  ports:
+    - {name: otlp-grpc, port: 4317, targetPort: otlp-grpc}
+    - {name: otlp-http, port: 4318, targetPort: otlp-http}

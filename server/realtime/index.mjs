@@ -17,6 +17,9 @@ import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { createClient as createRedisClient } from 'redis';
 import { WebSocketServer, WebSocket } from 'ws';
+import { Kafka, logLevel } from 'kafkajs';
+import { incCounter, setGauge, metricsHandler } from './metrics.mjs';
+import { extractTraceparent, startSpan, traceparent } from './tracing.mjs';
 
 const PORT = Number(process.env.REALTIME_PORT || 8787);
 const HOST = process.env.REALTIME_HOST || '0.0.0.0';
@@ -34,6 +37,22 @@ const ORDER_RATE_LIMIT = Math.max(1, Number(process.env.ORDER_RATE_LIMIT_PER_MIN
 const CACHE_TTL_SECONDS = Math.max(5, Number(process.env.REDIS_CACHE_TTL_SECONDS || 60));
 const IDEMPOTENCY_TTL_SECONDS = Math.max(300, Number(process.env.REDIS_IDEMPOTENCY_TTL_SECONDS || 86400));
 const IDEMPOTENCY_LOCK_SECONDS = Math.max(15, Number(process.env.REDIS_IDEMPOTENCY_LOCK_SECONDS || 120));
+const METRICS_PORT = Number(process.env.METRICS_PORT || 9464);
+const KAFKA_ENABLED = process.env.KAFKA_ENABLED === 'true';
+const KAFKA_BROKERS = String(process.env.KAFKA_BROKERS || '127.0.0.1:9092').split(',').map(s => s.trim()).filter(Boolean);
+const KAFKA_CLIENT_ID = process.env.KAFKA_CLIENT_ID || 'setu-realtime-gateway';
+const KAFKA_DOMAINS = {
+  payment: { topic: 'setu.payment.events', group: 'setu-payment-worker-v1' },
+  inventory: { topic: 'setu.inventory.events', group: 'setu-inventory-worker-v1' },
+  dispatch: { topic: 'setu.dispatch.events', group: 'setu-dispatch-worker-v1' },
+  financial: { topic: 'setu.financial.events', group: 'setu-financial-worker-v1' },
+};
+const KAFKA_ADMIN_CACHE_MS = Math.max(1000, Number(process.env.KAFKA_ADMIN_CACHE_MS || 5000));
+const kafka = KAFKA_ENABLED ? new Kafka({ clientId: KAFKA_CLIENT_ID, brokers: KAFKA_BROKERS, logLevel: logLevel.WARN, retry: { retries: 5 } }) : null;
+const kafkaAdmin = kafka?.admin();
+const kafkaProducer = kafka?.producer({ idempotent: true, maxInFlightRequests: 1, allowAutoTopicCreation: false });
+let kafkaAdminSnapshot = { at: 0, data: null };
+let kafkaAdminReady = false;
 const RATE_LIMIT_SCRIPT = `
 local current = redis.call('INCR', KEYS[1])
 if current == 1 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end
@@ -61,6 +80,56 @@ let connectionCount = 0;
 
 function log(...args) {
   console.log('[SETU realtime]', ...args);
+}
+
+
+async function ensureKafkaAdmin() {
+  if (!KAFKA_ENABLED || !kafkaAdmin) throw new Error('Kafka admin is disabled');
+  if (!kafkaAdminReady) {
+    await kafkaAdmin.connect();
+    await kafkaProducer.connect();
+    kafkaAdminReady = true;
+  }
+}
+
+function kafkaLagForGroup(group, topicOffsets, groupOffsets) {
+  const byPartition = new Map((groupOffsets || []).map(row => [String(row.partition), Number(row.offset)]));
+  return (topicOffsets || []).reduce((sum, row) => {
+    const end = Number(row.offset);
+    const committed = byPartition.get(String(row.partition));
+    return sum + Math.max(0, end - (Number.isFinite(committed) ? committed : 0));
+  }, 0);
+}
+
+async function getKafkaObservability(force = false) {
+  if (!KAFKA_ENABLED) return { enabled: false, brokers: [], domains: [], generatedAt: new Date().toISOString() };
+  if (!force && kafkaAdminSnapshot.data && Date.now() - kafkaAdminSnapshot.at < KAFKA_ADMIN_CACHE_MS) return kafkaAdminSnapshot.data;
+  await ensureKafkaAdmin();
+  const domains = [];
+  for (const [name, cfg] of Object.entries(KAFKA_DOMAINS)) {
+    const [topicOffsets, groupOffsets] = await Promise.all([
+      kafkaAdmin.fetchTopicOffsets(cfg.topic),
+      kafkaAdmin.fetchOffsets({ groupId: cfg.group, topic: cfg.topic }),
+    ]);
+    const lag = kafkaLagForGroup(cfg.group, topicOffsets, groupOffsets);
+    const partitions = topicOffsets.map(row => ({ partition: row.partition, endOffset: Number(row.offset), committedOffset: Number(groupOffsets.find(g => g.partition === row.partition)?.offset || 0), lag: Math.max(0, Number(row.offset) - Number(groupOffsets.find(g => g.partition === row.partition)?.offset || 0)) }));
+    const metricKey = `setu:kafka:metrics:${name}`;
+    const metrics = await redis.hGetAll(metricKey);
+    const last = await redis.hGetAll(`setu:kafka:last:${name}`);
+    domains.push({ name, topic: cfg.topic, group: cfg.group, lag, partitions, metrics, last, health: lag > 10000 ? 'critical' : lag > 1000 ? 'warning' : 'healthy' });
+  }
+  const data = { enabled: true, brokers: KAFKA_BROKERS, generatedAt: new Date().toISOString(), domains };
+  kafkaAdminSnapshot = { at: Date.now(), data };
+  return data;
+}
+
+function isPrivilegedKafkaRole(role) {
+  return role === 'admin' || role === 'super_admin';
+}
+
+async function getAdminRole(userId) {
+  const { data } = await admin.from('profiles').select('role').eq('id', userId).maybeSingle();
+  return data?.role || null;
 }
 
 function isOriginAllowed(origin) {
@@ -121,10 +190,10 @@ async function publishRiderLocation(ws, state, message) {
 
   await cacheRiderLocation(row);
   const event = { room: `rider:${rider.id}`, type: 'rider.location', entity: row, operation: 'UPSERT', source: 'gateway', at: row.recorded_at };
-  await publishEvent(event);
+  if (!KAFKA_ENABLED) await publishEvent(event);
   // The gateway also emits a private user-room event so the rider app can
   // observe its own accepted location without opening another room.
-  await publishEvent({ ...event, room: `user:${state.userId}` });
+  if (!KAFKA_ENABLED) await publishEvent({ ...event, room: `user:${state.userId}` });
   send(ws, { type: 'rider.location.accepted', requestId: message.requestId, recordedAt: row.recorded_at });
 }
 
@@ -198,6 +267,7 @@ async function authorizeRoom(userId, role, room) {
   if (kind === 'user') return id === userId;
   if (kind === 'order') return canAccessOrder(userId, id, role);
   if (kind === 'rider') return canAccessRider(userId, id, role);
+  if (kind === 'admin') return ['admin', 'super_admin'].includes(role) && id === 'events';
   return false;
 }
 
@@ -228,8 +298,10 @@ async function bridgeSupabase() {
       if (vendor?.owner_id) recipients.add(`user:${vendor.owner_id}`);
     }
     const event = { type: 'order.changed', entity: row, operation: payload.eventType, at: new Date().toISOString() };
-    for (const room of recipients) await publishEvent({ ...event, room });
-    await publishEvent({ ...event, room: `order:${row.id}` });
+    if (!KAFKA_ENABLED) {
+      for (const room of recipients) await publishEvent({ ...event, room });
+      await publishEvent({ ...event, room: `order:${row.id}` });
+    }
   });
 
   channel.on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, async payload => {
@@ -257,13 +329,13 @@ async function bridgeSupabase() {
     if (!row?.rider_id) return;
     if (payload.eventType !== 'DELETE') await cacheRiderLocation(row);
     const event = { room: `rider:${row.rider_id}`, type: 'rider.location', entity: row, operation: payload.eventType, at: new Date().toISOString() };
-    await publishEvent(event);
+    if (!KAFKA_ENABLED) await publishEvent(event);
   });
 
   channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, async payload => {
     const row = payload.new;
     if (!row?.user_id) return;
-    await publishEvent({ room: `user:${row.user_id}`, type: 'notification.created', entity: row, operation: 'INSERT', at: new Date().toISOString() });
+    if (!KAFKA_ENABLED) await publishEvent({ room: `user:${row.user_id}`, type: 'notification.created', entity: row, operation: 'INSERT', at: new Date().toISOString() });
   });
 
   const status = await channel.subscribe();
@@ -399,6 +471,60 @@ async function cachedPublicData(pathname, url) {
 async function handleHttpApi(req, res, url) {
   const pathname = url.pathname;
   if (!pathname.startsWith('/v1/')) return false;
+
+
+  if (pathname.startsWith('/v1/admin/kafka/')) {
+    const auth = await getBearerUser(req);
+    if (!auth) { sendJson(res, 401, { error: 'Authentication required', code: 'AUTH_REQUIRED' }); return true; }
+    const role = await getAdminRole(auth.user.id);
+    if (!isPrivilegedKafkaRole(role)) { sendJson(res, 403, { error: 'Admin access required', code: 'ADMIN_REQUIRED' }); return true; }
+
+    if (req.method === 'GET' && pathname === '/v1/admin/kafka/metrics') {
+      try { sendJson(res, 200, await getKafkaObservability(url.searchParams.get('refresh') === '1')); }
+      catch (error) { sendJson(res, 503, { error: error.message || 'Kafka metrics unavailable', code: 'KAFKA_UNAVAILABLE' }); }
+      return true;
+    }
+
+    if (req.method === 'POST' && pathname === '/v1/admin/kafka/dlq/replay') {
+      let body;
+      try { body = await readJson(req, 32 * 1024); } catch (error) { sendJson(res, error.statusCode || 400, { error: error.message }); return true; }
+      const domain = String(body.domain || '');
+      const limit = Math.min(100, Math.max(1, Number(body.limit || 10)));
+      const cfg = KAFKA_DOMAINS[domain];
+      if (!cfg) { sendJson(res, 400, { error: 'Invalid domain', code: 'INVALID_DOMAIN' }); return true; }
+      try {
+        await ensureKafkaAdmin();
+        const dlqTopic = `${cfg.topic}.dlq`;
+        const metadata = await kafkaAdmin.fetchTopicMetadata({ topics: [dlqTopic] });
+        const partitions = metadata.topics?.[0]?.partitions || [];
+        const messages = [];
+        for (const part of partitions) {
+          const offsets = await kafkaAdmin.fetchTopicOffsets(dlqTopic);
+          const end = Number(offsets.find(x => x.partition === part.partition)?.offset || 0);
+          const start = Math.max(0, end - limit);
+          const consumer = kafka.consumer({ groupId: `setu-admin-replay-${domain}-${Date.now()}-${part.partition}`, allowAutoTopicCreation: false });
+          await consumer.connect();
+          await consumer.subscribe({ topic: dlqTopic, fromBeginning: true });
+          await consumer.run({ eachMessage: async ({ message }) => {
+            const event = message.value ? JSON.parse(message.value.toString()) : null;
+            const offset = Number(message.offset);
+            if (event && offset >= start && offset < end && messages.length < limit) messages.push({ partition: part.partition, offset, event });
+          }});
+          await new Promise(resolve => setTimeout(resolve, 100));
+          await consumer.stop().catch(() => {}); await consumer.disconnect().catch(() => {});
+          if (messages.length >= limit) break;
+        }
+        const unique = new Map(messages.map(x => [`${x.partition}:${x.offset}`, x]));
+        const selected = [...unique.values()].slice(-limit);
+        if (selected.length) {
+          await kafkaProducer.send({ topic: cfg.topic, acks: -1, messages: selected.map(({ event }) => ({ key: event.aggregateId || event.eventId, value: JSON.stringify(event), headers: { 'x-setu-replayed': 'true', 'x-setu-replayed-by': auth.user.id, 'x-setu-replayed-at': new Date().toISOString(), 'x-setu-event-id': event.eventId } })) });
+        }
+        kafkaAdminSnapshot = { at: 0, data: null };
+        sendJson(res, 200, { domain, replayed: selected.length, eventIds: selected.map(x => x.event.eventId) });
+      } catch (error) { sendJson(res, 503, { error: error.message || 'DLQ replay failed', code: 'DLQ_REPLAY_FAILED' }); }
+      return true;
+    }
+  }
 
   const ipLimit = await rateLimit(`setu:rl:v1:ip:${clientIp(req)}`, API_RATE_LIMIT, API_RATE_WINDOW_SECONDS);
   if (!ipLimit.allowed) {
@@ -549,18 +675,18 @@ async function start() {
       res.end();
       return;
     }
+    if (requestUrl.pathname === '/metrics') { metricsHandler(() => ({ setu_realtime_connections: connectionCount, setu_realtime_rooms: rooms.size }))(req, res); return; }
     if (requestUrl.pathname.startsWith('/v1/')) {
-      try {
-        await handleHttpApi(req, res, requestUrl);
-      } catch (error) {
-        console.error('[SETU realtime] HTTP API error:', error);
-        if (!res.headersSent) sendJson(res, 500, { error: 'Internal server error', code: 'INTERNAL_ERROR' });
-      }
+      const span = startSpan(`HTTP ${req.method} ${requestUrl.pathname}`, { parent: extractTraceparent(req.headers.traceparent), attributes: { 'http.request.method': req.method, 'url.path': requestUrl.pathname } });
+      res.setHeader('traceparent', traceparent(span.ctx));
+      try { await handleHttpApi(req, res, requestUrl); span.end('OK', { 'http.response.status_code': res.statusCode }); }
+      catch (error) { span.end('ERROR', { 'http.response.status_code': 500, 'error.type': error?.name || 'Error' }); console.error('[SETU realtime] HTTP API error:', error); if (!res.headersSent) sendJson(res, 500, { error: 'Internal server error', code: 'INTERNAL_ERROR' }); }
       return;
     }
     if (req.url === '/health' || req.url === '/healthz') {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, service: 'setu-realtime', redis: redis.isReady, connections: connectionCount, rooms: rooms.size }));
+      res.end(JSON.stringify({ ok: true, service: 'setu-realtime', redis: redis.isReady,
+      kafka: KAFKA_ENABLED, kafkaAdmin: kafkaAdminReady, connections: connectionCount, rooms: rooms.size }));
       return;
     }
     if (req.url?.startsWith('/cache/rider/')) {
@@ -606,7 +732,7 @@ async function start() {
   });
 
   wss.on('connection', ws => {
-    connectionCount += 1;
+    connectionCount += 1; setGauge('setu_realtime_connections', {}, connectionCount, 'Active WebSocket connections'); incCounter('setu_realtime_connections_total', {}, 1, 'Accepted WebSocket connections');
     clientState.set(ws, { authenticated: false, userId: null, role: null, rooms: new Set(), authenticatedAt: null, lastPongAt: Date.now(), isAlive: true });
     ws.on('pong', () => { const state = clientState.get(ws); if (state) { state.isAlive = true; state.lastPongAt = Date.now(); } });
     send(ws, { type: 'hello', service: 'setu-realtime', version: 1 });
@@ -697,10 +823,14 @@ async function start() {
   });
 
   server.listen(PORT, HOST, () => log(`listening on ${HOST}:${PORT}`));
+  const metricsServer = http.createServer((req, res) => { if (req.url === '/metrics') return metricsHandler(() => ({ setu_realtime_connections: connectionCount, setu_realtime_rooms: rooms.size }))(req, res); res.writeHead(404); res.end(); });
+  metricsServer.listen(METRICS_PORT, HOST, () => log(`metrics listening on ${HOST}:${METRICS_PORT}`));
 
   const shutdown = async signal => {
     log(`received ${signal}; shutting down`);
     server.close();
+    try { if (kafkaAdminReady) await kafkaAdmin.disconnect(); } catch {}
+    try { if (kafkaAdminReady) await kafkaProducer.disconnect(); } catch {}
     try { await redisSubscriber.quit(); } catch {}
     try { await redis.quit(); } catch {}
     process.exit(0);

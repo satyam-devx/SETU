@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: setu-domain-workers
+  namespace: setu
+  labels:
+    app.kubernetes.io/name: setu-domain-workers
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: setu-domain-workers
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "9466"
+      labels:
+        app.kubernetes.io/name: setu-domain-workers
+    spec:
+      serviceAccountName: setu-realtime
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: domain-workers
+          image: ghcr.io/satyam-devx/setu-realtime:latest
+          command: ["npm", "run", "domain-workers"]
+          ports:
+            - name: metrics
+              containerPort: 9466
+          envFrom:
+            - configMapRef:
+                name: setu-realtime-config
+            - secretRef:
+                name: setu-realtime-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]

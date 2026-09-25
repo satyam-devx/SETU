@@ -61,6 +61,92 @@ services:
     volumes:
       - redis_data:/data
 
+  # Kafka event backbone (KRaft, no ZooKeeper). Kafka is internal-only.
+  kafka:
+    image: apache/kafka:4.0.0
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 6
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
+  kafka-init:
+    image: apache/kafka:4.0.0
+    depends_on:
+      - kafka
+    entrypoint: ["/bin/bash", "-lc"]
+    command: >
+      'for i in {1..30}; do /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list >/dev/null 2>&1 && break || sleep 2; done;
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic setu.order.events --partitions 6 --replication-factor 1;
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic setu.notification.events --partitions 3 --replication-factor 1;
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic setu.delivery.events --partitions 6 --replication-factor 1;
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic setu.payment.events --partitions 6 --replication-factor 1;
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic setu.inventory.events --partitions 6 --replication-factor 1;
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic setu.dispatch.events --partitions 6 --replication-factor 1;
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic setu.financial.events --partitions 3 --replication-factor 1;
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic setu.domain.events --partitions 3 --replication-factor 1;
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic setu.payment.events.retry --partitions 6 --replication-factor 1;
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic setu.payment.events.dlq --partitions 6 --replication-factor 1;
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic setu.inventory.events.retry --partitions 6 --replication-factor 1;
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic setu.inventory.events.dlq --partitions 6 --replication-factor 1;
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic setu.dispatch.events.retry --partitions 6 --replication-factor 1;
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic setu.dispatch.events.dlq --partitions 6 --replication-factor 1;
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic setu.financial.events.retry --partitions 3 --replication-factor 1;
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic setu.financial.events.dlq --partitions 3 --replication-factor 1'
+
+  kafka-worker:
+    build:
+      context: ./server/realtime
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - kafka
+      - kafka-init
+    command: npm run worker
+    environment:
+      REDIS_URL: redis://redis:6379
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-true}
+      KAFKA_BROKERS: kafka:9092
+      SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      KAFKA_CLIENT_ID: setu-worker
+      KAFKA_REALTIME_GROUP_ID: setu-realtime-projector-v1
+      KAFKA_REALTIME_PROJECTOR: ${KAFKA_REALTIME_PROJECTOR:-true}
+      KAFKA_OUTBOX_BATCH_SIZE: ${KAFKA_OUTBOX_BATCH_SIZE:-100}
+      KAFKA_OUTBOX_POLL_MS: ${KAFKA_OUTBOX_POLL_MS:-1000}
+
+  # Domain-specific Kafka consumers. Each integrity domain has its own
+  # consumer group, retry topic and DLQ so a failing payment handler cannot
+  # block inventory, dispatch or financial events.
+  domain-workers:
+    build:
+      context: ./server/realtime
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - kafka
+      - kafka-init
+    command: npm run domain-workers
+    environment:
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_MAX_RETRIES: ${KAFKA_MAX_RETRIES:-5}
+      KAFKA_RETRY_BASE_MS: ${KAFKA_RETRY_BASE_MS:-5000}
+      KAFKA_RETRY_MAX_MS: ${KAFKA_RETRY_MAX_MS:-300000}
+      KAFKA_EVENT_DEDUPE_TTL: ${KAFKA_EVENT_DEDUPE_TTL:-604800}
+
   realtime:
     build:
       context: ./server/realtime
@@ -73,10 +159,12 @@ services:
       REALTIME_PORT: 8787
       REALTIME_HOST: 0.0.0.0
       REDIS_URL: redis://redis:6379
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-true}
       SUPABASE_URL: ${VITE_SUPABASE_URL:-}
       SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
       REALTIME_ALLOWED_ORIGINS: ${REALTIME_ALLOWED_ORIGINS:-http://localhost:5173}
+      KAFKA_BROKERS: kafka:9092
       REALTIME_MAX_CONNECTIONS: ${REALTIME_MAX_CONNECTIONS:-5000}
       RIDER_LOCATION_MIN_INTERVAL_SECONDS: ${RIDER_LOCATION_MIN_INTERVAL_SECONDS:-5}
 
@@ -108,3 +196,4 @@ services:
 volumes:
   node_modules:
   redis_data:
+  kafka_data:

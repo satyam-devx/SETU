@@ -150,6 +150,7 @@ const AdminSettings       = lazy(() => import('@/pages/admin/AdminSettings'));
 const AdminCustomers      = lazy(() => import('@/pages/admin/AdminCustomers'));
 const AdminIncidents      = lazy(() => import('@/pages/admin/AdminIncidents'));
 const AdminMonitoring     = lazy(() => import('@/pages/admin/AdminMonitoring'));
+const AdminKafka           = lazy(() => import('@/pages/admin/AdminKafka'));
 const AdminCategories     = lazy(() => import('@/pages/admin/AdminCategories'));
 const AdminProducts       = lazy(() => import('@/pages/admin/AdminProducts'));
 const AdminCoupons        = lazy(() => import('@/pages/admin/AdminCoupons'));
@@ -490,6 +491,7 @@ function App() {
                 <Route path="customers"          element={<Suspense fallback={<PortalFallback />}><AdminCustomers /></Suspense>} />
                 <Route path="incidents"          element={<Suspense fallback={<PortalFallback />}><AdminIncidents /></Suspense>} />
                 <Route path="monitoring"         element={<Suspense fallback={<PortalFallback />}><AdminMonitoring /></Suspense>} />
+                <Route path="kafka"             element={<Suspense fallback={<PortalFallback />}><AdminKafka /></Suspense>} />
                 <Route path="categories"         element={<Suspense fallback={<PortalFallback />}><AdminCategories /></Suspense>} />
                 <Route path="products"           element={<Suspense fallback={<PortalFallback />}><AdminProducts /></Suspense>} />
                 <Route path="coupons"            element={<Suspense fallback={<PortalFallback />}><AdminCoupons /></Suspense>} />

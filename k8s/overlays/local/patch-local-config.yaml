@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: setu-realtime-config
+  namespace: setu
+data:
+  REALTIME_ALLOWED_ORIGINS: http://localhost:5173
+
+  OTEL_ENABLED: "true"
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://setu-otel-collector:4318/v1/traces"
+  OTEL_TRACE_SAMPLE_RATE: "1"

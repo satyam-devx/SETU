@@ -22,7 +22,11 @@
     "release:ota": "node scripts/release-ota.mjs",
     "revoke:ota": "node scripts/revoke-ota.mjs",
     "realtime": "npm --prefix server/realtime start",
-    "realtime:dev": "npm --prefix server/realtime run dev"
+    "realtime:dev": "npm --prefix server/realtime run dev",
+    "k8s:render": "kubectl kustomize k8s/overlays/production",
+    "k8s:render:local": "kubectl kustomize k8s/overlays/local",
+    "k8s:validate": "kubectl kustomize k8s/overlays/production >/dev/null",
+    "k8s:keda:render": "kubectl kustomize k8s/overlays/production | grep -A3 -B2 'kind: ScaledObject'"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",

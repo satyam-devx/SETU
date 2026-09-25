@@ -24,6 +24,7 @@ const menuItems = [
   { label: 'Orders',            icon: ShoppingBag,     path: '/admin/orders',               group: 'core'     },
   { label: 'Analytics',         icon: TrendingUp,      path: '/admin/analytics',            group: 'core'     },
   { label: 'Live Monitoring',   icon: Activity,        path: '/admin/monitoring',           group: 'core'     },
+  { label: 'Kafka Operations', icon: Activity,        path: '/admin/kafka',                group: 'core'     },
   { label: 'Disputes',          icon: Scale,           path: '/admin/disputes',             group: 'core', badge: 'disputes' },
 
   // ── Onboarding ────────────────────────────────────────

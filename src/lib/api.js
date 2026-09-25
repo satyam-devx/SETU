@@ -26,6 +26,14 @@ import { PRODUCTS, VENDORS, ORDERS, NOTIFICATIONS, VILLAGES, CATEGORIES, SEVA_PR
 const REALTIME_URL = import.meta.env.VITE_REALTIME_URL || '';
 const API_GATEWAY_URL = import.meta.env.VITE_API_GATEWAY_URL || REALTIME_URL.replace(/^ws(s?):\/\//, 'http$1:').replace(/\/ws\/?$/, '');
 
+function createTraceparent() {
+  if (!globalThis.crypto?.getRandomValues) return null;
+  const bytes = new Uint8Array(24); globalThis.crypto.getRandomValues(bytes);
+  const hex = [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
+  return `00-${hex.slice(0, 32)}-${hex.slice(32)}-01`;
+}
+
+
 async function getGatewayAccessToken() {
   if (!API_GATEWAY_URL || !isSupabaseConfigured) return null;
   const { data } = await supabase.auth.getSession();
@@ -36,6 +44,8 @@ async function gatewayRequest(path, { method = 'GET', body, idempotencyKey, sign
   if (!API_GATEWAY_URL) return null;
   const token = await getGatewayAccessToken();
   const headers = { accept: 'application/json' };
+  const trace = createTraceparent();
+  if (trace) headers.traceparent = trace;
   if (token) headers.authorization = `Bearer ${token}`;
   if (body !== undefined) headers['content-type'] = 'application/json';
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
@@ -2516,6 +2526,8 @@ export const AdminAPI = {
   getHourlyOrders:      ()                         => getTodayHourlyOrders(),
   getLiveAnalytics:     ()                         => getLiveAnalytics(),
   getObservabilityDashboard: ()                  => getObservabilityDashboard(),
+  getKafkaMetrics:       (refresh = false)       => gatewayRequest(`/v1/admin/kafka/metrics${refresh ? '?refresh=1' : ''}`),
+  replayKafkaDlq:        (domain, limit = 10)     => gatewayRequest('/v1/admin/kafka/dlq/replay', { method: 'POST', body: { domain, limit } }),
   getDailyTrend:        ()                         => getDailyOrderTrend(),
   getHourlyTrend:       ()                         => getHourlyOrderTrend(),
 

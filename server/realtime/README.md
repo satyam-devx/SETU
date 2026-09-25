@@ -80,3 +80,99 @@ The gateway now exposes a small authenticated HTTP API on the same port as the W
 Every `/v1/*` request receives an atomic Redis fixed-window IP limit, plus a user limit when authenticated. Order creation has an additional per-user limit. Redis stores completed idempotent responses for 24h by default and uses a short-lived processing claim to prevent concurrent duplicate execution across gateway replicas.
 
 The database `create_order()` idempotency key remains the final correctness boundary. Redis is an accelerator/coordination layer, not the financial source of truth.
+
+## Kafka event backbone (V1)
+
+SETU now uses a transactional PostgreSQL outbox as the durable event source:
+
+```text
+Business transaction
+       │
+       ├── PostgreSQL row change
+       └── setu_event_outbox row (same transaction)
+                    │
+                    ▼
+             Kafka worker
+                    │
+          ┌─────────┼─────────┐
+          ▼         ▼         ▼
+       Orders   Notifications Delivery
+       topic       topic       topic
+          │         │           │
+          └─────────┼───────────┘
+                    ▼
+             Redis projector
+                    ▼
+              WebSocket
+```
+
+Kafka is not exposed to the browser. The browser still talks to the WebSocket/API gateway, Redis remains the low-latency transport/cache, and PostgreSQL remains the source of truth.
+
+Topics:
+- `setu.order.events`
+- `setu.notification.events`
+- `setu.delivery.events`
+- `setu.domain.events`
+
+The producer uses Kafka idempotence and stable `eventId`s. Consumers also keep a Redis dedupe key so a producer crash between Kafka publish and `published_at` update does not create duplicate realtime delivery.
+
+## Kafka business-integrity events (V2)
+
+SETU now emits durable Kafka events for the four integrity domains in addition to orders/notifications/delivery:
+
+- `setu.payment.events` — payment intents, payment transactions, gateway-event state, refunds.
+- `setu.inventory.events` — reservation lifecycle (`reserved`, `committed`, `released`, `expired`).
+- `setu.dispatch.events` — dispatch events, rider offers, assignment facts.
+- `setu.financial.events` — journal postings, settlements, payout reconciliation state.
+
+All events are created by PostgreSQL triggers inside the same transaction as the business mutation and first land in `setu_event_outbox`. The Kafka worker publishes them asynchronously. Kafka consumers must be idempotent; PostgreSQL remains authoritative.
+
+Payment gateway payloads are redacted before entering the outbox. Do not put card data, OTPs, access tokens, or provider secrets in event payloads.
+
+Recommended event flow:
+
+```text
+Payment RPC / Inventory RPC / Dispatch RPC / Ledger RPC
+                  |
+             PostgreSQL TX
+             /           \
+      business row     outbox row
+                           |
+                       Kafka worker
+                           |
+       +---------+---------+---------+---------+
+       |         |         |         |         |
+     payment  inventory dispatch financial  order
+       |         |         |         |         |
+       +---------+---------+---------+---------+
+                           |
+                  Redis / WebSocket
+```
+
+## Domain workers, retries and DLQs
+
+SETU runs independent Kafka consumer groups for payment, inventory, dispatch and financial events. A failure in one domain therefore does not block the others.
+
+Each domain has:
+
+- source topic: `setu.<domain>.events`
+- retry topic: `setu.<domain>.events.retry`
+- dead-letter topic: `setu.<domain>.events.dlq`
+- independent consumer groups
+- Redis event-id deduplication
+- exponential retry backoff
+
+After the configured retry count, an event is sent to the DLQ with the original topic, attempt count and error metadata in Kafka headers. The worker does not mutate authoritative business state; domain writes remain PostgreSQL RPC/transaction responsibilities.
+
+### DLQ replay
+
+From the realtime worker container or a Node environment with Kafka access:
+
+```bash
+npm run replay-dlq -- --domain payment --limit 100
+npm run replay-dlq -- --domain inventory --limit 100
+npm run replay-dlq -- --domain dispatch --limit 100
+npm run replay-dlq -- --domain financial --limit 100
+```
+
+Replay republishes the event to its source topic with `x-setu-replayed=true`. Because consumers are idempotent, replay is safe for event delivery; PostgreSQL remains the source of truth.

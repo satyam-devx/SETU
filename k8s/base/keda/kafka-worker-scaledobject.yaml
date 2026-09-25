@@ -1,0 +1,99 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: setu-kafka-worker-lag
+  namespace: setu
+  labels:
+    app.kubernetes.io/name: setu-kafka-worker
+    app.kubernetes.io/component: autoscaling
+spec:
+  scaleTargetRef:
+    name: setu-kafka-worker
+  pollingInterval: 15
+  cooldownPeriod: 120
+  minReplicaCount: 2
+  maxReplicaCount: 12
+  fallback:
+    failureThreshold: 3
+    replicas: 2
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          selectPolicy: Max
+          policies:
+            - type: Pods
+              value: 4
+              periodSeconds: 60
+        scaleDown:
+          stabilizationWindowSeconds: 180
+          selectPolicy: Max
+          policies:
+            - type: Percent
+              value: 25
+              periodSeconds: 60
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: setu-kafka:9092
+        consumerGroup: setu-realtime-projector-v1
+        topic: setu.order.events
+        lagThreshold: "100"
+        activationLagThreshold: "10"
+        offsetResetPolicy: latest
+        allowIdleConsumers: "false"
+    - type: kafka
+      metadata:
+        bootstrapServers: setu-kafka:9092
+        consumerGroup: setu-realtime-projector-v1
+        topic: setu.notification.events
+        lagThreshold: "100"
+        activationLagThreshold: "10"
+        offsetResetPolicy: latest
+        allowIdleConsumers: "false"
+    - type: kafka
+      metadata:
+        bootstrapServers: setu-kafka:9092
+        consumerGroup: setu-realtime-projector-v1
+        topic: setu.delivery.events
+        lagThreshold: "100"
+        activationLagThreshold: "10"
+        offsetResetPolicy: latest
+        allowIdleConsumers: "false"
+    - type: kafka
+      metadata:
+        bootstrapServers: setu-kafka:9092
+        consumerGroup: setu-realtime-projector-v1
+        topic: setu.payment.events
+        lagThreshold: "100"
+        activationLagThreshold: "10"
+        offsetResetPolicy: latest
+        allowIdleConsumers: "false"
+    - type: kafka
+      metadata:
+        bootstrapServers: setu-kafka:9092
+        consumerGroup: setu-realtime-projector-v1
+        topic: setu.inventory.events
+        lagThreshold: "100"
+        activationLagThreshold: "10"
+        offsetResetPolicy: latest
+        allowIdleConsumers: "false"
+    - type: kafka
+      metadata:
+        bootstrapServers: setu-kafka:9092
+        consumerGroup: setu-realtime-projector-v1
+        topic: setu.dispatch.events
+        lagThreshold: "100"
+        activationLagThreshold: "10"
+        offsetResetPolicy: latest
+        allowIdleConsumers: "false"
+    - type: kafka
+      metadata:
+        bootstrapServers: setu-kafka:9092
+        consumerGroup: setu-realtime-projector-v1
+        topic: setu.financial.events
+        lagThreshold: "100"
+        activationLagThreshold: "10"
+        offsetResetPolicy: latest
+        allowIdleConsumers: "false"

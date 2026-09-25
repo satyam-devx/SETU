@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: setu-kafka-worker
+  namespace: setu
+  labels:
+    app.kubernetes.io/name: setu-kafka-worker
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: setu-kafka-worker
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "9465"
+      labels:
+        app.kubernetes.io/name: setu-kafka-worker
+    spec:
+      serviceAccountName: setu-realtime
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: worker
+          image: ghcr.io/satyam-devx/setu-realtime:latest
+          command: ["npm", "run", "worker"]
+          ports:
+            - name: metrics
+              containerPort: 9465
+          envFrom:
+            - configMapRef:
+                name: setu-realtime-config
+            - secretRef:
+                name: setu-realtime-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]

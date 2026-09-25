@@ -1,0 +1,108 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: setu-domain-workers-lag
+  namespace: setu
+  labels:
+    app.kubernetes.io/name: setu-domain-workers
+    app.kubernetes.io/component: autoscaling
+spec:
+  scaleTargetRef:
+    name: setu-domain-workers
+  pollingInterval: 15
+  cooldownPeriod: 120
+  minReplicaCount: 2
+  maxReplicaCount: 16
+  fallback:
+    failureThreshold: 3
+    replicas: 2
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          selectPolicy: Max
+          policies:
+            - type: Pods
+              value: 4
+              periodSeconds: 60
+        scaleDown:
+          stabilizationWindowSeconds: 180
+          selectPolicy: Max
+          policies:
+            - type: Percent
+              value: 25
+              periodSeconds: 60
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: setu-kafka:9092
+        consumerGroup: setu-payment-worker-v1
+        topic: setu.payment.events
+        lagThreshold: "50"
+        activationLagThreshold: "5"
+        offsetResetPolicy: latest
+        allowIdleConsumers: "false"
+    - type: kafka
+      metadata:
+        bootstrapServers: setu-kafka:9092
+        consumerGroup: setu-payment-worker-v1-retry
+        topic: setu.payment.events.retry
+        lagThreshold: "25"
+        activationLagThreshold: "5"
+        offsetResetPolicy: latest
+        allowIdleConsumers: "false"
+    - type: kafka
+      metadata:
+        bootstrapServers: setu-kafka:9092
+        consumerGroup: setu-inventory-worker-v1
+        topic: setu.inventory.events
+        lagThreshold: "50"
+        activationLagThreshold: "5"
+        offsetResetPolicy: latest
+        allowIdleConsumers: "false"
+    - type: kafka
+      metadata:
+        bootstrapServers: setu-kafka:9092
+        consumerGroup: setu-inventory-worker-v1-retry
+        topic: setu.inventory.events.retry
+        lagThreshold: "25"
+        activationLagThreshold: "5"
+        offsetResetPolicy: latest
+        allowIdleConsumers: "false"
+    - type: kafka
+      metadata:
+        bootstrapServers: setu-kafka:9092
+        consumerGroup: setu-dispatch-worker-v1
+        topic: setu.dispatch.events
+        lagThreshold: "50"
+        activationLagThreshold: "5"
+        offsetResetPolicy: latest
+        allowIdleConsumers: "false"
+    - type: kafka
+      metadata:
+        bootstrapServers: setu-kafka:9092
+        consumerGroup: setu-dispatch-worker-v1-retry
+        topic: setu.dispatch.events.retry
+        lagThreshold: "25"
+        activationLagThreshold: "5"
+        offsetResetPolicy: latest
+        allowIdleConsumers: "false"
+    - type: kafka
+      metadata:
+        bootstrapServers: setu-kafka:9092
+        consumerGroup: setu-financial-worker-v1
+        topic: setu.financial.events
+        lagThreshold: "50"
+        activationLagThreshold: "5"
+        offsetResetPolicy: latest
+        allowIdleConsumers: "false"
+    - type: kafka
+      metadata:
+        bootstrapServers: setu-kafka:9092
+        consumerGroup: setu-financial-worker-v1-retry
+        topic: setu.financial.events.retry
+        lagThreshold: "25"
+        activationLagThreshold: "5"
+        offsetResetPolicy: latest
+        allowIdleConsumers: "false"

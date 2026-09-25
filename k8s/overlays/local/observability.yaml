@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: setu-prometheus
+  namespace: setu
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: setu-prometheus}
+  template:
+    metadata:
+      labels: {app: setu-prometheus}
+    spec:
+      serviceAccountName: setu-prometheus
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.5.0
+          args: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus"]
+          ports: [{name: http, containerPort: 9090}]
+          volumeMounts:
+            - {name: config, mountPath: /etc/prometheus}
+            - {name: data, mountPath: /prometheus}
+      volumes:
+        - name: config
+          configMap: {name: setu-prometheus-config}
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: setu-prometheus
+  namespace: setu
+spec:
+  selector: {app: setu-prometheus}
+  ports: [{name: http, port: 9090, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: setu-grafana
+  namespace: setu
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: setu-grafana}
+  template:
+    metadata:
+      labels: {app: setu-grafana}
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:12.1.1
+          ports: [{name: http, containerPort: 3000}]
+          env:
+            - {name: GF_AUTH_ANONYMOUS_ENABLED, value: "true"}
+            - {name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Viewer}
+          volumeMounts:
+            - {name: dashboards, mountPath: /var/lib/grafana/dashboards}
+            - {name: provisioning, mountPath: /etc/grafana/provisioning/dashboards}
+      volumes:
+        - name: dashboards
+          configMap: {name: setu-grafana-dashboard}
+        - name: provisioning
+          configMap: {name: setu-grafana-provisioning}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: setu-grafana
+  namespace: setu
+spec:
+  selector: {app: setu-grafana}
+  ports: [{name: http, port: 3000, targetPort: http}]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: setu-grafana-dashboard
+  namespace: setu
+data:
+  setu-overview.json: |
+    {"title":"SETU Infrastructure Overview","uid":"setu-overview","schemaVersion":39,"panels":[{"type":"stat","title":"Realtime Connections","targets":[{"expr":"setu_realtime_connections"}]},{"type":"timeseries","title":"WebSocket Connections","targets":[{"expr":"setu_realtime_connections"}]},{"type":"timeseries","title":"Kafka Events Processed","targets":[{"expr":"sum by (domain) (rate(setu_kafka_events_processed_total[5m]))"}]},{"type":"timeseries","title":"Kafka Retries","targets":[{"expr":"sum by (domain) (rate(setu_kafka_events_retry_total[5m]))"}]},{"type":"timeseries","title":"Kafka DLQ","targets":[{"expr":"sum by (domain) (rate(setu_kafka_events_dlq_total[5m]))"}]}]}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: setu-grafana-provisioning
+  namespace: setu
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: SETU
+        orgId: 1
+        type: file
+        disableDeletion: true
+        updateIntervalSeconds: 30
+        options:
+          path: /var/lib/grafana/dashboards
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://setu-prometheus:9090
+        isDefault: true
