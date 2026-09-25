@@ -9,6 +9,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { initLeaflet, calculateETA, getDistance } from '@/lib/maps';
 import { supabase } from '@/lib/supabase';
 import { subscribeRealtimeChannel } from '@/lib/realtime-manager';
+import { subscribe as subscribeSetuRealtime, isSetuRealtimeEnabled } from '@/lib/setu-realtime';
 import { Loader2, WifiOff, Clock } from 'lucide-react';
 
 // OSM tile URL — no key needed
@@ -24,6 +25,7 @@ export default function OrderTrackingMap({ riderId, vendorLoc, customerLoc }) {
   const [loading,  setLoading]  = useState(true);
   const [mapError, setMapError] = useState(false);
   const [eta,      setEta]      = useState(null); // minutes
+  const lastLocationAtRef = useRef(0);
 
   // ── Build map once on mount ───────────────────────────────
   useEffect(() => {
@@ -83,36 +85,44 @@ export default function OrderTrackingMap({ riderId, vendorLoc, customerLoc }) {
             iconAnchor: [8, 8],
           });
 
-          channelRef.current = subscribeRealtimeChannel({
-            key: `rider-location:${riderId}`,
-            build: (channel, emit) => channel.on('postgres_changes', {
-              event: 'UPDATE', schema: 'public', table: 'rider_locations', filter: `rider_id=eq.${riderId}`,
-            }, emit),
-            onEvent: payload => {
-              if (!mounted || !mapRef.current) return;
-              const { lat, lng } = payload.new;
-              if (!riderRef.current) {
-                riderRef.current = L.marker([lat, lng], { icon: orangeIcon }).addTo(mapRef.current).bindPopup('🛵 Rider');
-              } else {
-                riderRef.current.setLatLng([lat, lng]);
-              }
-              mapRef.current.panTo([lat, lng], { animate: true, duration: 0.8 });
-              const dist = getDistance(lat, lng, customerLoc.lat, customerLoc.lng);
-              setEta(calculateETA(dist));
-            },
-            onRecover: async () => {
-              const { data } = await supabase.from('rider_locations').select('*').eq('rider_id', riderId).order('recorded_at', { ascending: false }).limit(1).maybeSingle();
-              if (data) {
-                const dist = getDistance(data.lat, data.lng, customerLoc.lat, customerLoc.lng);
-                setEta(calculateETA(dist));
-                if (mounted && mapRef.current) {
-                  if (!riderRef.current) riderRef.current = L.marker([data.lat, data.lng], { icon: orangeIcon }).addTo(mapRef.current).bindPopup('🛵 Rider');
-                  else riderRef.current.setLatLng([data.lat, data.lng]);
-                  mapRef.current.panTo([data.lat, data.lng], { animate: true, duration: 0.8 });
-                }
-              }
-            },
-          });
+          const applyLocation = payload => {
+            if (!mounted || !mapRef.current) return;
+            const point = payload?.entity || payload?.new;
+            if (!point) return;
+            const { lat, lng } = point;
+            const recordedAt = point.recorded_at ? Date.parse(point.recorded_at) : Date.now();
+            if (Number.isFinite(recordedAt) && recordedAt <= lastLocationAtRef.current) return;
+            lastLocationAtRef.current = recordedAt;
+            if (!riderRef.current) {
+              riderRef.current = L.marker([lat, lng], { icon: orangeIcon }).addTo(mapRef.current).bindPopup('🛵 Rider');
+            } else {
+              riderRef.current.setLatLng([lat, lng]);
+            }
+            mapRef.current.panTo([lat, lng], { animate: true, duration: 0.8 });
+            const dist = getDistance(lat, lng, customerLoc.lat, customerLoc.lng);
+            setEta(calculateETA(dist));
+          };
+
+          const recoverLocation = async () => {
+            const { data } = await supabase.from('rider_locations').select('*').eq('rider_id', riderId).order('recorded_at', { ascending: false }).limit(1).maybeSingle();
+            if (data) applyLocation({ entity: data });
+          };
+
+          // The custom SETU gateway is the preferred app-facing transport.
+          // Supabase Realtime remains as a compatibility/fail-safe transport.
+          if (isSetuRealtimeEnabled()) {
+            channelRef.current = subscribeSetuRealtime(`rider:${riderId}`, applyLocation);
+            void recoverLocation();
+          } else {
+            channelRef.current = subscribeRealtimeChannel({
+              key: `rider-location:${riderId}`,
+              build: (channel, emit) => channel.on('postgres_changes', {
+                event: 'UPDATE', schema: 'public', table: 'rider_locations', filter: `rider_id=eq.${riderId}`,
+              }, emit),
+              onEvent: applyLocation,
+              onRecover: recoverLocation,
+            });
+          }
         }
 
       } catch (err) {

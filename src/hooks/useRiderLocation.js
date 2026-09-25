@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAppLifecycle } from '@/hooks/useAppLifecycle';
 import { isNetworkOnline, subscribeNetwork } from '@/lib/network-state';
+import { isSetuRealtimeEnabled, publishRiderLocation } from '@/lib/setu-realtime';
 
 function distanceMeters(a, b) {
   if (!a || !b) return Infinity;
@@ -74,21 +75,37 @@ export function useRiderLocation(userId, isOnline = false, isOnDelivery = false)
       const elapsed = Date.now() - lastPublishAtRef.current;
       if (previous && moved < minDistance && elapsed < updateInterval) return;
 
-      const { error: publishError } = await supabase.from('rider_locations').upsert({
-        rider_id: resolvedRiderId,
-        lat: point.lat,
-        lng: point.lng,
-        accuracy: point.accuracy,
-        recorded_at: new Date().toISOString(),
-      }, { onConflict: 'rider_id' });
-
-      if (!publishError) {
-        lastPublishedRef.current = point;
-        lastPublishAtRef.current = Date.now();
-        latestRef.current = null;
-      } else {
-        setError(publishError.message);
+      let published = false;
+      if (isSetuRealtimeEnabled()) {
+        published = await publishRiderLocation({
+          lat: point.lat,
+          lng: point.lng,
+          accuracy: point.accuracy,
+          isOnDelivery,
+        });
       }
+
+      // The gateway path persists, caches and fans out the point. If the
+      // gateway is unavailable, retain the old direct Supabase write path so
+      // rider tracking never depends on the optional realtime service.
+      if (!published) {
+        const { error: publishError } = await supabase.from('rider_locations').upsert({
+          rider_id: resolvedRiderId,
+          lat: point.lat,
+          lng: point.lng,
+          accuracy: point.accuracy,
+          is_on_delivery: isOnDelivery,
+          recorded_at: new Date().toISOString(),
+        }, { onConflict: 'rider_id' });
+        if (publishError) {
+          setError(publishError.message);
+          return;
+        }
+      }
+
+      lastPublishedRef.current = point;
+      lastPublishAtRef.current = Date.now();
+      latestRef.current = null;
     };
 
     if (!resolvedRiderId || !isOnline || !networkOnline || !isActive || !navigator.geolocation) {

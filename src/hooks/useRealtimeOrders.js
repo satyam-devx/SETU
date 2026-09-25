@@ -27,6 +27,7 @@ import { queryClientInstance } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useAppLifecycle } from '@/hooks/useAppLifecycle';
 import { subscribeRealtimeChannel } from '@/lib/realtime-manager';
+import { subscribeOrders, subscribeNotifications, subscribe as subscribeSetuRealtime, isSetuRealtimeEnabled } from '@/lib/setu-realtime';
 
 // ── useRealtimeOrders ─────────────────────────────────────
 /**
@@ -93,6 +94,23 @@ export function useRealtimeOrders(roleArg, entityId = null) {
     return queryClientInstance.subscribe(queryKey, syncOrders);
   }, [queryKey]);
 
+  // When the Redis-backed SETU gateway is enabled, order changes also arrive
+  // through the app-facing WebSocket. The authoritative row still lives in
+  // Supabase, so the event only triggers a normal refetch/cache sync here.
+  // Supabase Realtime below remains active as the fail-safe transport.
+  useEffect(() => {
+    if (!queryKey || !user?.id) return undefined;
+    return subscribeOrders(message => {
+      const id = message?.entity?.id;
+      if (id && message.operation === 'DELETE') queryClientInstance.removeQueries(queryKeys.orders.detail(id));
+      else if (id && message.entity) queryClientInstance.setQueryData(queryKeys.orders.detail(id), current => ({ ...(current ?? {}), ...message.entity }));
+      // Invalidation refetches active queries from the authoritative database.
+      // Do not perform a second explicit fetch here because Supabase Realtime
+      // remains enabled as a compatibility transport.
+      void queryClientInstance.invalidateQueries({ queryKey });
+    });
+  }, [queryKey, user?.id, fetchInitial]);
+
   useEffect(() => {
     if (!isActive) { setSubReady(false); return undefined; }
     if (!isSupabaseConfigured || !user || !uid) { setSubReady(true); return; }
@@ -145,6 +163,7 @@ export function useRealtimeNotifications() {
   const { user }     = useAuth();
   const { dispatch } = useStore();
   const dispatchRef  = useRef(dispatch);
+  const seenNotificationIdsRef = useRef(new Set());
   const isActive = useAppLifecycle();
   dispatchRef.current = dispatch;
 
@@ -179,6 +198,24 @@ export function useRealtimeNotifications() {
   }, [user]);
 
   useEffect(() => {
+    if (!isActive || !isSupabaseConfigured || !user || !isSetuRealtimeEnabled()) return;
+    return subscribeNotifications(message => {
+      const notification = message?.entity;
+      if (!notification || seenNotificationIdsRef.current.has(notification.id)) return;
+      seenNotificationIdsRef.current.add(notification.id);
+      queryClientInstance.setQueryData(queryKeys.notifications.list(user.id), current => {
+        const list = Array.isArray(current) ? current : [];
+        return list.some(item => item.id === notification.id) ? list : [notification, ...list];
+      });
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('setu:notification', {
+          detail: { id: notification.id, title: notification.title, body: notification.body, type: notification.type },
+        }));
+      }
+    });
+  }, [user, isActive]);
+
+  useEffect(() => {
     if (!isActive || !isSupabaseConfigured || !user) return;
 
     const recover = () => {
@@ -200,6 +237,8 @@ export function useRealtimeNotifications() {
         if (!payload.new) return;
         const notification = payload.new;
         if (payload.eventType === 'INSERT') {
+          if (seenNotificationIdsRef.current.has(notification.id)) return;
+          seenNotificationIdsRef.current.add(notification.id);
           dispatchRef.current({ type: 'NOTIFICATION_RECEIVED', payload: { notification } });
           queryClientInstance.setQueryData(queryKeys.notifications.list(user.id), current => {
             const list = Array.isArray(current) ? current : [];
@@ -240,6 +279,16 @@ export function useRealtimeNotifications() {
  * @param {string|null} orderId
  */
 export function useRealtimeOrder(orderId) {
+  useEffect(() => {
+    if (!isSupabaseConfigured || !orderId || !isSetuRealtimeEnabled()) return;
+    return subscribeSetuRealtime(`order:${orderId}`, message => {
+      const entity = message?.entity;
+      if (message?.operation === 'DELETE') queryClientInstance.removeQueries(queryKeys.orders.detail(orderId));
+      else if (entity) queryClientInstance.setQueryData(queryKeys.orders.detail(orderId), current => ({ ...(current ?? {}), ...entity }));
+      void queryClientInstance.invalidateQueries(queryKeys.orders.detail(orderId));
+    });
+  }, [orderId]);
+
   useEffect(() => {
     if (!isSupabaseConfigured || !orderId) return;
     return subscribeRealtimeChannel({

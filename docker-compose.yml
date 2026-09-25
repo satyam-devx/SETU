@@ -50,6 +50,35 @@ services:
       VITE_FIREBASE_VAPID_KEY: ${VITE_FIREBASE_VAPID_KEY:-}
       VITE_MAPBOX_TOKEN: ${VITE_MAPBOX_TOKEN:-}
       VITE_RAZORPAY_KEY_ID: ${VITE_RAZORPAY_KEY_ID:-}
+      VITE_REALTIME_URL: ${VITE_REALTIME_URL:-ws://localhost:8787/ws}
+
+  # SETU realtime gateway — Redis-backed WebSocket fan-out.
+  # Redis is internal-only; only the gateway exposes port 8787.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    volumes:
+      - redis_data:/data
+
+  realtime:
+    build:
+      context: ./server/realtime
+    restart: unless-stopped
+    depends_on:
+      - redis
+    ports:
+      - "8787:8787"
+    environment:
+      REALTIME_PORT: 8787
+      REALTIME_HOST: 0.0.0.0
+      REDIS_URL: redis://redis:6379
+      SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+      SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      REALTIME_ALLOWED_ORIGINS: ${REALTIME_ALLOWED_ORIGINS:-http://localhost:5173}
+      REALTIME_MAX_CONNECTIONS: ${REALTIME_MAX_CONNECTIONS:-5000}
+      RIDER_LOCATION_MIN_INTERVAL_SECONDS: ${RIDER_LOCATION_MIN_INTERVAL_SECONDS:-5}
 
   # Optional: build + run the actual production image (Dockerfile's
   # "runtime" stage) locally, e.g. to sanity-check a deploy before
@@ -78,3 +107,4 @@ services:
 
 volumes:
   node_modules:
+  redis_data:
