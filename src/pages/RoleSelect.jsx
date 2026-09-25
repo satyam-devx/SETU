@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowUpRight,
   Bike,
@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import SplashScreen from '@/pages/SplashScreen';
 import RotatingText from '@/components/shared/RotatingText';
+import LoginSheet from '@/components/auth/LoginSheet';
 
 const SPLASH_SESSION_KEY = 'setu-splash-seen';
 
@@ -26,28 +27,11 @@ const HEADLINE_PHRASES = [
 
 // Keep these routes unchanged. Village Anchor is intentionally excluded:
 // it is an appointed role and has no self-registration flow.
-const JOIN_PATHS = [
-  {
-    path: '/onboarding/vendor',
-    title: 'Vendor',
-    blurb: 'Sell from your shop',
-    Icon: Store,
-    eyebrow: 'SELL',
-  },
-  {
-    path: '/onboarding/rider',
-    title: 'Rider',
-    blurb: 'Deliver & earn',
-    Icon: Bike,
-    eyebrow: 'DELIVER',
-  },
-  {
-    path: '/onboarding/seva',
-    title: 'Seva Provider',
-    blurb: 'Offer your skill',
-    Icon: Wrench,
-    eyebrow: 'SERVE',
-  },
+const ROLE_OPTIONS = [
+  { role: 'customer', title: 'Customer', blurb: 'Shop, order & get delivered', Icon: Store, eyebrow: 'SHOP' },
+  { role: 'vendor', title: 'Vendor', blurb: 'Sell from your shop', Icon: Store, eyebrow: 'SELL' },
+  { role: 'rider', title: 'Rider', blurb: 'Deliver & earn', Icon: Bike, eyebrow: 'DELIVER' },
+  { role: 'seva_provider', title: 'Seva Provider', blurb: 'Offer your skill', Icon: Wrench, eyebrow: 'SERVE' },
 ];
 
 const roleColors = [
@@ -58,12 +42,23 @@ const roleColors = [
 
 export default function RoleSelect() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isAuthenticated, isProfileLoaded, isLoading, portalPath } = useAuth();
+  const [authRole, setAuthRole] = useState('customer');
+  const [authOpen, setAuthOpen] = useState(() => Boolean(location.state?.openAuth));
   const [showSplash, setShowSplash] = useState(
     () =>
       typeof window !== 'undefined' &&
       sessionStorage.getItem(SPLASH_SESSION_KEY) !== '1'
   );
+
+  useEffect(() => {
+    if (location.state?.openAuth) {
+      setAuthOpen(true);
+      setAuthRole(location.state.role || 'customer');
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, location.pathname, navigate]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -165,22 +160,20 @@ export default function RoleSelect() {
 
             <div className="rounded-[30px] border border-border/70 bg-card/55 p-2 shadow-[0_24px_80px_hsl(var(--foreground)/0.08)] backdrop-blur-2xl sm:p-3">
               <div className="rounded-[24px] border border-border/50 bg-background/55 p-4 sm:p-5">
-                <Link to="/login" className="group block">
-                  <Button className="relative h-[68px] w-full overflow-hidden rounded-[20px] px-5 text-left shadow-lg shadow-primary/15 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-primary/20 active:scale-[.985]">
-                    <span className="absolute inset-y-0 -left-1/2 w-1/3 -skew-x-12 bg-white/15 setu-shimmer" />
-                    <span className="flex flex-1 flex-col items-start">
-                      <span className="text-[9px] font-bold uppercase tracking-[0.2em] opacity-75">
-                        Existing or new account
-                      </span>
-                      <span className="mt-1 text-base font-bold tracking-tight">
-                        Login / Register
-                      </span>
-                    </span>
-                    <span className="grid h-10 w-10 place-items-center rounded-[13px] bg-white/15 transition-transform duration-300 group-hover:translate-x-0.5">
-                      <ArrowUpRight className="h-[18px] w-[18px]" />
-                    </span>
-                  </Button>
-                </Link>
+                <Button
+                  type="button"
+                  onClick={() => { setAuthRole('customer'); setAuthOpen(true); }}
+                  className="group relative h-[68px] w-full overflow-hidden rounded-[20px] px-5 text-left shadow-lg shadow-primary/15 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-primary/20 active:scale-[.985]"
+                >
+                  <span className="absolute inset-y-0 -left-1/2 w-1/3 -skew-x-12 bg-white/15 setu-shimmer" />
+                  <span className="flex flex-1 flex-col items-start">
+                    <span className="text-[9px] font-bold uppercase tracking-[0.2em] opacity-75">CUSTOMER ACCESS</span>
+                    <span className="mt-1 text-base font-bold tracking-tight">Login / Register as Customer</span>
+                  </span>
+                  <span className="grid h-10 w-10 place-items-center rounded-[13px] bg-white/15 transition-transform duration-300 group-hover:translate-x-0.5">
+                    <ArrowUpRight className="h-[18px] w-[18px]" />
+                  </span>
+                </Button>
 
                 <div className="my-5 flex items-center gap-3">
                   <span className="h-px flex-1 bg-border/70" />
@@ -191,31 +184,26 @@ export default function RoleSelect() {
                 </div>
 
                 <div className="space-y-2.5">
-                  {JOIN_PATHS.map((role, i) => (
-                    <Link
-                      key={role.path}
-                      to={role.path}
-                      className={`setu-reveal-right setu-delay-${i + 2} group relative flex min-h-[78px] items-center gap-4 overflow-hidden rounded-[20px] border border-border/70 bg-gradient-to-r ${roleColors[i]} px-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-lg active:scale-[.985]`}
+                  {ROLE_OPTIONS.slice(1).map((role, i) => (
+                    <button
+                      key={role.role}
+                      type="button"
+                      onClick={() => { setAuthRole(role.role); setAuthOpen(true); }}
+                      className={`setu-reveal-right setu-delay-${i + 2} group relative flex min-h-[78px] w-full items-center gap-4 overflow-hidden rounded-[20px] border border-border/70 bg-gradient-to-r ${roleColors[i]} px-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-lg active:scale-[.985]`}
                     >
                       <span className="absolute inset-y-0 left-0 w-0.5 bg-primary/0 transition-all duration-300 group-hover:bg-primary/70" />
                       <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[16px] border border-border/60 bg-background/70 shadow-sm backdrop-blur-xl transition-transform duration-300 group-hover:scale-105 group-hover:-rotate-2">
                         <role.Icon className="h-[19px] w-[19px] text-foreground/80" />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
-                          {role.eyebrow}
-                        </span>
-                        <span className="mt-1 block text-[15px] font-bold tracking-[-0.015em]">
-                          {role.title}
-                        </span>
-                        <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                          {role.blurb}
-                        </span>
+                        <span className="block text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">{role.eyebrow}</span>
+                        <span className="mt-1 block text-[15px] font-bold tracking-[-0.015em]">Login / Register as {role.title}</span>
+                        <span className="mt-0.5 block text-[11px] text-muted-foreground">{role.blurb}</span>
                       </span>
                       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[13px] border border-border/60 bg-background/45 text-muted-foreground transition-all duration-300 group-hover:border-primary/20 group-hover:bg-primary/10 group-hover:text-primary">
                         <ArrowUpRight className="h-4 w-4" />
                       </span>
-                    </Link>
+                    </button>
                   ))}
                 </div>
 
@@ -245,6 +233,8 @@ export default function RoleSelect() {
           <Heart className="h-3.5 w-3.5 fill-primary text-primary" aria-hidden="true" />
         </footer>
       </main>
+
+      <LoginSheet open={authOpen} role={authRole} onClose={() => setAuthOpen(false)} />
     </div>
   );
 }

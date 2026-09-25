@@ -46,6 +46,7 @@ import { Loader2, AlertCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
 import { consumePostLoginRedirect } from '@/lib/postLoginRedirect';
+import { consumeAuthRoleIntent, getRoleEntryPath } from '@/lib/authIntent';
 
 export default function AuthCallback() {
   const navigate = useNavigate();
@@ -95,8 +96,14 @@ export default function AuthCallback() {
     }
 
     if (!isProfileLoaded) {
-      // No profile row — new user (DB trigger may have failed)
-      navigate('/onboarding/register', { replace: true });
+      // No profile row — new user. Preserve either an explicit onboarding
+      // resume target or the role selected before Google OAuth.
+      const pending = consumePostLoginRedirect();
+      const selectedRole = consumeAuthRoleIntent();
+      navigate(
+        pending || (selectedRole ? getRoleEntryPath(selectedRole) : '/onboarding/register'),
+        { replace: true }
+      );
       return;
     }
 
@@ -117,6 +124,28 @@ export default function AuthCallback() {
 
     const pending = consumePostLoginRedirect();
     if (pending) { navigate(pending, { replace: true }); return; }
+
+    const selectedRole = consumeAuthRoleIntent();
+    const currentRole = profile?.role;
+    const profileComplete = !!profile?.name?.trim?.() &&
+      !['setu user'].includes(profile.name.trim().toLowerCase()) &&
+      !!profile?.village_id;
+
+    // A selected professional role is a routing/onboarding intent, never
+    // authorization. If the account is already another privileged role,
+    // keep the server-backed role and its portal. A normal customer may
+    // enter the selected professional onboarding flow.
+    const canEnterSelectedRole =
+      selectedRole &&
+      (!currentRole || currentRole === selectedRole ||
+       (currentRole === 'customer' && selectedRole !== 'customer'));
+
+    if (selectedRole && canEnterSelectedRole) {
+      if (currentRole !== selectedRole || !profileComplete) {
+        navigate(getRoleEntryPath(selectedRole), { replace: true });
+        return;
+      }
+    }
 
     if (portalPath && portalPath !== '/') {
       navigate(portalPath, { replace: true });
