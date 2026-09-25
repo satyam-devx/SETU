@@ -1,3 +1,4 @@
+import Img from '@/components/shared/Img';
 // ═══════════════════════════════════════════════════════════
 // SETU — AdminVendors  (v3 — production-grade)
 // Full vendor management:
@@ -444,7 +445,7 @@ export default function AdminVendors() {
                 <div className="flex items-start gap-3">
                   {v.image_url ? (
                     <div className="w-12 h-12 rounded-xl bg-muted overflow-hidden shrink-0">
-                      <img src={v.image_url} alt={v.name} className="w-full h-full object-cover" />
+                      <Img src={v.image_url} alt={v.name} width={48} height={48} sizes="48px" className="w-full h-full object-cover" />
                     </div>
                   ) : (
                     <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">

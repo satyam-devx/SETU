@@ -52,6 +52,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import React, { useState, useEffect } from 'react';
+import { validateImageSignature } from '@/lib/upload-security';
 import { useNavigate } from 'react-router-dom';
 import {
   CheckCircle, Camera, Bike, ChevronRight,

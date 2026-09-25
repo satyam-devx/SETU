@@ -24,9 +24,8 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
 import EmptyState from '@/components/shared/EmptyState';
-import { getSevaProviders } from '@/lib/api';
+import { useSevaProvidersByVillage } from '@/hooks/queries/useCatalog';
 import { useVillage } from '@/lib/village';
-import { useDataFetch } from '@/hooks/useDataFetch';
 import { CATEGORIES } from '@/pages/onboarding/SevaVerification';
 
 function ProviderRow({ p }) {
@@ -65,10 +64,9 @@ export default function CustomerSeva() {
   const { village } = useVillage();
   const [category, setCategory] = useState(null);
 
-  const { data: providers, isLoading, error, refetch } = useDataFetch(
-    () => getSevaProviders({ villageId: village?.id, category }),
-    [village?.id, category],
-    { cacheKey: `seva-providers-${village?.id}-${category}`, enabled: !!village?.id }
+  const { data: providers, isLoading, error, refetch } = useSevaProvidersByVillage(
+    village?.id,
+    category ? { category } : {}
   );
 
   return (

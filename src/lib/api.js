@@ -12,6 +12,9 @@
 //  - Optimistic IDs: placeOrder accepts a localId for offline
 // ═══════════════════════════════════════════════════════════
 
+import { validateImageSignature } from './upload-security';
+import { recordApiStart, recordApiEnd } from './performance-monitor';
+
 import { supabase, supabaseRead, isSupabaseConfigured } from './supabase';
 import { PRODUCTS, VENDORS, ORDERS, NOTIFICATIONS, VILLAGES, CATEGORIES, SEVA_PROVIDERS, SCHEMES, BANNERS } from './mockData';
 
@@ -24,17 +27,31 @@ function err(e, ctx) {
   return { data: null, error: { message: msg, code: e?.code, details: e?.details } };
 }
 
-async function safeQuery(fn, fallback, ctx) {
-  if (!isSupabaseConfigured) return ok(fallback);
+async function safeQuery(fn, fallback, ctx, signal) {
+  const metric = recordApiStart({ operation: ctx, method: 'SUPABASE', url: ctx });
+  if (!isSupabaseConfigured) {
+    recordApiEnd({ operation: ctx, method: 'MOCK', url: ctx, startedAt: metric.startedAt, fingerprint: metric.fingerprint, duplicateInFlight: metric.duplicateInFlight });
+    return ok(fallback);
+  }
   try {
-    const result = await fn();
+    let result = fn(signal);
+    if (signal && result && typeof result.abortSignal === 'function') {
+      result = result.abortSignal(signal);
+    }
+    result = await result;
     if (result.error) {
       // PGRST116 = row not found — not a real error for single row queries
-      if (result.error.code === 'PGRST116') return ok(null);
+      if (result.error.code === 'PGRST116') {
+        recordApiEnd({ operation: ctx, method: 'SUPABASE', url: ctx, startedAt: metric.startedAt, fingerprint: metric.fingerprint, duplicateInFlight: metric.duplicateInFlight });
+        return ok(null);
+      }
+      recordApiEnd({ operation: ctx, method: 'SUPABASE', url: ctx, startedAt: metric.startedAt, fingerprint: metric.fingerprint, duplicateInFlight: metric.duplicateInFlight, error: result.error });
       return err(result.error, ctx);
     }
+    recordApiEnd({ operation: ctx, method: 'SUPABASE', url: ctx, startedAt: metric.startedAt, fingerprint: metric.fingerprint, duplicateInFlight: metric.duplicateInFlight });
     return ok(result.data);
   } catch (e) {
+    recordApiEnd({ operation: ctx, method: 'SUPABASE', url: ctx, startedAt: metric.startedAt, fingerprint: metric.fingerprint, duplicateInFlight: metric.duplicateInFlight, error: e });
     return err(e, ctx);
   }
 }
@@ -99,18 +116,20 @@ export async function getCategoryPreviews() {
 // slightly more round trips, but every step here is a plain .eq()/.in()
 // this codebase already uses elsewhere, so there's nothing novel that
 // could silently misbehave.
-export async function getProductsByCategory(categoryId, { page = 0, limit = 20 } = {}) {
+export async function getProductsByCategory(categoryId, { page = 0, limit = 20 } = {}, signal) {
   return safeQuery(async () => {
     const { data: links, error: linkErr } = await supabaseRead
       .from('product_categories')
       .select('product_id')
       .eq('category_id', categoryId)
       .order('product_id')
-      .range(page * limit, (page + 1) * limit - 1);
+      .range(page * limit, (page + 1) * limit);
     if (linkErr) return { data: null, error: linkErr };
 
-    const ids = (links ?? []).map(l => l.product_id);
-    if (ids.length === 0) return { data: [], error: null };
+    const linkedIds = (links ?? []).map(l => l.product_id);
+    const hasMore = linkedIds.length > limit;
+    const ids = linkedIds.slice(0, limit);
+    if (ids.length === 0) { const empty = []; empty.hasMore = false; return { data: empty, error: null }; }
 
     return supabaseRead
       .from('products')
@@ -120,17 +139,23 @@ export async function getProductsByCategory(categoryId, { page = 0, limit = 20 }
       `)
       .in('id', ids)
       .eq('is_available', true)
-      .order('name');
+      .order('name')
+      .then(result => {
+        if (result.data) result.data.hasMore = hasMore;
+        return result;
+      });
   }, (() => {
     const catName = CATEGORIES.find(c => c.id === categoryId)?.name;
     const all = PRODUCTS.filter(p => p.category === catName && p.isAvailable !== false);
-    return all.slice(page * limit, (page + 1) * limit);
-  })(), 'getProductsByCategory');
+    const pageItems = all.slice(page * limit, (page + 1) * limit);
+    pageItems.hasMore = all.length > (page + 1) * limit;
+    return pageItems;
+  })(), 'getProductsByCategory', signal);
 }
 
 // ── Vendors ───────────────────────────────────────────────
 
-export async function getVendors({ villageId, category, page = 0, limit = 20 } = {}) {
+export async function getVendors({ villageId, category, page = 0, limit = 20 } = {}, signal) {
   return safeQuery(() => {
     let q = supabaseRead
       .from('vendors')
@@ -146,18 +171,19 @@ export async function getVendors({ villageId, category, page = 0, limit = 20 } =
     if (villageId) q = q.eq('village_id', villageId);
     if (category)  q = q.eq('category', category);
     return q;
-  }, VENDORS, 'getVendors');
+  }, VENDORS, 'getVendors', signal);
 }
 
-export async function getVendorById(id) {
+export async function getVendorById(id, signal) {
   return safeQuery(
-    () => supabase.from('vendors').select('*, products(*)').eq('id', id).single(),
+    () => supabase.from('vendors').select('*').eq('id', id).single(),
     VENDORS.find(v => v.id === id) || null,
-    'getVendorById'
+    'getVendorById',
+    signal
   );
 }
 
-export async function getVendorByOwnerId(ownerId) {
+export async function getVendorByOwnerId(ownerId, signal) {
   return safeQuery(
     () => supabase.from('vendors').select('*').eq('owner_id', ownerId).maybeSingle(),
     // Demo mode needs a real vendor-shaped object so every vendor screen can
@@ -174,7 +200,8 @@ export async function getVendorByOwnerId(ownerId) {
       subscription_tier: VENDORS[0].subscriptionTier,
       trust_score: 720,
     },
-    'getVendorByOwnerId'
+    'getVendorByOwnerId',
+    signal
   );
 }
 
@@ -275,7 +302,7 @@ export async function setVendorCategories(vendorId, categoryIds) {
 
 // ── Products ──────────────────────────────────────────────
 
-export async function getProducts({ vendorId, category, search, page = 0, limit = 30, includeUnavailable = false } = {}) {
+export async function getProducts({ vendorId, category, search, page = 0, limit = 30, includeUnavailable = false } = {}, signal) {
   return safeQuery(() => {
     let q = supabase
       .from('products')
@@ -295,15 +322,15 @@ export async function getProducts({ vendorId, category, search, page = 0, limit 
     .filter(p => !vendorId || (p.vendor_id ?? p.vendorId) === vendorId)
     .filter(p => includeUnavailable || (p.is_available ?? p.isAvailable) !== false)
     .filter(p => !category || p.category === category)
-    .filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase())), 'getProducts');
+    .filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase())), 'getProducts', signal);
 }
 
-export async function getProductById(id, { vendorId } = {}) {
+export async function getProductById(id, { vendorId } = {}, signal) {
   return safeQuery(() => {
     let q = supabase.from('products').select('*, vendors(name, rating, village)').eq('id', id);
     if (vendorId) q = q.eq('vendor_id', vendorId);
     return q.single();
-  }, PRODUCTS.find(p => p.id === id && (!vendorId || (p.vendor_id ?? p.vendorId) === vendorId)) || null, 'getProductById');
+  }, PRODUCTS.find(p => p.id === id && (!vendorId || (p.vendor_id ?? p.vendorId) === vendorId)) || null, 'getProductById', signal);
 }
 
 export async function upsertProduct(productData) {
@@ -316,7 +343,7 @@ export async function upsertProduct(productData) {
 
 // Full category set for a product (migration 082) — same flattening
 // as getVendorCategories, for the same reason.
-export async function getProductCategories(productId) {
+export async function getProductCategories(productId, signal) {
   return safeQuery(async () => {
     const { data, error } = await supabaseRead
       .from('product_categories')
@@ -324,7 +351,7 @@ export async function getProductCategories(productId) {
       .eq('product_id', productId);
     if (error) return { data: null, error };
     return { data: (data ?? []).map(row => row.categories).filter(Boolean), error: null };
-  }, [], 'getProductCategories');
+  }, [], 'getProductCategories', signal);
 }
 
 // Atomically replaces a product's full category set via the
@@ -352,7 +379,7 @@ export async function deleteProduct(id) {
 
 // ── Orders ────────────────────────────────────────────────
 
-export async function getOrdersByCustomer(customerId, { page = 0, limit = 20, status } = {}) {
+export async function getOrdersByCustomer(customerId, { page = 0, limit = 20, status } = {}, signal) {
   return safeQuery(() => {
     let q = supabase
       .from('orders')
@@ -367,10 +394,10 @@ export async function getOrdersByCustomer(customerId, { page = 0, limit = 20, st
 
     if (status) q = q.eq('status', status);
     return q;
-  }, ORDERS.filter(o => o.customerId === customerId), 'getOrdersByCustomer');
+  }, ORDERS.filter(o => o.customerId === customerId), 'getOrdersByCustomer', signal);
 }
 
-export async function getOrdersByVendor(vendorId, { page = 0, limit = 20, status } = {}) {
+export async function getOrdersByVendor(vendorId, { page = 0, limit = 20, status } = {}, signal) {
   return safeQuery(() => {
     let q = supabase
       .from('orders')
@@ -385,10 +412,10 @@ export async function getOrdersByVendor(vendorId, { page = 0, limit = 20, status
 
     if (status) q = q.eq('status', status);
     return q;
-  }, ORDERS.filter(o => o.vendorId === vendorId), 'getOrdersByVendor');
+  }, ORDERS.filter(o => o.vendorId === vendorId), 'getOrdersByVendor', signal);
 }
 
-export async function getOrdersByRider(riderId, { page = 0, limit = 20, status } = {}) {
+export async function getOrdersByRider(riderId, { page = 0, limit = 20, status } = {}, signal) {
   return safeQuery(async () => {
     let q = supabase
       .from('orders')
@@ -429,10 +456,10 @@ export async function getOrdersByRider(riderId, { page = 0, limit = 20, status }
       data: orders.map(o => ({ ...o, customer_phone: phoneById.get(o.customer_id) ?? null })),
       error: null,
     };
-  }, ORDERS.filter(o => o.riderId === riderId), 'getOrdersByRider');
+  }, ORDERS.filter(o => o.riderId === riderId), 'getOrdersByRider', signal);
 }
 
-export async function getOrderById(id) {
+export async function getOrderById(id, signal) {
   return safeQuery(
     () => supabase
       .from('orders')
@@ -440,7 +467,8 @@ export async function getOrderById(id) {
       .eq('id', id)
       .single(),
     ORDERS.find(o => o.id === id) || null,
-    'getOrderById'
+    'getOrderById',
+    signal
   );
 }
 
@@ -651,15 +679,16 @@ export async function assignRider(orderId, _riderId, _riderName, offerId = null)
 
 // ── Wallet ────────────────────────────────────────────────
 
-export async function getWallet(userId) {
+export async function getWallet(userId, signal) {
   return safeQuery(
     () => supabase.from('wallets').select('*').eq('user_id', userId).maybeSingle(),
     { balance: 0 },
-    'getWallet'
+    'getWallet',
+    signal
   );
 }
 
-export async function getWalletTransactions(userId, { page = 0, limit = 20 } = {}) {
+export async function getWalletTransactions(userId, { page = 0, limit = 20 } = {}, signal) {
   return safeQuery(
     () => supabase
       .from('wallet_transactions')
@@ -668,13 +697,14 @@ export async function getWalletTransactions(userId, { page = 0, limit = 20 } = {
       .range(page * limit, (page + 1) * limit - 1)
       .order('created_at', { ascending: false }),
     [],
-    'getWalletTransactions'
+    'getWalletTransactions',
+    signal
   );
 }
 
 // ── Notifications ─────────────────────────────────────────
 
-export async function getNotifications(userId, { limit = 30 } = {}) {
+export async function getNotifications(userId, { limit = 30 } = {}, signal) {
   return safeQuery(
     () => supabase
       .from('notifications')
@@ -683,7 +713,8 @@ export async function getNotifications(userId, { limit = 30 } = {}) {
       .limit(limit)
       .order('created_at', { ascending: false }),
     NOTIFICATIONS,
-    'getNotifications'
+    'getNotifications',
+    signal
   );
 }
 
@@ -715,7 +746,7 @@ export async function updateProfile(userId, updates) {
 
 // ── Customer Addresses ──────────────────────────────────────
 
-export async function getAddresses(userId) {
+export async function getAddresses(userId, signal) {
   return safeQuery(
     () => supabase
       .from('customer_addresses')
@@ -724,7 +755,8 @@ export async function getAddresses(userId) {
       .order('is_default', { ascending: false })
       .order('created_at', { ascending: true }),
     [],
-    'getAddresses'
+    'getAddresses',
+    signal
   );
 }
 
@@ -971,7 +1003,7 @@ export async function getAdminStats() {
 // ── Fee config (single source of truth) ───────────────────
 // Mirrors the server-side get_fee_config() the order RPCs use, so the
 // checkout estimate matches the authoritative total.
-export async function getFeeConfig() {
+export async function getFeeConfig(signal) {
   return safeQuery(
     () => supabase.rpc('get_fee_config'),
     { commission_pct: 1, delivery_flat: 20, free_threshold: 200, rider_fee: 80, credit_discount_pct: 10, credit_discount_max: 500 },
@@ -981,11 +1013,12 @@ export async function getFeeConfig() {
 
 // ── KYC ───────────────────────────────────────────────────
 
-export async function getKycRecords(userId) {
+export async function getKycRecords(userId, signal) {
   return safeQuery(
     () => supabase.from('kyc_records').select('*').eq('user_id', userId),
     [],
-    'getKycRecords'
+    'getKycRecords',
+    signal
   );
 }
 
@@ -1362,7 +1395,8 @@ export async function completeDelivery(orderId, otp, proofFile, location = null)
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData?.user?.id) return err(authError || { message: 'Authentication required' }, 'completeDelivery/auth');
     if (!(proofFile instanceof File)) return err({ message: 'Delivery proof photo is required' }, 'completeDelivery/proof');
-    if (!/^image\/(jpeg|png|webp)$/.test(proofFile.type)) return err({ message: 'Proof must be JPG, PNG, or WebP' }, 'completeDelivery/proof');
+    const proofValidation = await validateImageSignature(proofFile, { maxBytes: 8 * 1024 * 1024 });
+    if (!proofValidation.ok || !['image/jpeg', 'image/png', 'image/webp'].includes(proofFile.type)) return err({ message: proofValidation.error || 'Proof must be JPG, PNG, or WebP' }, 'completeDelivery/proof');
     if (proofFile.size > 8 * 1024 * 1024) return err({ message: 'Proof image must be 8 MB or smaller' }, 'completeDelivery/proof');
 
     const bytes = new Uint8Array(await proofFile.arrayBuffer());

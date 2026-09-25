@@ -32,17 +32,14 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { RiderAPI, updateRiderSettings } from '@/lib/api';
+import { useRiderByUser } from '@/hooks/queries/useRider';
+import { useRiderMutations } from '@/hooks/mutations/useRiderMutations';
 
 export default function RiderSettings() {
   const { user, signOut, userName, userPhone } = useAuth();
+  const { updateSettings } = useRiderMutations();
 
-  const { data: rider, isLoading: riderLoading, invalidate: invalidateRider } = useDataFetch(
-    () => RiderAPI.getProfile(user?.id),
-    [user?.id],
-    { cacheKey: `rider-profile-${user?.id}`, enabled: !!user?.id }
-  );
+  const { data: rider, isLoading: riderLoading, refetch: invalidateRider } = useRiderByUser(user?.id);
 
   const [notifs, setNotifs]           = useState(true);
   const [orderNotifs, setOrderNotifs] = useState(true);
@@ -77,7 +74,7 @@ export default function RiderSettings() {
     if (!rider?.id) return;
     setSaving(true);
     setSaveError(null);
-    const { error } = await updateRiderSettings(rider.id, {
+    const { error } = await updateSettings(rider.id, {
       preferences: {
         notifs, order_notifs: orderNotifs, offline_nav: offlineNav, dark_mode: darkMode, language,
         ...updates,

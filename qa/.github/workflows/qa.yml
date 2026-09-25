@@ -55,7 +55,7 @@ jobs:
 
       # Install app deps
       - name: Install app dependencies
-        run: npm ci
+        run: npm install
 
       # Build (with placeholder env vars — CI-safe)
       - name: Build production bundle
@@ -87,7 +87,7 @@ jobs:
       # Install QA suite deps
       - name: Install QA pipeline dependencies
         working-directory: ${{ env.QA_DIR }}
-        run: npm ci
+        run: npm install
 
       # Cache Playwright browsers
       - name: Cache Playwright browsers
@@ -120,11 +120,11 @@ jobs:
           cache: npm
 
       - name: Install app deps
-        run: npm ci
+        run: npm install
 
       - name: Install QA deps
         working-directory: ${{ env.QA_DIR }}
-        run: npm ci
+        run: npm install
 
       - name: Run unit & integration tests with coverage
         working-directory: ${{ env.QA_DIR }}
@@ -173,11 +173,11 @@ jobs:
           cache: npm
 
       - name: Install app deps
-        run: npm ci
+        run: npm install
 
       - name: Install QA deps
         working-directory: ${{ env.QA_DIR }}
-        run: npm ci
+        run: npm install
 
       # npm audit
       - name: Run npm dependency audit
@@ -242,11 +242,11 @@ jobs:
           cache: npm
 
       - name: Install app deps
-        run: npm ci
+        run: npm install
 
       - name: Install QA deps
         working-directory: ${{ env.QA_DIR }}
-        run: npm ci
+        run: npm install
 
       - name: Restore Playwright browsers from cache
         uses: actions/cache@v4
@@ -315,11 +315,11 @@ jobs:
           cache: npm
 
       - name: Install app deps
-        run: npm ci
+        run: npm install
 
       - name: Install QA deps
         working-directory: ${{ env.QA_DIR }}
-        run: npm ci
+        run: npm install
 
       - name: Restore Playwright browsers
         uses: actions/cache@v4
@@ -380,11 +380,11 @@ jobs:
           cache: npm
 
       - name: Install app deps
-        run: npm ci
+        run: npm install
 
       - name: Install QA deps
         working-directory: ${{ env.QA_DIR }}
-        run: npm ci
+        run: npm install
 
       # Download the built dist
       - name: Download dist artifact
@@ -425,7 +425,7 @@ jobs:
 
       - name: Install QA deps
         working-directory: ${{ env.QA_DIR }}
-        run: npm ci
+        run: npm install
 
       # Download all partial reports
       - name: Download vitest results
@@ -567,7 +567,7 @@ jobs:
 
       - name: Install QA deps
         working-directory: ${{ env.QA_DIR }}
-        run: npm ci
+        run: npm install
 
       - name: Restore Playwright browsers
         uses: actions/cache@v4

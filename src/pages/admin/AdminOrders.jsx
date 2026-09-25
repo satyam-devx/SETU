@@ -31,7 +31,9 @@ import {
 import AppHeader from '@/components/shared/AppHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { AdminAPI } from '@/lib/api';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { useAdminOrderMutations } from '@/hooks/mutations/useAdminOrderMutations';
+import { isSupabaseConfigured } from '@/lib/supabase';
+import { subscribeRealtimeChannel } from '@/lib/realtime-manager';
 
 const STATUS_FLOW = ['pending', 'confirmed', 'preparing', 'ready', 'picked_up', 'on_the_way', 'delivered'];
 
@@ -52,6 +54,7 @@ function fmtTime(iso) {
 
 // ── Order detail modal ────────────────────────────────────
 function OrderDetailModal({ orderId, riders, onClose, onRefetch }) {
+  const { updateOrderStatus, cancelOrder, assignRider } = useAdminOrderMutations();
   const [order,    setOrder]    = useState(null);
   const [loading,  setLoading]  = useState(true);
   const [acting,   setActing]   = useState(null);
@@ -89,7 +92,8 @@ function OrderDetailModal({ orderId, riders, onClose, onRefetch }) {
     const rider = riders.find(r => r.id === riderId);
     if (!rider) return;
     setActing('assign');
-    await AdminAPI.assignRider(order.id, rider.id, rider.name);
+    const result = await assignRider(order.id, rider.id, rider.name);
+    if (result?.error) { setActing(null); return; }
     setActing(null);
     const res = await AdminAPI.getOrderDetail(order.id);
     if (res.data) setOrder(res.data);
@@ -99,7 +103,8 @@ function OrderDetailModal({ orderId, riders, onClose, onRefetch }) {
   const handleAdvance = async () => {
     if (!nextSt) return;
     setActing('advance');
-    await AdminAPI.updateOrderStatus(order.id, nextSt, 'Advanced by admin');
+    const result = await updateOrderStatus(order.id, nextSt, 'Advanced by admin');
+    if (result?.error) { setActing(null); return; }
     const res = await AdminAPI.getOrderDetail(order.id);
     if (res.data) setOrder(res.data);
     setActing(null);
@@ -108,7 +113,8 @@ function OrderDetailModal({ orderId, riders, onClose, onRefetch }) {
 
   const handleCancel = async () => {
     setActing('cancel');
-    await AdminAPI.cancelOrder(order.id, cancelReason || 'Cancelled by admin');
+    const result = await cancelOrder(order.id, cancelReason || 'Cancelled by admin');
+    if (result?.error) { setActing(null); return; }
     setActing(null);
     setCancelModal(false);
     const res = await AdminAPI.getOrderDetail(order.id);
@@ -281,16 +287,16 @@ export default function AdminOrders() {
   // Realtime
   useEffect(() => {
     if (!isSupabaseConfigured) return; // demo mode has no real Supabase project — see CHANGELOG.md
-    const channel = supabase
-      .channel('admin-orders-rt-v2')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, (payload) => {
-        setOrders(prev => [payload.new, ...prev]);
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, (payload) => {
-        setOrders(prev => prev.map(o => o.id === payload.new.id ? { ...o, ...payload.new } : o));
-      })
-      .subscribe();
-    return () => supabase.removeChannel(channel);
+    return subscribeRealtimeChannel({
+      key: 'admin:orders',
+      build: (channel, emit) => channel.on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, emit),
+      onEvent: payload => {
+        if (payload.eventType === 'INSERT') setOrders(prev => prev.some(o => o.id === payload.new.id) ? prev : [payload.new, ...prev]);
+        else if (payload.eventType === 'UPDATE') setOrders(prev => prev.map(o => o.id === payload.new.id ? { ...o, ...payload.new } : o));
+        else if (payload.eventType === 'DELETE') setOrders(prev => prev.filter(o => o.id !== payload.old?.id));
+      },
+      onRecover: loadData,
+    });
   }, []);
 
   const filtered = orders.filter(o => {

@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AppHeader from '@/components/shared/AppHeader';
 import { AdminAPI } from '@/lib/api';
 
+import Img from '@/components/shared/Img';
 const KYC_STYLE = {
   approved: 'bg-green-100 text-green-700',
   pending:  'bg-amber-100 text-amber-700',
@@ -134,7 +135,7 @@ export default function AdminSevaProviders() {
                   <div className="flex items-start gap-3 mb-3">
                     {sp.image_url ? (
                       <div className="w-12 h-12 rounded-xl bg-muted overflow-hidden shrink-0">
-                        <img src={sp.image_url} alt={sp.name} className="w-full h-full object-cover" />
+                        <Img src={sp.image_url} alt={sp.name} width={48} height={48} sizes="48px" className="w-full h-full object-cover" />
                       </div>
                     ) : (
                       <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">

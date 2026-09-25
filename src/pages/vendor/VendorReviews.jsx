@@ -8,16 +8,14 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
 import { useAuth } from '@/lib/AuthContext';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendorByOwnerId, getOrdersByVendor, replyToVendorReview } from '@/lib/api';
+import {  replyToVendorReview } from '@/lib/api';
+import { useVendorOrders } from '@/hooks/queries/useOrders';
+import { useVendorByOwner } from '@/hooks/queries/useVendor';
 
 export default function VendorReviews() {
   const { user } = useAuth();
-  const { data: vendor } = useDataFetch(() => getVendorByOwnerId(user?.id), [user?.id], { enabled: !!user?.id, cacheKey:`vendor-profile-${user?.id}` });
-  const { data: orders, isLoading, error, refetch } = useDataFetch(
-    () => getOrdersByVendor(vendor.id, { limit: 100 }),
-    [vendor?.id], { enabled: !!vendor?.id, cacheKey:`vendor-reviews-${vendor?.id}` }
-  );
+  const { data: vendor } = useVendorByOwner(user?.id);
+  const { data: orders = [], isLoading, error, refetch } = useVendorOrders(vendor?.id, { limit: 100 });
   const reviews = useMemo(() => (orders ?? []).filter(o => o.vendor_rating != null).map(o => ({
     id:o.id, customer:o.customer_name || 'Customer', village:o.village || '—', rating:o.vendor_rating,
     date:o.created_at, order:o.order_number, text:o.rating_comment || 'No written comment.', reply:o.vendor_review_reply || '',

@@ -12,12 +12,12 @@
 // product_categories junction), so a product tagged with several
 // categories shows up on all of their pages, not just one.
 // ═══════════════════════════════════════════════════════════
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, AlertCircle, Loader2 } from 'lucide-react';
-import { useDataFetch } from '@/hooks/useDataFetch';
+import { fetchProductsByCategoryPage } from '@/hooks/queries/useProducts';
 import { useInView } from '@/hooks/useInView';
-import { getCategories, getProductsByCategory } from '@/lib/api';
+import { useCategories } from '@/hooks/queries/useCatalog';
 import { ProductCardSkeleton } from '@/components/shared/SkeletonCard';
 import EmptyState from '@/components/shared/EmptyState';
 import ProductCard from '@/components/customer/ProductCard';
@@ -33,9 +33,7 @@ export default function CustomerCategoryDetail() {
   // already fetched on Home/Categories before a customer could ever
   // reach this page by tapping a tile — .find() off the cached list
   // instead of a second network round trip for one row.
-  const { data: allCategories } = useDataFetch(
-    () => getCategories(), [], { cacheKey: 'categories', staleTime: 120_000 }
-  );
+  const { data: allCategories } = useCategories({ staleTime: 120_000 });
   const category = (allCategories ?? []).find(c => c.id === categoryId);
 
   const [products,    setProducts]    = useState([]);
@@ -45,6 +43,7 @@ export default function CustomerCategoryDetail() {
   const [isLoadingMore,setIsLoadingMore] = useState(false);
   const [error,        setError]       = useState(null);
   const [loadSeq,       setLoadSeq]     = useState(0); // bump to retry/reset
+  const loadMoreLock = useRef(false);
 
   // Reset and reload from page 0 whenever the category itself changes
   // (or "Try again" is tapped, via loadSeq).
@@ -56,27 +55,29 @@ export default function CustomerCategoryDetail() {
     setPage(0);
     setHasMore(true);
 
-    getProductsByCategory(categoryId, { page: 0, limit: PAGE_SIZE }).then(({ data, error: err }) => {
+    fetchProductsByCategoryPage(categoryId, 0, PAGE_SIZE).then(({ data, error: err }) => {
       if (cancelled) return;
       setIsLoading(false);
       if (err) { setError(err); return; }
       setProducts(data ?? []);
-      setHasMore((data ?? []).length === PAGE_SIZE);
+      setHasMore(data?.hasMore ?? ((data ?? []).length === PAGE_SIZE));
     });
 
     return () => { cancelled = true; };
   }, [categoryId, loadSeq]);
 
   const loadMore = async () => {
-    if (isLoadingMore || isLoading || !hasMore) return;
+    if (loadMoreLock.current || isLoadingMore || isLoading || !hasMore) return;
+    loadMoreLock.current = true;
     setIsLoadingMore(true);
     const nextPage = page + 1;
-    const { data, error: err } = await getProductsByCategory(categoryId, { page: nextPage, limit: PAGE_SIZE });
+    const { data, error: err } = await fetchProductsByCategoryPage(categoryId, nextPage, PAGE_SIZE);
     setIsLoadingMore(false);
+    loadMoreLock.current = false;
     if (err) return; // leave the page as-is; the sentinel will retry on next scroll
     setProducts(prev => [...prev, ...(data ?? [])]);
     setPage(nextPage);
-    setHasMore((data ?? []).length === PAGE_SIZE);
+    setHasMore(data?.hasMore ?? ((data ?? []).length === PAGE_SIZE));
   };
 
   // Infinite scroll — reuses the same IntersectionObserver hook the

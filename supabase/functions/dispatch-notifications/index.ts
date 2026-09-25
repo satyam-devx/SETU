@@ -1,3 +1,11 @@
+// Required Supabase Vault Secrets:
+//   RESEND_API_KEY — required by this function.
+//   RESEND_FROM — required by this function.
+//   TWILIO_ACCOUNT_SID — required by this function.
+//   TWILIO_AUTH_TOKEN — required by this function.
+//   TWILIO_FROM — required by this function.
+//   TWILIO_WHATSAPP_FROM — required by this function.
+
 // ═══════════════════════════════════════════════════════════
 // SETU — dispatch-notifications  (Supabase Edge Function)
 //

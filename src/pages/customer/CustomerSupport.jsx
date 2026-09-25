@@ -5,6 +5,7 @@ import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
 import { getSupportTickets, createSupportTicket } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 // ── Helpers ────────────────────────────────────────────────────
 function StatusBadge({ status }) {
@@ -148,6 +149,8 @@ function NewTicketModal({ onClose, onSubmit, submitting, error, initialSubject =
   const [subject,     setSubject]     = useState(initialSubject);
   const [orderNumber, setOrderNumber] = useState('');
   const [description, setDescription] = useState('');
+  const titleRef = useRef(null);
+  const sheetRef = useFocusTrap(true, { initialFocusRef: titleRef, onEscape: onClose });
 
   const handleSubmit = () => {
     if (!subject.trim() || !description.trim()) return;
@@ -155,14 +158,18 @@ function NewTicketModal({ onClose, onSubmit, submitting, error, initialSubject =
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={onClose} role="presentation">
       {/* Scrim */}
       <div className="absolute inset-0 bg-black/50" />
 
       {/* Sheet */}
       <div
+        ref={sheetRef}
         className="relative bg-card rounded-t-3xl p-6 pb-10 z-10"
         onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-support-ticket-title"
       >
         {/* Close button */}
         <button
@@ -173,30 +180,32 @@ function NewTicketModal({ onClose, onSubmit, submitting, error, initialSubject =
           <X className="w-5 h-5" aria-hidden="true" />
         </button>
 
-        <h2 className="text-lg font-bold text-foreground text-center mb-5">
+        <h2 ref={titleRef} tabIndex={-1} id="new-support-ticket-title" className="text-lg font-bold text-foreground text-center mb-5 outline-none">
           Create Support Ticket
         </h2>
 
         <div className="space-y-3">
+          <label htmlFor="support-subject" className="sr-only">Subject</label>
           <input
-            autoFocus
-            aria-label="Subject"
+            id="support-subject"
             placeholder="Subject"
             value={subject}
             onChange={e => setSubject(e.target.value)}
             className="w-full px-4 py-3 rounded-2xl border-2 border-primary/50 bg-card text-sm outline-none placeholder:text-muted-foreground"
           />
 
+          <label htmlFor="support-order-number" className="sr-only">Order number (optional)</label>
           <input
-            aria-label="Order number (optional)"
+            id="support-order-number"
             placeholder="Order Number (optional)"
             value={orderNumber}
             onChange={e => setOrderNumber(e.target.value)}
             className="w-full px-4 py-3 rounded-2xl border border-border bg-card text-sm outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground"
           />
 
+          <label htmlFor="support-description" className="sr-only">Describe your issue</label>
           <textarea
-            aria-label="Describe your issue"
+            id="support-description"
             placeholder="Describe your issue..."
             value={description}
             onChange={e => setDescription(e.target.value)}
@@ -205,7 +214,7 @@ function NewTicketModal({ onClose, onSubmit, submitting, error, initialSubject =
           />
 
           {error && (
-            <div className="flex items-center gap-2 text-red-500">
+            <div className="flex items-center gap-2 text-red-500" role="alert">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <p className="text-xs">{error}</p>
             </div>

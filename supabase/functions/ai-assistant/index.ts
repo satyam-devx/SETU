@@ -1,3 +1,7 @@
+// Required Supabase Vault Secrets:
+//   AI_DAILY_CAP — required by this function.
+//   ANTHROPIC_API_KEY — required by this function.
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { corsHeaders } from "../_shared/cors.ts"
 import { adminClient, requireUser } from "../_shared/auth.ts"

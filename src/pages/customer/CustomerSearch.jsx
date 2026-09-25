@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { Search, Mic, X, Star, SlidersHorizontal, Loader2, AlertCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -10,8 +10,8 @@ import { Slider } from '@/components/ui/slider';
 import EmptyState from '@/components/shared/EmptyState';
 import Img from '@/components/shared/Img';
 import ProductCard from '@/components/customer/ProductCard';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { getCategories, getProducts, getVendors } from '@/lib/api';
+import { useCategories, useVendors } from '@/hooks/queries/useCatalog';
+import { useProducts } from '@/hooks/queries/useProducts';
 import { smartGoBack } from '@/lib/utils';
 
 // ── Debounce hook ──────────────────────────────────────────
@@ -36,11 +36,7 @@ export default function CustomerSearch() {
   const debouncedQuery = useDebounce(query, 350);
 
   // ── Fetch categories ──────────────────────────────────────
-  const { data: categories } = useDataFetch(
-    () => getCategories(),
-    [],
-    { cacheKey: 'categories' }
-  );
+  const { data: categories } = useCategories();
   const cats = categories ?? [];
 
   // ── Fetch products with ilike search ──────────────────────
@@ -58,18 +54,11 @@ export default function CustomerSearch() {
     isLoading: productsLoading,
     error: productsError,
     refetch: refetchProducts,
-  } = useDataFetch(
-    () => getProducts({
-      search:   debouncedQuery || undefined,
-      category: selectedCategoryName,
-      limit: 60,
-    }),
-    [debouncedQuery, selectedCategoryName],
-    {
-      cacheKey: `search:products:${debouncedQuery}:${selectedCategoryName ?? 'all'}`,
-      staleTime: 15_000,
-    }
-  );
+  } = useProducts({
+    search: debouncedQuery || undefined,
+    category: selectedCategoryName,
+    limit: 60,
+  }, { staleTime: 15_000 });
 
   // ── Fetch vendors with ilike search ───────────────────────
   const {
@@ -77,30 +66,25 @@ export default function CustomerSearch() {
     isLoading: vendorsLoading,
     error: vendorsError,
     refetch: refetchVendors,
-  } = useDataFetch(
-    () => getVendors({ limit: 40 }),
-    [],
-    { cacheKey: 'vendors:all', staleTime: 30_000 }
-  );
+  } = useVendors({ limit: 40 }, { staleTime: 30_000 });
 
   // ── Client-side sort & filter on top of API results ───────
-  const products = (() => {
+  const products = useMemo(() => {
     let results = rawProducts ?? [];
     results = results.filter(p => p.price <= maxPrice);
-    if (sortBy === 'price_low')  results = [...results].sort((a, b) => a.price - b.price);
-    if (sortBy === 'price_high') results = [...results].sort((a, b) => b.price - a.price);
+    if (sortBy === 'price_low')  return [...results].sort((a, b) => a.price - b.price);
+    if (sortBy === 'price_high') return [...results].sort((a, b) => b.price - a.price);
     return results;
-  })();
+  }, [rawProducts, maxPrice, sortBy]);
 
-  const vendors = (() => {
+  const vendors = useMemo(() => {
     const all = rawVendors ?? [];
     if (!debouncedQuery) return all;
-    return all.filter(
-      v =>
-        v.name.toLowerCase().includes(debouncedQuery.toLowerCase()) ||
-        v.category.toLowerCase().includes(debouncedQuery.toLowerCase())
+    const q = debouncedQuery.toLowerCase();
+    return all.filter(v =>
+      v.name?.toLowerCase().includes(q) || v.category?.toLowerCase().includes(q)
     );
-  })();
+  }, [rawVendors, debouncedQuery]);
 
   const isSearching = productsLoading || vendorsLoading;
 

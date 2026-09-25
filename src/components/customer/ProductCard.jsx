@@ -20,7 +20,7 @@ import { useCart } from '@/lib/cartContext';
 import { formatCurrency } from '@/lib/utils';
 import Img from '@/components/shared/Img';
 
-export default function ProductCard({ product }) {
+function ProductCard({ product }) {
   const { items, addItem } = useCart();
   const inCart = items.find(i => i.id === product.id);
 
@@ -75,3 +75,5 @@ export default function ProductCard({ product }) {
     </Link>
   );
 }
+
+export default React.memo(ProductCard);

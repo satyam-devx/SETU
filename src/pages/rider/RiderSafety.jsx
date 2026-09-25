@@ -29,13 +29,14 @@ import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
 import { usePublicSettings } from '@/lib/settings';
 import { useAuth } from '@/lib/AuthContext';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { RiderAPI } from '@/lib/api';
+import { useRiderByUser, useActiveSOSAlert } from '@/hooks/queries/useRider';
+import { useRiderMutations } from '@/hooks/mutations/useRiderMutations';
 
 const CHECKLIST_ITEMS = ['Helmet worn', 'Vehicle insured', 'Phone charged', 'Route shared with family'];
 
 export default function RiderSafety() {
   const { user } = useAuth();
+  const { createSOS, cancelSOS } = useRiderMutations();
   const { get: getSetting } = usePublicSettings();
   // Was hardcoded as the placeholder '1800-XXX-XXXX' — a rider in a real
   // emergency must never be shown a fake number next to real Police/
@@ -44,20 +45,12 @@ export default function RiderSafety() {
   // null (hides the Call button) rather than a fake number if unset.
   const supportPhone = getSetting('support_phone', null);
 
-  const { data: rider } = useDataFetch(
-    () => RiderAPI.getProfile(user?.id),
-    [user?.id],
-    { cacheKey: `rider-profile-${user?.id}`, enabled: !!user?.id }
-  );
+  const { data: rider } = useRiderByUser(user?.id);
   const riderId = rider?.id ?? null;
 
   // Real state on reload — if the rider force-closed the app mid-alert,
   // this still shows "SOS Active" rather than silently resetting to off.
-  const { data: activeAlert, refetch: refetchAlert } = useDataFetch(
-    () => RiderAPI.getActiveSOSAlert(riderId),
-    [riderId],
-    { cacheKey: `sos-active-${riderId}`, enabled: !!riderId }
-  );
+  const { data: activeAlert, refetch: refetchAlert } = useActiveSOSAlert(riderId);
   const sosActive = !!activeAlert;
   const [activating, setActivating] = useState(false);
 
@@ -66,7 +59,7 @@ export default function RiderSafety() {
     setActivating(true);
 
     const place = (location) => {
-      RiderAPI.createSOSAlert(riderId, location).finally(() => {
+      createSOS(riderId, location, { userId: user?.id }).finally(() => {
         setActivating(false);
         refetchAlert();
       });
@@ -91,7 +84,7 @@ export default function RiderSafety() {
   const handleCancelSOS = async () => {
     if (!activeAlert?.id) return;
     setActivating(true);
-    await RiderAPI.cancelSOSAlert(activeAlert.id);
+    await cancelSOS(activeAlert.id, { riderId, userId: user?.id });
     setActivating(false);
     refetchAlert();
   };

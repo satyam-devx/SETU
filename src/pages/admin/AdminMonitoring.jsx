@@ -16,7 +16,8 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import AppHeader from '@/components/shared/AppHeader';
 import { AdminAPI } from '@/lib/api';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { isSupabaseConfigured } from '@/lib/supabase';
+import { subscribeRealtimeChannel } from '@/lib/realtime-manager';
 
 function StatTile({ label, value, color = 'text-foreground', loading }) {
   return (
@@ -64,12 +65,19 @@ export default function AdminMonitoring() {
   // Realtime: re-aggregate when orders or riders change
   useEffect(() => {
     if (!isSupabaseConfigured) return; // demo mode has no real Supabase project — see CHANGELOG.md
-    const channel = supabase
-      .channel('monitoring-rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => load())
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'riders' }, () => load())
-      .subscribe();
-    return () => supabase.removeChannel(channel);
+    const unsubscribeOrders = subscribeRealtimeChannel({
+      key: 'admin:orders',
+      build: (channel, emit) => channel.on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, emit),
+      onEvent: () => load(),
+      onRecover: () => load(),
+    });
+    const unsubscribeRiders = subscribeRealtimeChannel({
+      key: 'admin:riders',
+      build: (channel, emit) => channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'riders' }, emit),
+      onEvent: () => load(),
+      onRecover: () => load(),
+    });
+    return () => { unsubscribeOrders(); unsubscribeRiders(); };
   }, [load]);
 
   const a = analytics ?? {};

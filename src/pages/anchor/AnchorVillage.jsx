@@ -8,7 +8,9 @@ import AppHeader from '@/components/shared/AppHeader';
 import VillageMap from '@/components/maps/VillageMap';
 import { useVillage } from '@/lib/village';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { subscribeRealtimeChannel } from '@/lib/realtime-manager';
 
+import Img from '@/components/shared/Img';
 // ── Data loaders ──────────────────────────────────────────
 async function fetchVillageDirectory(villageId) {
   const [vendorsRes, ridersRes, sevaRes] = await Promise.all([
@@ -90,18 +92,14 @@ export default function AnchorVillage() {
   useEffect(() => {
     if (!isSupabaseConfigured) return; // demo mode has no real Supabase project — see CHANGELOG.md
     if (!villageId) return;
-    const channel = supabase
-      .channel(`village-riders-${villageId}`)
-      .on('postgres_changes', {
-        event:  'UPDATE',
-        schema: 'public',
-        table:  'riders',
-        filter: `village_id=eq.${villageId}`,
-      }, (payload) => {
-        setRiders(prev => prev.map(r => r.id === payload.new.id ? { ...r, ...payload.new } : r));
-      })
-      .subscribe();
-    return () => supabase.removeChannel(channel);
+    return subscribeRealtimeChannel({
+      key: `anchor:riders:${villageId}`,
+      build: (channel, emit) => channel.on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'riders', filter: `village_id=eq.${villageId}`,
+      }, emit),
+      onEvent: payload => setRiders(prev => prev.map(r => r.id === payload.new.id ? { ...r, ...payload.new } : r)),
+      onRecover: loadData,
+    });
   }, [villageId]);
 
   const villageName = village?.name ?? 'Village';
@@ -260,7 +258,7 @@ export default function AnchorVillage() {
               <Card key={sp.id} className="p-3 border-border flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center shrink-0">
                   {sp.image_url
-                    ? <img src={sp.image_url} alt={sp.name} className="w-full h-full object-cover rounded-xl" />
+                    ? <Img src={sp.image_url} alt={sp.name} width={320} height={180} sizes="(max-width: 640px) 100vw, 320px" className="w-full h-full object-cover rounded-xl" />
                     : <Users className="w-5 h-5 text-accent" />}
                 </div>
                 <div className="flex-1 min-w-0">

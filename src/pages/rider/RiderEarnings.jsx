@@ -8,7 +8,7 @@ import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import { useAuth } from '@/lib/AuthContext';
-import { RiderAPI } from '@/lib/api';
+import { useRiderEarningsQuery, useRiderByUser } from '@/hooks/queries/useRider';
 import { supabase } from '@/lib/supabase';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -34,11 +34,11 @@ function startOfToday() {
 
 export default function RiderEarnings() {
   const { user } = useAuth();
-
-  const [rider,        setRider]        = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [period,       setPeriod]       = useState('week');
+  const { data: rider } = useRiderByUser(user?.id);
+  const { data: earningsData } = useRiderEarningsQuery(user?.id, period);
   const [showWithdrawInfo, setShowWithdrawInfo] = useState(false);
 
   // ── Load rider + wallet transactions ────────────────────
@@ -48,11 +48,7 @@ export default function RiderEarnings() {
     async function load() {
       setLoading(true);
 
-      // 1. Rider row (stats)
-      const { data: riderRow } = await RiderAPI.getProfile(user.id);
-      if (riderRow) setRider(riderRow);
-
-      // 2. Wallet transactions tagged to this rider's user_id
+      // Wallet transactions tagged to this rider's user_id
       //    We fetch last 90 days to support week/month views.
       const since90 = new Date();
       since90.setDate(since90.getDate() - 90);

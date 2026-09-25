@@ -9,6 +9,7 @@ import {
   Store,
   Wrench,
 } from 'lucide-react';
+import { assetUrl } from '@/lib/media';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import SplashScreen from '@/pages/SplashScreen';
@@ -145,7 +146,7 @@ export default function RoleSelect() {
               <div className="setu-float relative mx-auto mb-5 grid h-16 w-16 place-items-center overflow-hidden rounded-[21px] border border-primary/15 bg-card/80 shadow-[0_14px_34px_hsl(var(--foreground)/0.08)] backdrop-blur-xl">
                 <span className="absolute inset-0 rounded-[21px] bg-primary/[0.06] setu-pulse" />
                 <img
-                  src={new URL('../../setu-icon.png', import.meta.url).href}
+                  src={assetUrl('/setu-icon.png')}
                   alt="SETU"
                   className="relative block h-full w-full object-contain"
                 />

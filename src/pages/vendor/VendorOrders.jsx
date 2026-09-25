@@ -7,11 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AppHeader from '@/components/shared/AppHeader';
 import StatusBadge from '@/components/shared/StatusBadge';
-import { useStore } from '@/lib/store';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { VendorAPI, getVendorByOwnerId } from '@/lib/api';
+import { useVendorOrders } from '@/hooks/queries/useOrders';
+import { useOrderMutations } from '@/hooks/mutations/useOrderMutations';
 import { useAuth } from '@/lib/AuthContext';
 import { toast } from '@/components/ui/use-toast';
+import { useVendorByOwner } from '@/hooks/queries/useVendor';
 
 
 // ── Loading skeleton ──────────────────────────────────────
@@ -26,13 +26,8 @@ function OrdersSkeleton() {
 }
 
 export default function VendorOrders() {
-  const { state, dispatch }   = useStore();
   const { user }               = useAuth();
-  const { data: vendor }      = useDataFetch(
-    () => getVendorByOwnerId(user?.id),
-    [user?.id],
-    { cacheKey: `vendor-profile-${user?.id}`, enabled: !!user?.id }
-  );
+  const { data: vendor } = useVendorByOwner(user?.id);
   const vendorId              = vendor?.id ?? null;
 
   const [tab, setTab]         = useState('active');
@@ -53,45 +48,32 @@ export default function VendorOrders() {
   // reads the store, like this now does. A plain REST fetch (no
   // channel) seeds/refreshes the store instead; live updates still
   // arrive through the layout's single channel.
-  const { data: fetchedOrders, isLoading: fetchLoading, refetch } = useDataFetch(
-    () => VendorAPI.getOrders(vendorId, { limit: 50 }),
-    [vendorId],
-    { cacheKey: `vendor-orders-${vendorId}`, enabled: !!vendorId }
-  );
-
-  useEffect(() => {
-    if (fetchedOrders?.length) {
-      dispatch({ type: 'SET_ORDERS', payload: { orders: fetchedOrders } });
-    }
-  }, [fetchedOrders, dispatch]);
-
-  const orders = useMemo(
-    () => (vendorId ? state.orders.filter(o => o.vendorId === vendorId || o.vendor_id === vendorId) : []),
-    [state.orders, vendorId]
-  );
+  const { data: orders = [], isLoading: fetchLoading, refetch } = useVendorOrders(vendorId, { limit: 50 });
+  const { updateOrderStatus, cancelOrder } = useOrderMutations();
   const isLoading = !vendorId || fetchLoading;
 
   // ── Track previous order count to detect new arrivals ──
   const prevPendingCount = useRef(0);
-  const pendingOrders    = orders.filter(o => o.status === 'pending');
+  const pendingOrders    = useMemo(() => orders.filter(o => o.status === 'pending'), [orders]);
 
   useEffect(() => {
     const current = pendingOrders.length;
-    if (current > prevPendingCount.current && prevPendingCount.current !== 0) {
-      // New order arrived
+    const previous = prevPendingCount.current;
+    prevPendingCount.current = current;
+
+    if (current > previous && previous !== 0) {
+      // New order arrived after the initial list was known.
       const newest = pendingOrders[0];
       setNewOrderBanner(newest);
-      // Auto-dismiss after 8 seconds
       const t = setTimeout(() => setNewOrderBanner(null), 8000);
-      // Vibrate if supported
       if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
       return () => clearTimeout(t);
     }
-    prevPendingCount.current = current;
-  }, [pendingOrders.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    return undefined;
+  }, [pendingOrders.length, pendingOrders]);
 
   // ── Filter displayed orders ──
-  const filtered = orders.filter(o => {
+  const filtered = useMemo(() => orders.filter(o => {
     const matchQ = !query ||
       (o.orderNumber ?? o.order_number ?? '').includes(query) ||
       (o.customerName ?? o.customer_name ?? '').toLowerCase().includes(query.toLowerCase());
@@ -100,31 +82,27 @@ export default function VendorOrders() {
     if (tab === 'completed') return matchQ && o.status === 'delivered';
     if (tab === 'cancelled') return matchQ && o.status === 'cancelled';
     return matchQ;
-  });
+  }), [orders, query, tab]);
 
-  const sorted = [...filtered].sort((a, b) =>
+  const sorted = useMemo(() => [...filtered].sort((a, b) =>
     new Date(b.createdAt ?? b.created_at ?? 0) - new Date(a.createdAt ?? a.created_at ?? 0)
-  );
+  ), [filtered]);
 
   // ── Vendor actions: optimistic dispatch + API persist ──
   const act = async (actionType, orderId, extra = {}) => {
     const key = orderId + actionType;
     setActing(key);
 
-    // 1. Optimistic store update (instant UI)
-    dispatch({ type: actionType, payload: { orderId, ...extra } });
-
-    // 2. Persist to DB
     try {
       let result;
       if (actionType === 'VENDOR_CONFIRM_ORDER') {
-        result = await VendorAPI.confirmOrder(orderId);
+        result = await updateOrderStatus(orderId, 'confirmed', {}, { vendorId });
       } else if (actionType === 'VENDOR_START_PREPARING') {
-        result = await VendorAPI.startPreparing(orderId);
+        result = await updateOrderStatus(orderId, 'preparing', {}, { vendorId });
       } else if (actionType === 'VENDOR_REJECT_ORDER') {
-        result = await VendorAPI.rejectOrder(orderId, extra.reason ?? 'Out of stock');
+        result = await cancelOrder(orderId, user?.id, 'vendor', extra.reason ?? 'Out of stock', { vendorId });
       } else if (actionType === 'VENDOR_MARK_READY') {
-        result = await VendorAPI.markReady(orderId);
+        result = await updateOrderStatus(orderId, 'ready', {}, { vendorId });
       }
       // These three methods didn't exist at all until this fix, so a
       // failure here previously threw, was swallowed by the catch below,
@@ -149,7 +127,7 @@ export default function VendorOrders() {
     }
   };
 
-  const activeCount    = orders.filter(o => !['delivered','cancelled'].includes(o.status)).length;
+  const activeCount    = useMemo(() => orders.filter(o => !['delivered','cancelled'].includes(o.status)).length, [orders]);
   const pendingCount   = pendingOrders.length;
 
   return (

@@ -65,6 +65,7 @@
 // handled once, app-wide, in App.jsx.
 // ═══════════════════════════════════════════════════════════
 import React, { useEffect, useRef, useState } from 'react';
+import { assetUrl } from '@/lib/media';
 import { Capacitor } from '@capacitor/core';
 import { MapPin } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
@@ -189,11 +190,14 @@ export default function SplashScreen({ onFinish }) {
     >
       {/* Static background artwork — see file header for what to export. */}
       {!bgFailed && (
-  <img
-    src="/splash-bg.jpg"
-    alt=""
-    aria-hidden="true"
-    className="absolute inset-0 -z-10 h-full w-full object-cover"
+  <picture className="absolute inset-0 -z-10 h-full w-full">
+    <source type="image/avif" srcSet={assetUrl("/splash-bg.avif")} />
+    <source type="image/webp" srcSet={assetUrl("/splash-bg.webp")} />
+    <img
+      src={assetUrl("/splash-bg.jpg")}
+      alt=""
+      aria-hidden="true"
+      className="h-full w-full object-cover"
     onLoad={async (e) => {
       try {
         await e.currentTarget.decode?.();
@@ -207,8 +211,9 @@ export default function SplashScreen({ onFinish }) {
         });
       });
     }}
-    onError={() => setBgFailed(true)}
-  />
+      onError={() => setBgFailed(true)}
+    />
+  </picture>
 )}
 
       {/* Nothing below paints until the background is ready — this is
@@ -260,13 +265,17 @@ export default function SplashScreen({ onFinish }) {
               <span className="text-primary">SETU</span>
             </p>
           ) : (
-            <img
-              src="/splash-logo.png"
-              alt="SETU"
-              className="animate-hero-enter w-[min(68vw,300px)]"
+            <picture>
+              <source type="image/avif" srcSet={assetUrl("/splash-logo.avif")} />
+              <source type="image/webp" srcSet={assetUrl("/splash-logo.webp")} />
+              <img
+                src={assetUrl("/splash-logo.png")}
+                alt="SETU"
+                className="animate-hero-enter w-[min(68vw,300px)]"
               style={{ animationDelay: '250ms' }}
-              onError={() => setLogoFailed(true)}
-            />
+                onError={() => setLogoFailed(true)}
+              />
+            </picture>
           )}
         </div>
 
@@ -318,12 +327,16 @@ export default function SplashScreen({ onFinish }) {
           <div className="h-2" aria-hidden="true" />
 
           {!signatureFailed && (
-            <img
-              src="/satyam-signature.png"
-              alt=""
-              className="h-[clamp(5.25rem,16.5vh,8.25rem)] w-auto object-contain opacity-90"
-              onError={() => setSignatureFailed(true)}
-            />
+            <picture>
+              <source type="image/avif" srcSet={assetUrl("/satyam-signature.avif")} />
+              <source type="image/webp" srcSet={assetUrl("/satyam-signature.webp")} />
+              <img
+                src={assetUrl("/satyam-signature.png")}
+                alt=""
+                className="h-[clamp(5.25rem,16.5vh,8.25rem)] w-auto object-contain opacity-90"
+                onError={() => setSignatureFailed(true)}
+              />
+            </picture>
           )}
         </div>
       </div>

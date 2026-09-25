@@ -34,5 +34,7 @@ audit.json
 # plugin code, manual AndroidManifest edits), un-ignore it then.
 /android/
 dist.zip
+
+# Python caches
 __pycache__/
 *.pyc

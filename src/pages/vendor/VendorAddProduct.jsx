@@ -19,10 +19,13 @@ import { Switch } from '@/components/ui/switch';
 import { Progress } from '@/components/ui/progress';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { getCategories, getVendorByOwnerId, upsertProduct, setProductCategories } from '@/lib/api';
+
+import { useProductMutations } from '@/hooks/queries/useProducts';
+import { useCategories } from '@/hooks/queries/useCatalog';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import CategoryMultiSelect from '@/components/vendor/CategoryMultiSelect';
+import { useVendorByOwner } from '@/hooks/queries/useVendor';
+import { validateImageSignature } from '@/lib/upload-security';
 
 const UNITS = ['kg', 'g', 'litre', 'ml', 'piece', 'box', 'pack', 'bag', 'dozen', 'bundle'];
 const MAX_IMAGE_SIZE_MB = 5;
@@ -52,18 +55,11 @@ export default function VendorAddProduct() {
   const fileRef   = useRef(null);
 
   // ── Vendor profile ────────────────────────────────────────
-  const { data: vendor } = useDataFetch(
-    () => getVendorByOwnerId(user?.id),
-    [user?.id],
-    { cacheKey: `vendor-profile-${user?.id}`, enabled: !!user?.id }
-  );
+  const { data: vendor } = useVendorByOwner(user?.id);
+  const { saveProduct } = useProductMutations();
 
   // ── Categories from DB ────────────────────────────────────
-  const { data: categories, isLoading: catsLoading } = useDataFetch(
-    () => getCategories(),
-    [],
-    { cacheKey: 'categories', staleTime: 120_000 }
-  );
+  const { data: categories, isLoading: catsLoading } = useCategories({ staleTime: 120_000 });
   const cats = categories ?? [];
 
   // ── Form state ────────────────────────────────────────────
@@ -86,9 +82,11 @@ export default function VendorAddProduct() {
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
   // ── Image selection ───────────────────────────────────────
-  const handleImageChange = (e) => {
+  const handleImageChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const validation = await validateImageSignature(file);
+    if (!validation.ok) { setSaveError(validation.error); return; }
     if (file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
       setSaveError(`Image too large — max ${MAX_IMAGE_SIZE_MB} MB`);
       return;
@@ -141,7 +139,7 @@ export default function VendorAddProduct() {
       // existing badges/filters) set to the first pick; the full
       // multi-select is recorded via setProductCategories just below.
       const primaryCategoryName = cats.find(c => c.id === categoryIds[0])?.name || '';
-      const { data, error } = await upsertProduct({
+      const { data, error } = await saveProduct({
         vendor_id:    vendor.id,
         name:         form.name.trim(),
         name_hindi:   form.name_hindi.trim() || null,
@@ -154,12 +152,9 @@ export default function VendorAddProduct() {
         is_seasonal:  form.is_seasonal,
         is_available: form.is_available,
         image_url:    imageUrl,
-      });
+      }, { categoryIds });
 
       if (error) throw error;
-
-      const { error: catErr } = await setProductCategories(data.id, categoryIds);
-      if (catErr) throw catErr;
 
       setSaved(true);
       setTimeout(() => navigate('/vendor/products'), 1800);

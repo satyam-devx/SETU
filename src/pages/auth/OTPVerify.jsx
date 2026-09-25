@@ -1,3 +1,4 @@
+import { assetUrl } from '@/lib/media';
 // ═══════════════════════════════════════════════════════════
 // SETU PLATFORM — OTP VERIFY  (production-hardened)
 //
@@ -255,7 +256,7 @@ export default function OTPVerify() {
             <div className="mb-7 text-center">
               <div className="relative mx-auto mb-5 grid h-16 w-16 place-items-center overflow-hidden rounded-[21px] border border-primary/15 bg-card/80 shadow-[0_14px_34px_hsl(var(--foreground)/0.08)] backdrop-blur-xl">
                 <span className="absolute inset-0 rounded-[21px] bg-primary/[0.06]" />
-                <img src={new URL('../../setu-icon.png', import.meta.url).href} alt="SETU" className="relative block h-full w-full object-contain" />
+                <img src={assetUrl('/setu-icon.png')} alt="SETU" className="relative block h-full w-full object-contain" />
               </div>
               <h1 className="font-heading text-[26px] font-black tracking-[-0.04em] text-foreground">{success ? 'All set' : 'Enter your OTP'}</h1>
               <p className="mx-auto mt-2 max-w-[300px] text-sm leading-6 text-muted-foreground">

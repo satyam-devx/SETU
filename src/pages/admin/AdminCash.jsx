@@ -10,6 +10,7 @@ import StatCard from '@/components/shared/StatCard';
 import { AdminAPI } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { subscribeRealtimeChannel } from '@/lib/realtime-manager';
 import { toast } from '@/components/ui/use-toast';
 
 function fmtTime(iso) {
@@ -63,17 +64,16 @@ export default function AdminCash() {
   // Realtime: new deposits
   useEffect(() => {
     if (!isSupabaseConfigured) return; // demo mode has no real Supabase project — see CHANGELOG.md
-    const channel = supabase
-      .channel('admin-cod-deposits')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'cod_deposits' }, payload => {
-        // Refetch to get joined rider name
-        loadData();
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'cod_deposits' }, payload => {
-        setDeposits(prev => prev.map(d => d.id === payload.new.id ? { ...d, ...payload.new } : d));
-      })
-      .subscribe();
-    return () => supabase.removeChannel(channel);
+    return subscribeRealtimeChannel({
+      key: 'admin:cod-deposits',
+      build: (channel, emit) => channel.on('postgres_changes', { event: '*', schema: 'public', table: 'cod_deposits' }, emit),
+      onEvent: payload => {
+        if (payload.eventType === 'INSERT') loadData();
+        else if (payload.eventType === 'UPDATE') setDeposits(prev => prev.map(d => d.id === payload.new.id ? { ...d, ...payload.new } : d));
+        else if (payload.eventType === 'DELETE') setDeposits(prev => prev.filter(d => d.id !== payload.old?.id));
+      },
+      onRecover: loadData,
+    });
   }, [loadData]);
 
   // ── Actions ────────────────────────────────────────────

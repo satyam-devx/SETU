@@ -9,7 +9,7 @@
 //    + any other fields stored on the first item), not just the id
 // ═══════════════════════════════════════════════════════════
 import React, {
-  createContext, useContext, useState, useEffect, useCallback,
+  createContext, useContext, useState, useEffect, useCallback, useMemo,
 } from 'react';
 import { storage } from '@/lib/utils';
 
@@ -112,14 +112,15 @@ export function CartProvider({ children }) {
   }, []);
 
   const dismissVendorAlert = useCallback(() => setVendorAlert(null), []);
+  const contextValue = useMemo(() => ({
+    items, addItem, removeItem, updateQuantity, clearCart,
+    totalItems, cartCount, totalPrice,
+    activeVendorId, activeVendorName, isMultiVendor,
+    vendorAlert, dismissVendorAlert,
+  }), [items, addItem, removeItem, updateQuantity, clearCart, totalItems, cartCount, totalPrice, activeVendorId, activeVendorName, isMultiVendor, vendorAlert, dismissVendorAlert]);
 
   return (
-    <CartContext.Provider value={{
-      items, addItem, removeItem, updateQuantity, clearCart,
-      totalItems, cartCount, totalPrice,
-      activeVendorId, activeVendorName, isMultiVendor,
-      vendorAlert, dismissVendorAlert,
-    }}>
+    <CartContext.Provider value={contextValue}>
       {/* Inline vendor-switch warning banner */}
       {vendorAlert && (
         <div

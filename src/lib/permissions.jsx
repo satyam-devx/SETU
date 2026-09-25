@@ -6,7 +6,7 @@
 // Authorization is ALSO enforced server-side (RLS + has_permission in
 // RPCs) — this client layer is for UX only, never the security boundary.
 // ═══════════════════════════════════════════════════════════
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { useAuth } from './AuthContext';
 
@@ -56,8 +56,10 @@ export function PermissionsProvider({ children }) {
     return permissions.has(key);
   }, [permissions, isSuperAdmin]);
 
+  const contextValue = useMemo(() => ({ permissions, can, isSuperAdmin, loading, reload: load }), [permissions, can, isSuperAdmin, loading, load]);
+
   return (
-    <PermissionsContext.Provider value={{ permissions, can, isSuperAdmin, loading, reload: load }}>
+    <PermissionsContext.Provider value={contextValue}>
       {children}
     </PermissionsContext.Provider>
   );

@@ -20,7 +20,8 @@
 // not the primary mechanism.
 // ═══════════════════════════════════════════════════════════
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { isSupabaseConfigured } from '@/lib/supabase';
+import { subscribeRealtimeChannel } from '@/lib/realtime-manager';
 import { getBanners } from '@/lib/api';
 
 const FALLBACK_POLL_MS = 5 * 60 * 1000;
@@ -58,14 +59,14 @@ export function useRealtimeBanners(villageId) {
   useEffect(() => {
     if (!isSupabaseConfigured) return;
 
-    const channel = supabase
-      .channel('banners-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'banners' }, () => {
-        fetchBanners();
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    return subscribeRealtimeChannel({
+      key: 'banners',
+      build: (channel, emit) => {
+        channel.on('postgres_changes', { event: '*', schema: 'public', table: 'banners' }, emit);
+      },
+      onEvent: fetchBanners,
+      onRecover: fetchBanners,
+    });
     // fetchBanners is memoized on villageId — a new subscription per
     // village change is fine (the old one is torn down first) and
     // avoids the "callbacks added after subscribe()" issue from

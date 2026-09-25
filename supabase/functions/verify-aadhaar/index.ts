@@ -1,3 +1,8 @@
+// Required Supabase Vault Secrets:
+//   ALLOW_KYC_DEV_BYPASS — required by this function.
+//   KYC_DAILY_CAP — required by this function.
+//   SUREPASS_API_KEY — required by this function.
+
 /**
  * verify-aadhaar — Phase 7 KYC  (hardened, round 2)
  *

@@ -6,7 +6,7 @@
 // platform name, theme, and maintenance state without admin access.
 // Admin-only settings are never exposed here.
 // ═══════════════════════════════════════════════════════════
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { isSupabaseConfigured } from './supabase';
 import { SettingsAPI } from './api';
 
@@ -38,9 +38,10 @@ export function SettingsProvider({ children }) {
   }, [settings]);
 
   const isMaintenance = settings.maintenance_mode === 'true';
+  const contextValue = useMemo(() => ({ settings, get, isMaintenance, loading, reload: load }), [settings, get, isMaintenance, loading, load]);
 
   return (
-    <SettingsContext.Provider value={{ settings, get, isMaintenance, loading, reload: load }}>
+    <SettingsContext.Provider value={contextValue}>
       {children}
     </SettingsContext.Provider>
   );

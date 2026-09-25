@@ -5,8 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { useCart } from '@/lib/cartContext';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { getProductById, getProductCategories } from '@/lib/api';
+import { useProduct, useProductCategories } from '@/hooks/queries/useProducts';
 import Img from '@/components/shared/Img';
 import { toast } from '@/components/ui/use-toast';
 import { smartGoBack } from '@/lib/utils';
@@ -34,18 +33,10 @@ export default function CustomerProductDetail() {
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
 
-  const { data: product, isLoading, error } = useDataFetch(
-    () => getProductById(productId),
-    [productId],
-    { cacheKey: `product:${productId}`, enabled: !!productId }
-  );
+  const { data: product, isLoading, error } = useProduct(productId);
   // Full category set (migration 082) — product.category (below) is
   // only ever the first of possibly several.
-  const { data: productCategories } = useDataFetch(
-    () => getProductCategories(productId),
-    [productId],
-    { cacheKey: `product-categories-${productId}`, enabled: !!productId }
-  );
+  const { data: productCategories } = useProductCategories(productId, { staleTime: 120_000 });
 
   if (isLoading) return <ProductSkeleton />;
 

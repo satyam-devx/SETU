@@ -1,3 +1,4 @@
+import { assetUrl } from '@/lib/media';
 // ═══════════════════════════════════════════════════════════
 // SETU PLATFORM — LOGIN OTP  (v2 — Phase 0 hardened)
 //
@@ -19,8 +20,8 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { useAuth } from '@/lib/AuthContext';
 import { consumePostLoginRedirect } from '@/lib/postLoginRedirect';
+import { validators } from '@/lib/form-validation';
 
-const VALID_INDIAN_PHONE = /^[6-9]\d{9}$/;
 const OTP_COOLDOWN_SECS  = 60;
 const COOLDOWN_KEY       = 'setu_otp_cooldown_until'; // sessionStorage key
 
@@ -100,8 +101,9 @@ export default function LoginOTP() {
   const handleSendOTP = async () => {
     if (cooldown > 0) return; // Guard — button should already be disabled
 
-    if (!VALID_INDIAN_PHONE.test(rawPhone)) {
-      setError('Please enter a valid 10-digit Indian mobile number.');
+    const validationError = validators.indianPhone(rawPhone);
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
@@ -182,7 +184,7 @@ export default function LoginOTP() {
             <div className="mb-7 text-center">
               <div className="relative mx-auto mb-5 grid h-16 w-16 place-items-center overflow-hidden rounded-[21px] border border-primary/15 bg-card/80 shadow-[0_14px_34px_hsl(var(--foreground)/0.08)] backdrop-blur-xl">
                 <span className="absolute inset-0 rounded-[21px] bg-primary/[0.06]" />
-                <img src={new URL('../../setu-icon.png', import.meta.url).href} alt="SETU" className="relative block h-full w-full object-contain" />
+                <img src={assetUrl('/setu-icon.png')} alt="SETU" className="relative block h-full w-full object-contain" />
               </div>
               <h1 className="font-heading text-[26px] font-black tracking-[-0.04em] text-foreground">स्वागत है SETU पर</h1>
               <p className="mx-auto mt-2 max-w-[290px] text-sm leading-6 text-muted-foreground">Login or create your account to continue.</p>
@@ -201,21 +203,22 @@ export default function LoginOTP() {
 
                 {mode === 'phone' && (
                   <>
-                    <div className="mb-4">
+                    <div className="mb-4" aria-describedby={error ? 'login-phone-error' : undefined}>
                       <div className="mb-2.5">
                         <p className="text-sm font-bold text-foreground">Mobile number</p>
                         <p className="mt-0.5 text-xs text-muted-foreground">अपना मोबाइल नंबर डालें</p>
                       </div>
+                      <label htmlFor="login-phone" className="sr-only">Mobile number</label>
                       <div className="flex gap-2.5">
                         <div className="flex h-12 shrink-0 items-center rounded-2xl border border-border/70 bg-muted/55 px-3.5">
                           <span className="text-sm font-bold text-foreground">🇮🇳 +91</span>
                         </div>
-                        <Input type="tel" inputMode="numeric" placeholder="10-digit mobile number" value={rawPhone} onChange={handlePhoneChange} onKeyDown={handleKeyDown} className="h-12 flex-1 rounded-2xl border-border/70 bg-background/75 px-4 text-base font-medium tracking-[0.12em] shadow-none focus-visible:ring-2 focus-visible:ring-primary/20" maxLength={10} autoFocus autoComplete="tel-national" disabled={loading} />
+                        <Input id="login-phone" type="tel" inputMode="numeric" placeholder="10-digit mobile number" value={rawPhone} onChange={handlePhoneChange} onKeyDown={handleKeyDown} className="h-12 flex-1 rounded-2xl border-border/70 bg-background/75 px-4 text-base font-medium tracking-[0.12em] shadow-none focus-visible:ring-2 focus-visible:ring-primary/20" maxLength={10} autoFocus autoComplete="tel-national" disabled={loading} />
                       </div>
                       {rawPhone.length > 0 && rawPhone.length < 10 && <p className="mt-1.5 px-1 text-[11px] text-muted-foreground">{10 - rawPhone.length} more digits needed</p>}
                     </div>
 
-                    {error && <div className="mb-4 flex items-start gap-2.5 rounded-2xl border border-destructive/20 bg-destructive/10 p-3.5"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" /><p className="text-xs leading-5 text-destructive">{error}</p></div>}
+                    {error && <div id="login-phone-error" role="alert" aria-live="polite" className="mb-4 flex items-start gap-2.5 rounded-2xl border border-destructive/20 bg-destructive/10 p-3.5"><AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-destructive" /><p className="text-xs leading-5 text-destructive">{error}</p></div>}
                     {cooldown > 0 && !error && <div className="mb-4 flex items-center gap-2.5 rounded-2xl border border-border/60 bg-muted/50 p-3.5"><Clock className="h-4 w-4 shrink-0 text-primary" /><p className="text-xs text-muted-foreground">OTP sent. Resend in <span className="font-bold tabular-nums text-foreground">{cooldown}s</span></p></div>}
 
                     <Button className="h-12 w-full rounded-2xl text-sm font-bold shadow-[0_10px_30px_hsl(var(--primary)/0.20)] active:scale-[0.985]" onClick={handleSendOTP} disabled={!canSend}>
@@ -234,7 +237,7 @@ export default function LoginOTP() {
                       <h2 className="text-base font-bold text-foreground">Continue with Google</h2>
                       <p className="mt-1.5 text-xs leading-5 text-muted-foreground">Fast, secure and password-free sign in.</p>
                     </div>
-                    {error && <div className="mb-4 flex items-start gap-2.5 rounded-2xl border border-destructive/20 bg-destructive/10 p-3.5"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" /><p className="text-xs leading-5 text-destructive">{error}</p></div>}
+                    {error && <div id="login-google-error" role="alert" aria-live="polite" className="mb-4 flex items-start gap-2.5 rounded-2xl border border-destructive/20 bg-destructive/10 p-3.5"><AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-destructive" /><p className="text-xs leading-5 text-destructive">{error}</p></div>}
                     <Button variant="outline" className="h-12 w-full rounded-2xl border-border/70 bg-background text-sm font-bold shadow-sm active:scale-[0.985]" disabled={loading} onClick={handleGoogleSignIn}>
                       {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Connecting...</> : <>Continue with Google</>}
                     </Button>

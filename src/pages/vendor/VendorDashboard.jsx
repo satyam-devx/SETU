@@ -7,55 +7,46 @@
 //  - Skeleton loading states
 //  - Stats computed from real data
 // ═══════════════════════════════════════════════════════════
-import React, { useState } from 'react';
+import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  ShoppingBag, Package, IndianRupee, TrendingUp,
+import {  ShoppingBag, Package, IndianRupee, TrendingUp,
   ChevronRight, AlertCircle, Plus, FileBarChart,
 } from 'lucide-react';
+import { useVendorByOwner } from '@/hooks/queries/useVendor';
+import { useProducts } from '@/hooks/queries/useProducts';
 import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
 import StatusBadge from '@/components/shared/StatusBadge';
 import EmptyState from '@/components/shared/EmptyState';
 import { StatCardSkeleton, OrderRowSkeleton } from '@/components/shared/SkeletonCard';
-import { useStore } from '@/lib/store';
+import { useVendorOrders } from '@/hooks/queries/useOrders';
 import { useAuth } from '@/lib/AuthContext';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendorByOwnerId, getProducts } from '@/lib/api';
 import { formatCurrency, timeAgo } from '@/lib/utils';
 
 export default function VendorDashboard() {
   const { user } = useAuth();
-  const { state } = useStore();
 
   // Fetch vendor profile for this authenticated user
-  const { data: vendor, isLoading: vendorLoading } = useDataFetch(
-    () => getVendorByOwnerId(user?.id),
-    [user?.id],
-    { cacheKey: `vendor-profile-${user?.id}`, enabled: !!user?.id }
-  );
+  const { data: vendor, isLoading: vendorLoading } = useVendorByOwner(user?.id);
 
-  const { data: products, isLoading: productsLoading } = useDataFetch(
-    () => getProducts({ vendorId: vendor?.id }),
-    [vendor?.id],
-    { cacheKey: `vendor-products-${vendor?.id}`, enabled: !!vendor?.id }
-  );
+  const { data: products, isLoading: productsLoading } = useProducts({ vendorId: vendor?.id }, { enabled: !!vendor?.id });
 
-  // Orders from realtime store (filtered to this vendor)
-  const vendorOrders = state.orders.filter(o =>
+  // Orders from the canonical server-state query cache.
+  const { data: orders = [] } = useVendorOrders(vendor?.id, { limit: 100 });
+  const vendorOrders = useMemo(() => orders.filter(o =>
     vendor?.id && (o.vendorId === vendor.id || o.vendor_id === vendor.id)
-  );
+  ), [orders, vendor?.id]);
 
-  const pendingOrders = vendorOrders.filter(o => o.status === 'pending');
-  const todayOrders   = vendorOrders.filter(o => {
+  const pendingOrders = useMemo(() => vendorOrders.filter(o => o.status === 'pending'), [vendorOrders]);
+  const todayOrders   = useMemo(() => vendorOrders.filter(o => {
     const d = new Date(o.createdAt || o.created_at);
     return d.toDateString() === new Date().toDateString();
-  });
+  }), [vendorOrders]);
   const todayRevenue  = todayOrders
     .filter(o => o.status !== 'cancelled')
     .reduce((s, o) => s + (o.total || 0), 0);
 
-  const lowStock = (products || []).filter(p => (p.stock ?? 99) < 5 && p.is_available);
+  const lowStock = useMemo(() => (products || []).filter(p => (p.stock ?? 99) < 5 && p.is_available), [products]);
 
   const isLoading = vendorLoading || productsLoading;
 

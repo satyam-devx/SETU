@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AppHeader from '@/components/shared/AppHeader';
 import { AdminAPI } from '@/lib/api';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { subscribeRealtimeChannel } from '@/lib/realtime-manager';
 
 const PRIORITY_STYLE = {
   critical: 'bg-red-100   text-red-800',
@@ -55,13 +56,16 @@ export default function AdminSupport() {
   // Realtime: new tickets
   useEffect(() => {
     if (!isSupabaseConfigured) return; // demo mode has no real Supabase project — see CHANGELOG.md
-    const channel = supabase
-      .channel('admin-support-tickets')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'support_tickets' }, (payload) => {
-        setTickets(prev => [payload.new, ...prev]);
-      })
-      .subscribe();
-    return () => supabase.removeChannel(channel);
+    return subscribeRealtimeChannel({
+      key: 'admin:support-tickets',
+      build: (channel, emit) => channel.on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets' }, emit),
+      onEvent: payload => {
+        if (payload.eventType === 'INSERT') setTickets(prev => prev.some(t => t.id === payload.new.id) ? prev : [payload.new, ...prev]);
+        else if (payload.eventType === 'UPDATE') setTickets(prev => prev.map(t => t.id === payload.new.id ? { ...t, ...payload.new } : t));
+        else if (payload.eventType === 'DELETE') setTickets(prev => prev.filter(t => t.id !== payload.old?.id));
+      },
+      onRecover: loadTickets,
+    });
   }, []);
 
   // ── Actions ────────────────────────────────────────────

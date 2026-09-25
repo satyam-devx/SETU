@@ -6,13 +6,11 @@ import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
 import { useVillage } from '@/lib/village';
-import { useStore } from '@/lib/store';
 import { AnchorAPI } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 
 export default function AnchorDashboard() {
   const { village, villageId } = useVillage();
-  const { state } = useStore();
 
   const [anchorProfile, setAnchorProfile] = useState(null);
   const [stats, setStats]                 = useState(null);
@@ -47,7 +45,7 @@ export default function AnchorDashboard() {
     ? new Date(anchorProfile.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
     : '—';
 
-  const activeOrders  = stats?.activeOrders  ?? state.orders.filter(o => !['delivered','cancelled'].includes(o.status)).length;
+  const activeOrders  = stats?.activeOrders ?? 0;
   const activeVendors = stats?.activeVendors ?? 0;
   const pendingKYC    = stats?.pendingKYC    ?? 0;
 

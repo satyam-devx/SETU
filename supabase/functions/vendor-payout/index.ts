@@ -1,3 +1,8 @@
+// Required Supabase Vault Secrets:
+//   RAZORPAY_ACCOUNT_NUMBER — required by this function.
+//   RAZORPAY_KEY_ID — required by this function.
+//   RAZORPAY_KEY_SECRET — required by this function.
+
 /**
  * SETU — vendor-payout Edge Function  (Phase 0)
  *

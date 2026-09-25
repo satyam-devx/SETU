@@ -32,7 +32,7 @@
 //      kill switch propagates within minutes, not just "next cold
 //      start".
 // ═══════════════════════════════════════════════════════════
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { isSupabaseConfigured } from './supabase';
 import { FeatureFlagsAPI } from './api';
@@ -172,8 +172,10 @@ export function FeatureFlagsProvider({ children }) {
     return !disabled.has(key);
   }, [known, disabled]);
 
+  const contextValue = useMemo(() => ({ isEnabled, loading, isStale, lastUpdated, reload: load }), [isEnabled, loading, isStale, lastUpdated, load]);
+
   return (
-    <FeatureFlagsContext.Provider value={{ isEnabled, loading, isStale, lastUpdated, reload: load }}>
+    <FeatureFlagsContext.Provider value={contextValue}>
       {children}
     </FeatureFlagsContext.Provider>
   );

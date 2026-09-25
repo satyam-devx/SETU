@@ -1,104 +1,135 @@
-// ═══════════════════════════════════════════════════════════
-// SETU — useRiderLocation
-//
-// Fix log (Phase 0):
-//  - Hook now accepts userId (auth UID) instead of riderId.
-//  - It resolves riders.id (PK) from riders.user_id = userId
-//    on mount so GPS upserts use the correct FK.
-//  - Exposed resolvedRiderId so callers can pass it to other
-//    rider-scoped hooks (useRealtimeOrders, etc.).
-// ═══════════════════════════════════════════════════════════
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useAppLifecycle } from '@/hooks/useAppLifecycle';
+import { isNetworkOnline, subscribeNetwork } from '@/lib/network-state';
+
+function distanceMeters(a, b) {
+  if (!a || !b) return Infinity;
+  const R = 6371000;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLng = (b.lng - a.lng) * Math.PI / 180;
+  const lat1 = a.lat * Math.PI / 180;
+  const lat2 = b.lat * Math.PI / 180;
+  const x = Math.sin(dLat / 2) ** 2 + Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
 
 /**
- * Track and report a rider's GPS position.
- *
- * @param {string|null} userId   - Auth user UUID (auth.users.id)
- * @param {boolean}     isOnline - Only publish location when true
- * @returns {{ location, error, riderId: string|null }}
+ * F6 rider GPS pipeline:
+ * - resolve auth user -> riders.id once
+ * - stop the GPS watch when offline/background/offline-toggle
+ * - use high accuracy only during an active delivery
+ * - coalesce many GPS callbacks into the latest point
+ * - publish only after a time/distance threshold
+ * - upsert the latest location row (the schema intentionally has one current
+ *   row per rider); no unbounded client-side location history is created
  */
-export function useRiderLocation(userId, isOnline = false) {
-  const [location,         setLocation]         = useState(null);
-  const [error,            setError]            = useState(null);
-  const [resolvedRiderId,  setResolvedRiderId]  = useState(null);
+export function useRiderLocation(userId, isOnline = false, isOnDelivery = false) {
+  const [location, setLocation] = useState(null);
+  const [error, setError] = useState(null);
+  const [resolvedRiderId, setResolvedRiderId] = useState(null);
+  const [networkOnline, setNetworkOnline] = useState(isNetworkOnline());
+  const isActive = useAppLifecycle();
+  const watchId = useRef(null);
+  const latestRef = useRef(null);
+  const lastPublishedRef = useRef(null);
+  const lastPublishAtRef = useRef(0);
+  const flushTimerRef = useRef(null);
 
-  const watchId    = useRef(null);
-  const lastUpdate = useRef(0);
-  const UPDATE_INTERVAL = 10_000; // ms
+  const updateInterval = isOnDelivery ? 10_000 : 30_000;
+  const minDistance = isOnDelivery ? 15 : 40;
 
-  // ── Resolve riders.id from auth user_id ─────────────────
+  useEffect(() => subscribeNetwork(setNetworkOnline), []);
+
   useEffect(() => {
-    if (!userId) return;
-
-    supabase
-      .from('riders')
-      .select('id')
-      .eq('user_id', userId)
-      .maybeSingle()
-      .then(({ data, error: e }) => {
-        if (e) {
-          console.error('[useRiderLocation] Could not resolve rider id:', e.message);
-          return;
-        }
-        if (data?.id) setResolvedRiderId(data.id);
-      });
+    if (!userId) {
+      setResolvedRiderId(null);
+      return undefined;
+    }
+    let cancelled = false;
+    supabase.from('riders').select('id').eq('user_id', userId).maybeSingle().then(({ data, error: e }) => {
+      if (cancelled) return;
+      if (e) {
+        setError(e.message);
+        return;
+      }
+      setResolvedRiderId(data?.id ?? null);
+    });
+    return () => { cancelled = true; };
   }, [userId]);
 
-  // ── GPS watch ────────────────────────────────────────────
   useEffect(() => {
-    if (!resolvedRiderId || !isOnline) {
-      if (watchId.current !== null) {
-        navigator.geolocation.clearWatch(watchId.current);
-        watchId.current = null;
-      }
-      return;
-    }
-
-    if (!navigator.geolocation) {
-      setError('Geolocation not supported');
-      return;
-    }
-
-    watchId.current = navigator.geolocation.watchPosition(
-      async (pos) => {
-        const { latitude: lat, longitude: lng, accuracy } = pos.coords;
-        const now = Date.now();
-
-        setLocation({ lat, lng, accuracy });
-
-        if (now - lastUpdate.current > UPDATE_INTERVAL) {
-          try {
-            await supabase.from('rider_locations').upsert(
-              {
-                rider_id:    resolvedRiderId,
-                lat,
-                lng,
-                accuracy,
-                recorded_at: new Date().toISOString(),
-              },
-              { onConflict: 'rider_id' }
-            );
-            lastUpdate.current = now;
-          } catch (err) {
-            console.error('[GPS] Upsert failed:', err);
-          }
-        }
-      },
-      (err) => {
-        setError(err.message);
-        console.error('[GPS] Error:', err);
-      },
-      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 10_000 }
-    );
-
-    return () => {
-      if (watchId.current !== null) {
+    const clearWatch = () => {
+      if (watchId.current !== null && navigator.geolocation) {
         navigator.geolocation.clearWatch(watchId.current);
         watchId.current = null;
       }
     };
-  }, [resolvedRiderId, isOnline]);
+
+    const flushLatest = async () => {
+      if (!resolvedRiderId || !networkOnline || !isActive || !isOnline || !latestRef.current) return;
+      const point = latestRef.current;
+      const previous = lastPublishedRef.current;
+      const moved = distanceMeters(previous, point);
+      const elapsed = Date.now() - lastPublishAtRef.current;
+      if (previous && moved < minDistance && elapsed < updateInterval) return;
+
+      const { error: publishError } = await supabase.from('rider_locations').upsert({
+        rider_id: resolvedRiderId,
+        lat: point.lat,
+        lng: point.lng,
+        accuracy: point.accuracy,
+        recorded_at: new Date().toISOString(),
+      }, { onConflict: 'rider_id' });
+
+      if (!publishError) {
+        lastPublishedRef.current = point;
+        lastPublishAtRef.current = Date.now();
+        latestRef.current = null;
+      } else {
+        setError(publishError.message);
+      }
+    };
+
+    if (!resolvedRiderId || !isOnline || !networkOnline || !isActive || !navigator.geolocation) {
+      clearWatch();
+      if (flushTimerRef.current) clearInterval(flushTimerRef.current);
+      flushTimerRef.current = null;
+      return () => clearWatch();
+    }
+
+    setError(null);
+    watchId.current = navigator.geolocation.watchPosition(
+      pos => {
+        const point = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        };
+        latestRef.current = point;
+        setLocation(point);
+        void flushLatest();
+      },
+      err => {
+        setError(err.message);
+      },
+      {
+        enableHighAccuracy: Boolean(isOnDelivery),
+        timeout: isOnDelivery ? 15_000 : 30_000,
+        maximumAge: isOnDelivery ? 5_000 : 30_000,
+      }
+    );
+
+    // Coalescing timer ensures the latest GPS point is eventually published
+    // even when the browser/WebView emits callbacks faster than our budget.
+    flushTimerRef.current = setInterval(() => { void flushLatest(); }, updateInterval);
+
+    return () => {
+      clearWatch();
+      if (flushTimerRef.current) clearInterval(flushTimerRef.current);
+      flushTimerRef.current = null;
+    };
+  }, [resolvedRiderId, isOnline, isActive, networkOnline, isOnDelivery, minDistance, updateInterval]);
 
   return { location, error, riderId: resolvedRiderId };
 }

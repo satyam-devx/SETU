@@ -90,41 +90,39 @@ function LangCard({ lang, selected, onSelect, speaking, onListen }) {
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onSelect(lang.code)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect(lang.code);
-        }
-      }}
-      className={`w-full text-left rounded-2xl border-2 p-4 transition-all cursor-pointer ${
+      className={`w-full rounded-2xl border-2 p-4 transition-all ${
         isSelected
           ? 'border-primary bg-primary/5'
           : 'border-border bg-card shadow-sm'
       }`}
     >
+      <button
+        type="button"
+        onClick={() => onSelect(lang.code)}
+        aria-pressed={isSelected}
+        aria-label={`Select ${lang.english} language`}
+        className="w-full text-left rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      >
       {/* Header row */}
-      <div className="flex items-center justify-between mb-1">
-        <div className="flex items-baseline gap-2">
+      <span className="flex items-center justify-between mb-1">
+        <span className="flex items-baseline gap-2">
           <span className="text-2xl font-bold text-foreground">{lang.name}</span>
           <span className="text-sm text-muted-foreground">({lang.english})</span>
-        </div>
+        </span>
         {isSelected && (
-          <div className="w-6 h-6 rounded-full border-2 border-primary flex items-center justify-center bg-card shrink-0">
+          <span className="w-6 h-6 rounded-full border-2 border-primary flex items-center justify-center bg-card shrink-0" aria-hidden="true">
             <Check className="w-3.5 h-3.5 text-primary stroke-[2.5]" />
-          </div>
+          </span>
         )}
-      </div>
+      </span>
 
-      {/* Region */}
-      <p className="text-xs text-muted-foreground mb-3">{lang.region}</p>
+      <span className="block text-xs text-muted-foreground mb-3">{lang.region}</span>
 
-      {/* Sample sentence */}
-      <div className="bg-muted/50 rounded-xl px-3 py-2 mb-3">
-        <p className="text-sm italic text-foreground">{lang.sample}</p>
-      </div>
+      <span className="block bg-muted/50 rounded-xl px-3 py-2 mb-3">
+        <span className="block text-sm italic text-foreground">{lang.sample}</span>
+      </span>
+
+      </button>
 
       {/* Listen + Script badge row */}
       <div

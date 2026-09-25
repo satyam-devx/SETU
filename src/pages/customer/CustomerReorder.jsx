@@ -5,52 +5,24 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
-import { useStore } from '@/lib/store';
 import { useCart } from '@/lib/cartContext';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { getOrderById, getProducts } from '@/lib/api';
+import { useOrder } from '@/hooks/queries/useOrders';
+import { useProducts } from '@/hooks/queries/useProducts';
 import Img from '@/components/shared/Img';
 
 export default function CustomerReorder() {
   const { orderId } = useParams();
   const navigate    = useNavigate();
-  const { state }   = useStore();
   const { addItem } = useCart();
 
   const [added, setAdded]           = useState(false);
   const [unavailable, setUnavailable] = useState([]);
 
-  // 1. Try store first (already hydrated from the orders list page)
-  const storeOrder = state.orders.find(o => o.id === orderId);
-
-  // 2. If not in store, fetch from DB — enabled only when missing
-  const {
-    data: fetchedOrder, isLoading: orderLoading,
-    error: orderError, refetch: refetchOrder,
-  } = useDataFetch(
-    () => getOrderById(orderId),
-    [orderId],
-    {
-      cacheKey: `order:${orderId}`,
-      enabled:  !storeOrder && !!orderId,
-    }
-  );
-
-  const order = storeOrder ?? fetchedOrder;
+  const { data: order, isLoading: orderLoading, error: orderError, refetch: refetchOrder } = useOrder(orderId);
 
   // 3. Once we have the order's vendor, fetch live product stock for that vendor
   const vendorId = order?.vendor_id ?? order?.vendorId;
-  const {
-    data: liveProducts, isLoading: productsLoading,
-    error: productsError, refetch: refetchProducts,
-  } = useDataFetch(
-    () => getProducts({ vendorId }),
-    [vendorId],
-    {
-      cacheKey: `products:vendor:${vendorId}`,
-      enabled:  !!vendorId,
-    }
-  );
+  const { data: liveProducts = [], isLoading: productsLoading, error: productsError, refetch: refetchProducts } = useProducts({ vendorId }, { enabled: !!vendorId });
 
   const isLoading = orderLoading || productsLoading;
 

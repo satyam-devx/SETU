@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   MapPin, Navigation, IndianRupee, Package,
@@ -12,11 +12,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
 import StatusBadge from '@/components/shared/StatusBadge';
-import { useRiderState, useStore } from '@/lib/store';
+import { useRiderState } from '@/lib/store';
 import { useAuth } from '@/lib/AuthContext';
-import { useDataFetch } from '@/hooks/useDataFetch';
 import { useRiderLocation } from '@/hooks/useRiderLocation';
-import { RiderAPI } from '@/lib/api';
+
+import { useRiderMutations } from '@/hooks/mutations/useRiderMutations';
+import { useRiderOrders } from '@/hooks/queries/useOrders';
+import { useRiderByUser, useRiderOffers } from '@/hooks/queries/useRider';
+import { useOrderMutations } from '@/hooks/mutations/useOrderMutations';
 import { supabase } from '@/lib/supabase';
 
 // ── Loading skeleton ──────────────────────────────────────
@@ -31,38 +34,14 @@ function OrdersSkeleton() {
 export default function RiderDashboard() {
   const { isOnline, toggleOnline } = useRiderState();
   const { user, profile }          = useAuth();
+  const { toggleOnline: toggleOnlineMutation } = useRiderMutations();
 
   // Resolve the rider's riders.id — orders, locations and earnings are
   // all keyed by it, NOT the auth uid. (Bug fix: the dashboard used
   // user.id everywhere, so orders never matched and accept/deliver wrote
   // an invalid rider_id that violated the FK.)
-  const { data: rider } = useDataFetch(
-    () => RiderAPI.getProfile(user?.id),
-    [user?.id],
-    { cacheKey: `rider-profile-${user?.id}`, enabled: !!user?.id }
-  );
+  const { data: rider } = useRiderByUser(user?.id);
   const riderId = rider?.id ?? null;
-
-  // useRiderLocation resolves riders.id internally from the auth user
-  // id passed in — it does its own `riders.select('id').eq('user_id',
-  // userId)` lookup. This was passing riderId (already riders.id, the
-  // PK) instead of user.id (auth.users.id, what user_id actually
-  // stores), so that internal lookup could never match anything —
-  // resolvedRiderId never resolved, the GPS watch never started, and
-  // currentLocation has been permanently null. No rider's live
-  // location has ever actually been tracked.
-  const { location: currentLocation } = useRiderLocation(user?.id, isOnline);
-  const [accepting, setAccepting]     = useState(null);
-  const [delivering, setDelivering]   = useState(null);
-  const [deliveryTarget, setDeliveryTarget] = useState(null);
-  const [deliveryOtp, setDeliveryOtp] = useState('');
-  const [deliveryProof, setDeliveryProof] = useState(null);
-  const [deliveryError, setDeliveryError] = useState('');
-  const [availableOrders, setAvailableOrders] = useState([]);
-
-  // ── Display values from the real rider row ────────────────
-  const riderName = rider?.name ?? profile?.name ?? 'Rider';
-  const riderZone = rider?.zone ?? profile?.zone  ?? 'Village Zone';
 
   // ── My active orders ───────────────────────────────────────
   // RiderLayout already holds the one live realtime channel for this
@@ -78,51 +57,56 @@ export default function RiderDashboard() {
   // here than it was for vendor. A plain REST fetch seeds/refreshes
   // the store instead; live updates still arrive through the layout's
   // single channel.
-  const { state, dispatch } = useStore();
-  const { data: fetchedOrders, isLoading: loadingMine, refetch: refetchMine } = useDataFetch(
-    () => RiderAPI.getOrders(riderId, { limit: 50 }),
-    [riderId],
-    { cacheKey: `rider-orders-${riderId}`, enabled: !!riderId }
-  );
-  useEffect(() => {
-    if (fetchedOrders?.length) dispatch({ type: 'SET_ORDERS', payload: { orders: fetchedOrders } });
-  }, [fetchedOrders, dispatch]);
-  const myOrders = React.useMemo(
-    () => riderId ? state.orders.filter(o => (o.riderId ?? o.rider_id) === riderId) : [],
-    [state.orders, riderId]
-  );
+  //
+  // Declared before useRiderLocation below because that call reads
+  // activeDelivery — it previously sat after this block and threw
+  // "Cannot access 'activeDelivery' before initialization" on every
+  // render (a TDZ bug reintroduced while fixing a different one).
+  const { data: myOrders = [], isLoading: loadingMine, refetch: refetchMine } = useRiderOrders(riderId, { limit: 50 });
+  const activeDelivery = useMemo(() => myOrders.some(order => ['picked_up', 'on_the_way'].includes(order?.status)), [myOrders]);
+  const { assignRider, completeDelivery, updateRiderLocation } = useOrderMutations();
+
+  // useRiderLocation resolves riders.id internally from the auth user
+  // id passed in — it does its own `riders.select('id').eq('user_id',
+  // userId)` lookup. This was passing riderId (already riders.id, the
+  // PK) instead of user.id (auth.users.id, what user_id actually
+  // stores), so that internal lookup could never match anything —
+  // resolvedRiderId never resolved, the GPS watch never started, and
+  // currentLocation has been permanently null. No rider's live
+  // location has ever actually been tracked.
+  const [hiddenOfferIds, setHiddenOfferIds] = useState(() => new Set());
+  const { location: currentLocation } = useRiderLocation(user?.id, isOnline, activeDelivery);
+  const [accepting, setAccepting]     = useState(null);
+  const [delivering, setDelivering]   = useState(null);
+  const [deliveryTarget, setDeliveryTarget] = useState(null);
+  const [deliveryOtp, setDeliveryOtp] = useState('');
+  const [deliveryProof, setDeliveryProof] = useState(null);
+  const [deliveryError, setDeliveryError] = useState('');
+
+
+  // ── Display values from the real rider row ────────────────
+  const riderName = rider?.name ?? profile?.name ?? 'Rider';
+  const riderZone = rider?.zone ?? profile?.zone  ?? 'Village Zone';
 
   // ── Server-matched rider offers ───────────────────────────
   // Phase 4: only server-generated, time-bound offers are shown. This
   // prevents a village-wide claim race and lets the backend reassign
   // expired offers deterministically.
-  const loadAvailable = useCallback(async () => {
-    if (!riderId || !rider?.village_id || !isOnline) { setAvailableOrders([]); return; }
-    const { data } = await RiderAPI.getAvailableOrders(riderId);
-    setAvailableOrders(data ?? []);
-  }, [riderId, rider?.village_id, isOnline]);
+  const { data: availableOrdersRaw = [], refetch: refetchOffers } = useRiderOffers(riderId, {
+    enabled: Boolean(riderId && rider?.village_id && isOnline),
+  });
+
+  const availableOrders = useMemo(() => availableOrdersRaw.filter(o => !hiddenOfferIds.has(o.id)), [availableOrdersRaw, hiddenOfferIds]);
+
+  const loadAvailable = useCallback(() => {
+    if (!riderId || !rider?.village_id || !isOnline) return;
+    refetchOffers();
+  }, [riderId, rider?.village_id, isOnline, refetchOffers]);
 
   useEffect(() => { loadAvailable(); }, [loadAvailable]);
 
-  // Phase 4 realtime: server-generated rider offers are authoritative.
-  // Notifications are useful as a secondary signal, but this subscription
-  // makes the offer card itself appear/disappear immediately on insert,
-  // acceptance, expiry, cancellation, or reassignment.
-  useEffect(() => {
-    if (!riderId) return undefined;
-    const channel = supabase
-      .channel(`rider-dispatch-offers-${riderId}`)
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'rider_offers',
-        filter: `rider_id=eq.${riderId}`,
-      }, () => { loadAvailable(); })
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'dispatch_assignment_events',
-        filter: `rider_id=eq.${riderId}`,
-      }, () => { loadAvailable(); })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [riderId, loadAvailable]);
+  // Dispatch realtime is owned once by RiderLayout. This page consumes the
+  // shared cached offers and only triggers explicit refetches after actions.
 
   // ── Auto-decline countdown ──────────────────────────────────
   // Offers carry a server expiry. The local countdown is only presentation;
@@ -149,22 +133,27 @@ export default function RiderDashboard() {
     const t = setInterval(() => {
       setCountdowns(prev => {
         const next = {};
-        let expired = [];
+        const expired = [];
         for (const [id, secs] of Object.entries(prev)) {
           if (secs <= 1) expired.push(id);
           else next[id] = secs - 1;
         }
         if (expired.length) {
-          setAvailableOrders(cur => cur.filter(o => !expired.includes(o.id)));
+          setHiddenOfferIds(ids => {
+            const merged = new Set(ids);
+            expired.forEach(id => merged.add(id));
+            return merged;
+          });
+          void refetchOffers();
         }
         return next;
       });
     }, 1000);
     return () => clearInterval(t);
-  }, [countdowns]);
+  }, [countdowns, refetchOffers]);
 
   const handleDecline = (orderId) => {
-    setAvailableOrders(prev => prev.filter(o => o.id !== orderId));
+    setHiddenOfferIds(ids => new Set(ids).add(orderId));
     setCountdowns(prev => {
       const next = { ...prev };
       delete next[orderId];
@@ -177,10 +166,11 @@ export default function RiderDashboard() {
     if (!riderId) return;
     setAccepting(orderId);
     const offerId = availableOrders.find(o => o.id === orderId)?.offer_id;
-    const { error } = await RiderAPI.acceptOrder(orderId, riderId, riderName, offerId);
+    const { error } = await assignRider(orderId, riderId, riderName, offerId, { riderId });
     if (!error && currentLocation) {
-      await RiderAPI.updateLocation(riderId, currentLocation.lat, currentLocation.lng);
+      await updateRiderLocation(riderId, currentLocation.lat, currentLocation.lng);
     }
+    setHiddenOfferIds(ids => { const next = new Set(ids); next.delete(orderId); return next; });
     await Promise.all([loadAvailable(), refetchMine()]);
     setAccepting(null);
   };
@@ -192,8 +182,8 @@ export default function RiderDashboard() {
     if (!deliveryProof) { setDeliveryError('Take/select a delivery proof photo before completing delivery.'); return; }
     setDelivering(deliveryTarget.id);
     setDeliveryError('');
-    const { error } = await RiderAPI.markDelivered(
-      deliveryTarget.id, deliveryOtp, deliveryProof, currentLocation
+    const { error } = await completeDelivery(
+      deliveryTarget.id, deliveryOtp, deliveryProof, currentLocation, { riderId }
     );
     if (error) {
       setDeliveryError(error.message);
@@ -207,8 +197,14 @@ export default function RiderDashboard() {
   // ── Toggle online → persist ───────────────────────────────
   const handleToggleOnline = async () => {
     if (!riderId) return;
-    toggleOnline();
-    await RiderAPI.toggleOnline(riderId, !isOnline);
+    const previous = isOnline;
+    const next = !previous;
+    toggleOnline(); // optimistic local state — rollback if server rejects it
+    try {
+      await toggleOnlineMutation(riderId, next, { userId: user?.id });
+    } catch {
+      toggleOnline();
+    }
   };
 
   if (!riderId) {

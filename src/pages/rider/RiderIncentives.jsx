@@ -36,7 +36,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
-import { RiderAPI } from '@/lib/api';
+import { useRiderByUser } from '@/hooks/queries/useRider';
 import { supabase } from '@/lib/supabase';
 
 const BADGE_META = {
@@ -50,8 +50,8 @@ const BADGE_META = {
 export default function RiderIncentives() {
   const { user } = useAuth();
 
-  const [riderId,     setRiderId]     = useState(null);
-  const [rider,       setRider]       = useState(null);
+  const { data: rider } = useRiderByUser(user?.id);
+  const riderId = rider?.id ?? null;
   const [incentives,  setIncentives]  = useState([]);
   const [badges,      setBadges]      = useState([]);
   const [orderCount,  setOrderCount]  = useState(0);
@@ -64,17 +64,13 @@ export default function RiderIncentives() {
     async function load() {
       setLoading(true);
 
-      // 1. Resolve rider.id
-      const { data: riderRow } = await RiderAPI.getProfile(user.id);
-      if (!riderRow) { setLoading(false); return; }
-      setRider(riderRow);
-      setRiderId(riderRow.id);
+      if (!riderId) { setLoading(false); return; }
 
-      // 2. Incentives
+      // Incentives
       const { data: inc } = await supabase
         .from('rider_incentives')
         .select('*')
-        .eq('rider_id', riderRow.id)
+        .eq('rider_id', riderId)
         .eq('status', 'active')
         .order('ends_at', { ascending: true });
 
@@ -84,7 +80,7 @@ export default function RiderIncentives() {
       const { data: bdg } = await supabase
         .from('rider_badges')
         .select('badge_key, earned_at')
-        .eq('rider_id', riderRow.id);
+        .eq('rider_id', riderId);
 
       setBadges(bdg ?? []);
 
@@ -96,7 +92,7 @@ export default function RiderIncentives() {
       const { count } = await supabase
         .from('orders')
         .select('id', { count: 'exact', head: true })
-        .eq('rider_id', riderRow.id)
+        .eq('rider_id', riderId)
         .eq('status', 'delivered')
         .gte('created_at', monthStart.toISOString());
 
@@ -105,7 +101,7 @@ export default function RiderIncentives() {
     }
 
     load();
-  }, [user?.id]);
+  }, [user?.id, riderId]);
 
   // ── Derived incentives when table is empty ───────────────
   const displayIncentives = useMemo(() => {

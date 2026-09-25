@@ -32,7 +32,7 @@ jobs:
           cache: npm
 
       - name: Install deps
-        run: npm ci
+        run: npm install
 
       - name: Full vulnerability audit
         id: audit
@@ -109,7 +109,7 @@ jobs:
 
       - name: Install QA deps
         working-directory: ${{ env.QA_DIR }}
-        run: npm ci
+        run: npm install
 
       - name: Install Playwright
         working-directory: ${{ env.QA_DIR }}
@@ -163,7 +163,7 @@ jobs:
           cache: npm
 
       - name: Install deps
-        run: npm ci
+        run: npm install
 
       - name: Build
         env:

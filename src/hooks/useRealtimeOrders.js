@@ -20,9 +20,13 @@
 // ═══════════════════════════════════════════════════════════
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/AuthContext';
-import { NotificationAPI } from '@/lib/api';
+import { NotificationAPI, getOrdersByCustomer, getOrdersByVendor, getOrdersByRider } from '@/lib/api';
+import { useStore } from '@/lib/store';
+import { queryClientInstance } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
+import { useAppLifecycle } from '@/hooks/useAppLifecycle';
+import { subscribeRealtimeChannel } from '@/lib/realtime-manager';
 
 // ── useRealtimeOrders ─────────────────────────────────────
 /**
@@ -41,150 +45,88 @@ import { NotificationAPI } from '@/lib/api';
  *   2. The Supabase channel confirms SUBSCRIBED.
  */
 export function useRealtimeOrders(roleArg, entityId = null) {
-  const { user }            = useAuth();
-  const { state, dispatch } = useStore();
-  const channelRef          = useRef(null);
-  const lastFetchKeyRef     = useRef(null);   // refetch when role/uid changes; dedupes StrictMode
+  const { user } = useAuth();
+  const channelRef = useRef(null);
+  const [fetchDone, setFetchDone] = useState(false);
+  const [subReady, setSubReady] = useState(false);
+  const [orders, setOrders] = useState([]);
+  const fetchGenerationRef = useRef(0);
+  const isActive = useAppLifecycle();
 
-  // Accept BOTH call styles used across the app:
-  //   useRealtimeOrders('vendor', vendorsId)
-  //   useRealtimeOrders({ mode: 'vendor', vendorId })   ← VendorOrders/RiderDashboard
-  // Previously the object form set role={obj}, so every filter branch
-  // missed and the hook returned [] + subscribed to ALL orders.
   let role, eid;
   if (roleArg && typeof roleArg === 'object') {
     role = roleArg.mode ?? roleArg.role ?? null;
-    eid  = roleArg.entityId ?? roleArg.vendorId ?? roleArg.riderId ?? roleArg.customerId ?? null;
-  } else {
-    role = roleArg;
-    eid  = entityId;
-  }
-
-  const [fetchDone, setFetchDone] = useState(false);
-  const [subReady,  setSubReady]  = useState(false);
-  const isLoading = !fetchDone || !subReady;
-
+    eid = roleArg.entityId ?? roleArg.vendorId ?? roleArg.riderId ?? roleArg.customerId ?? null;
+  } else { role = roleArg; eid = entityId; }
   const uid = eid || user?.id;
+  const keyFactory = { customer: queryKeys.orders.customer, vendor: queryKeys.orders.vendor, rider: queryKeys.orders.rider }[role];
+  const queryKey = useMemo(() => keyFactory && uid ? [...keyFactory(uid), 0, 50, null] : null, [keyFactory, uid]);
 
-  // ── Derived: filter global store by role + id ────────────
-  const orders = useMemo(() => {
-    if (!uid || !state.orders) return [];
-    if (role === 'customer') return state.orders.filter(o => o.customer_id === uid || o.customerId === uid);
-    if (role === 'vendor')   return state.orders.filter(o => o.vendor_id   === uid || o.vendorId   === uid);
-    if (role === 'rider')    return state.orders.filter(o => o.rider_id    === uid || o.riderId    === uid);
-    if (role === 'admin')    return state.orders;
-    return [];
-  }, [state.orders, role, uid]);
-
-  // ── Realtime payload handler ──────────────────────────────
-  // Stored in a ref so the subscription effect never needs it as a dep.
-  // This is the key fix: if handlePayload were in the effect's dep array,
-  // React StrictMode's double-invoke would recreate the channel while the
-  // old one is still subscribed, triggering the "cannot add postgres_changes
-  // callbacks after subscribe()" error.
-  const handlePayloadRef = useRef(null);
-  handlePayloadRef.current = useCallback((payload) => {
-    if (payload.eventType === 'INSERT' && payload.new) {
-      dispatch({ type: 'ORDER_CREATED',       payload: { order: payload.new } });
-    } else if (payload.eventType === 'UPDATE' && payload.new) {
-      dispatch({ type: 'UPDATE_ORDER_STATUS', payload: { orderId: payload.new.id, updates: payload.new } });
-    } else if (payload.eventType === 'DELETE' && payload.old?.id) {
-      dispatch({ type: 'ORDER_REMOVED',       payload: { orderId: payload.old.id } });
-    }
-  }, [dispatch]);
-
-  // ── 1. Initial DB fetch ───────────────────────────────────
-  // Populates state.orders before any realtime events arrive,
-  // so the list never flashes empty on first render. Extracted into a
-  // callback so it can also back the returned refetch().
-  const doFetch = useCallback(async () => {
-    if (!isSupabaseConfigured || !user || !uid) { setFetchDone(true); return; }
-
-    let q = supabase
-      .from('orders')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(50);
-
-    if (role === 'customer')    q = q.eq('customer_id', uid);
-    else if (role === 'vendor') q = q.eq('vendor_id',   uid);
-    else if (role === 'rider')  q = q.eq('rider_id',    uid);
-    // admin: no filter — all orders
-
-    const { data, error } = await q;
-    if (error) {
-      console.warn('[useRealtimeOrders] Initial fetch error:', error.message);
-    } else if (data?.length) {
-      dispatch({ type: 'SET_ORDERS', payload: { orders: data } });
-    }
-    setFetchDone(true);
-  }, [user, role, uid, dispatch]);
-
-  const refetch = useCallback(async () => {
-    setFetchDone(false);
-    await doFetch();
-  }, [doFetch]);
-
-  useEffect(() => {
-    if (!isSupabaseConfigured || !user || !uid) return;
-    // Refetch whenever the (role, entity id) changes — e.g. when a
-    // layout initially has only the auth uid and the real vendors.id /
-    // riders.id resolves a moment later. Same key = StrictMode no-op.
-    const key = `${role}:${uid}`;
-    if (lastFetchKeyRef.current === key) return;
-    lastFetchKeyRef.current = key;
-    doFetch();
-  }, [user, role, uid, doFetch]);
-
-  // ── 2. Realtime subscription ──────────────────────────────
-  // Deps: only [user, role, uid] — NOT handlePayload.
-  // The ref pattern above ensures the latest handler is always called
-  // without the effect needing to re-run when dispatch changes.
-  useEffect(() => {
-    if (!isSupabaseConfigured || !user || !uid) {
-      setFetchDone(true);
-      setSubReady(true);
+  const fetchInitial = useCallback(async () => {
+    const generation = ++fetchGenerationRef.current;
+    if (!isSupabaseConfigured || !user || !uid || !queryKey) {
+      if (generation === fetchGenerationRef.current) setFetchDone(true);
       return;
     }
+    setFetchDone(false);
+    const fetchers = { customer: getOrdersByCustomer, vendor: getOrdersByVendor, rider: getOrdersByRider };
+    const fetcher = fetchers[role];
+    if (fetcher) {
+      await queryClientInstance.fetchQuery(queryKey, () => fetcher(uid, { page: 0, limit: 50 }));
+      if (generation === fetchGenerationRef.current) {
+        const cached = queryClientInstance.getQueryState(queryKey)?.data;
+        setOrders(Array.isArray(cached) ? cached : []);
+      }
+    }
+    if (generation === fetchGenerationRef.current) setFetchDone(true);
+  }, [user, uid, role, queryKey]);
 
-    const channelName = `orders-${role}-${uid}`;
+  useEffect(() => { if (isActive) fetchInitial(); }, [fetchInitial, isActive]);
 
+  useEffect(() => {
+    if (!queryKey) { setOrders([]); return undefined; }
+    const syncOrders = () => {
+      const cached = queryClientInstance.getQueryState(queryKey)?.data;
+      setOrders(Array.isArray(cached) ? cached : []);
+    };
+    syncOrders();
+    return queryClientInstance.subscribe(queryKey, syncOrders);
+  }, [queryKey]);
+
+  useEffect(() => {
+    if (!isActive) { setSubReady(false); return undefined; }
+    if (!isSupabaseConfigured || !user || !uid) { setSubReady(true); return; }
+    setSubReady(false);
     let filter;
     if (role === 'customer') filter = `customer_id=eq.${uid}`;
-    else if (role === 'vendor')   filter = `vendor_id=eq.${uid}`;
-    else if (role === 'rider')    filter = `rider_id=eq.${uid}`;
+    else if (role === 'vendor') filter = `vendor_id=eq.${uid}`;
+    else if (role === 'rider') filter = `rider_id=eq.${uid}`;
 
-    const channel = supabase
-      .channel(channelName)
-      .on('postgres_changes', {
-        event:  '*',
-        schema: 'public',
-        table:  'orders',
-        ...(filter ? { filter } : {}),
-      }, (payload) => {
-        // Always call the latest version of the handler via ref
-        handlePayloadRef.current?.(payload);
-      })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          setSubReady(true);
-          console.debug(`[SETU Realtime] Subscribed: ${channelName}`);
+    const scopedOrderKey = role === 'customer' ? queryKeys.orders.customer(uid) : role === 'vendor' ? queryKeys.orders.vendor(uid) : role === 'rider' ? queryKeys.orders.rider(uid) : queryKeys.orders.all;
+    const unsubscribe = subscribeRealtimeChannel({
+      key: `orders:${role}:${uid}`,
+      build: (channel, emit) => {
+        channel.on('postgres_changes', { event: '*', schema: 'public', table: 'orders', ...(filter ? { filter } : {}) }, emit);
+      },
+      onEvent: payload => {
+        const id = payload.new?.id ?? payload.old?.id;
+        if (id && payload.eventType === 'UPDATE') {
+          queryClientInstance.setQueryData(queryKeys.orders.detail(id), current => ({ ...(current ?? {}), ...payload.new }));
         }
-        if (status === 'CHANNEL_ERROR') {
-          setSubReady(true);
-          console.warn(`[SETU Realtime] Channel error: ${channelName}`);
-        }
-      });
+        if (payload.eventType === 'DELETE' && id) queryClientInstance.removeQueries(queryKeys.orders.detail(id));
+        queryClientInstance.invalidateQueries(scopedOrderKey);
+        if (id) queryClientInstance.invalidateQueries(queryKeys.orders.detail(id));
+      },
+      onStatus: status => setSubReady(status === 'SUBSCRIBED'),
+      // Realtime reconnect can miss one or more events. Refetch the
+      // authoritative scoped list before declaring the channel recovered.
+      onRecover: fetchInitial,
+    });
+    channelRef.current = unsubscribe;
+    return () => { unsubscribe(); channelRef.current = null; };
+  }, [user, role, uid, isActive]);
 
-    channelRef.current = channel;
-
-    return () => {
-      supabase.removeChannel(channel);
-      channelRef.current = null;
-    };
-  }, [user, role, uid]); // ← no handlePayload here — that's the fix
-
-  return { orders, isLoading, refetch };
+  return { orders, isLoading: !fetchDone || !subReady, refetch: fetchInitial };
 }
 
 // ── useRealtimeNotifications ──────────────────────────────
@@ -203,6 +145,7 @@ export function useRealtimeNotifications() {
   const { user }     = useAuth();
   const { dispatch } = useStore();
   const dispatchRef  = useRef(dispatch);
+  const isActive = useAppLifecycle();
   dispatchRef.current = dispatch;
 
   // ── Initial history fetch ──────────────────────────────
@@ -230,49 +173,59 @@ export function useRealtimeNotifications() {
         return;
       }
       dispatchRef.current({ type: 'HYDRATE_NOTIFICATIONS', payload: { notifications: data } });
+      queryClientInstance.setQueryData(queryKeys.notifications.list(user.id), data);
     });
     return () => { mounted = false; };
   }, [user]);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !user) return;
+    if (!isActive || !isSupabaseConfigured || !user) return;
 
-    const channel = supabase
-      .channel(`notifications-${user.id}`)
-      .on('postgres_changes', {
-        event:  'INSERT',
-        schema: 'public',
-        table:  'notifications',
-        filter: `user_id=eq.${user.id}`,
-      }, (payload) => {
+    const recover = () => {
+      NotificationAPI.getAll(user.id).then(({ data, error }) => {
+        if (error || !data) return;
+        dispatchRef.current({ type: 'HYDRATE_NOTIFICATIONS', payload: { notifications: data } });
+        queryClientInstance.setQueryData(queryKeys.notifications.list(user.id), data);
+      });
+    };
+
+    return subscribeRealtimeChannel({
+      key: `notifications:${user.id}`,
+      build: (channel, emit) => {
+        channel.on('postgres_changes', {
+          event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}`,
+        }, emit);
+      },
+      onEvent: payload => {
         if (!payload.new) return;
         const notification = payload.new;
-
-        dispatchRef.current({ type: 'NOTIFICATION_RECEIVED', payload: { notification } });
-
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(
-            new CustomEvent('setu:notification', {
-              detail: {
-                id:    notification.id,
-                title: notification.title,
-                body:  notification.body,
-                type:  notification.type,
-              },
-            })
+        if (payload.eventType === 'INSERT') {
+          dispatchRef.current({ type: 'NOTIFICATION_RECEIVED', payload: { notification } });
+          queryClientInstance.setQueryData(queryKeys.notifications.list(user.id), current => {
+            const list = Array.isArray(current) ? current : [];
+            return list.some(item => item.id === notification.id) ? list : [notification, ...list];
+          });
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('setu:notification', {
+              detail: { id: notification.id, title: notification.title, body: notification.body, type: notification.type },
+            }));
+          }
+        } else if (payload.eventType === 'UPDATE') {
+          queryClientInstance.setQueryData(queryKeys.notifications.list(user.id), current =>
+            Array.isArray(current) ? current.map(item => item.id === notification.id ? { ...item, ...notification } : item) : current
+          );
+        } else if (payload.eventType === 'DELETE') {
+          queryClientInstance.setQueryData(queryKeys.notifications.list(user.id), current =>
+            Array.isArray(current) ? current.filter(item => item.id !== notification.id) : current
           );
         }
-      })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.debug(`[SETU Realtime] Notifications subscribed for ${user.id}`);
-        }
-      });
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user]); // ← dispatch removed from deps, accessed via ref
+      },
+      onStatus: status => {
+        if (status === 'SUBSCRIBED') console.debug(`[SETU Realtime] Notifications subscribed for ${user.id}`);
+      },
+      onRecover: recover,
+    });
+  }, [user, isActive]);
 }
 
 // ── useRealtimeOrder (single order) ──────────────────────
@@ -287,36 +240,18 @@ export function useRealtimeNotifications() {
  * @param {string|null} orderId
  */
 export function useRealtimeOrder(orderId) {
-  const { dispatch } = useStore();
-  const dispatchRef  = useRef(dispatch);
-  dispatchRef.current = dispatch;
-
   useEffect(() => {
     if (!isSupabaseConfigured || !orderId) return;
-
-    const channel = supabase
-      .channel(`order-detail-${orderId}`)
-      .on('postgres_changes', {
-        event:  'UPDATE',
-        schema: 'public',
-        table:  'orders',
-        filter: `id=eq.${orderId}`,
-      }, (payload) => {
-        if (payload.new) {
-          dispatchRef.current({
-            type:    'UPDATE_ORDER_STATUS',
-            payload: { orderId, updates: payload.new },
-          });
-        }
-      })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.debug(`[SETU Realtime] Single-order subscribed: ${orderId}`);
-        }
-      });
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [orderId]); // ← dispatch removed from deps, accessed via ref
+    return subscribeRealtimeChannel({
+      key: `order-detail:${orderId}`,
+      build: (channel, emit) => {
+        channel.on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `id=eq.${orderId}` }, emit);
+      },
+      onEvent: payload => {
+        if (payload.eventType === 'DELETE') queryClientInstance.removeQueries(queryKeys.orders.detail(orderId));
+        else if (payload.new) queryClientInstance.setQueryData(queryKeys.orders.detail(orderId), current => ({ ...(current ?? {}), ...payload.new }));
+        queryClientInstance.invalidateQueries(queryKeys.orders.all);
+      },
+    });
+  }, [orderId]);
 }

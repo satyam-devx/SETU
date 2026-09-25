@@ -21,8 +21,8 @@ import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendorByOwnerId, CreditAPI, getVendorCreditAccount, getVendorCreditTransactions } from '@/lib/api';
+import { useVendorByOwner } from '@/hooks/queries/useVendor';
+import {  CreditAPI, getVendorCreditAccount, getVendorCreditTransactions } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 
 const APPLY_AMOUNTS = [2000, 5000, 7500, 10000];
@@ -32,11 +32,7 @@ export default function VendorCredit() {
   const navigate = useNavigate();
 
   // ── Vendor profile ────────────────────────────────────────
-  const { data: vendor } = useDataFetch(
-    () => getVendorByOwnerId(user?.id),
-    [user?.id],
-    { cacheKey: `vendor-profile-${user?.id}`, enabled: !!user?.id }
-  );
+  const { data: vendor } = useVendorByOwner(user?.id);
 
   // ── Credit account ────────────────────────────────────────
   const [account,     setAccount]     = useState(null);

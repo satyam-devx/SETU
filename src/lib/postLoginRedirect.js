@@ -11,11 +11,13 @@
 // and back), so this uses sessionStorage instead — one mechanism
 // that works for both the phone-OTP flow and Google sign-in.
 // ═══════════════════════════════════════════════════════════
+import { safeInternalRedirect } from './url-security';
+
 const KEY = 'setu_post_login_redirect';
 
 /** Call before sending someone to /login: remember where to send them back. */
 export function setPostLoginRedirect(path) {
-  try { sessionStorage.setItem(KEY, path); } catch { /* storage unavailable — fine, just skip the resume */ }
+  try { const safePath = safeInternalRedirect(path, null); if (!safePath) return; sessionStorage.setItem(KEY, safePath); } catch { /* storage unavailable — fine, just skip the resume */ }
 }
 
 /** Call once, at whichever point you're about to make the "where next?" decision. Clears it either way. */
@@ -23,7 +25,7 @@ export function consumePostLoginRedirect() {
   try {
     const path = sessionStorage.getItem(KEY);
     if (path) sessionStorage.removeItem(KEY);
-    return path;
+    return safeInternalRedirect(path, null);
   } catch {
     return null;
   }

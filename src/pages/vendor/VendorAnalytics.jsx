@@ -9,20 +9,20 @@
 //  - Skeleton shown while vendor/orders load
 // ═══════════════════════════════════════════════════════════
 import React, { useState, useMemo } from 'react';
-import { TrendingUp, TrendingDown, Star, Package, Users, Loader2 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Star, Users, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip,
+import {  BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip,
   PieChart, Pie, Cell,
 } from 'recharts';
+import { useVendorByOwner } from '@/hooks/queries/useVendor';
+import { useProducts } from '@/hooks/queries/useProducts';
 import AppHeader from '@/components/shared/AppHeader';
+import VendorAnalyticsSummary from '@/components/vendor/VendorAnalyticsSummary';
 import StatCard from '@/components/shared/StatCard';
 import { useAuth } from '@/lib/AuthContext';
-import { useStore } from '@/lib/store';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendorByOwnerId, getProducts } from '@/lib/api';
+import { useVendorOrders } from '@/hooks/queries/useOrders';
 import { formatCurrency } from '@/lib/utils';
 
 const HOUR_LABELS = [
@@ -117,23 +117,19 @@ function buildRepeatData(orders) {
 
 export default function VendorAnalytics() {
   const { user }  = useAuth();
-  const { state } = useStore();
   const [tab, setTab] = useState('sales');
 
   // Vendor profile
-  const { data: vendor, isLoading: vendorLoading } = useDataFetch(
-    () => getVendorByOwnerId(user?.id),
-    [user?.id],
-    { cacheKey: `vendor-profile-${user?.id}`, enabled: !!user?.id }
-  );
+  const { data: vendor, isLoading: vendorLoading } = useVendorByOwner(user?.id);
 
-  // All vendor orders from realtime store
+  // All vendor orders from the canonical server-state query cache.
+  const { data: orders = [] } = useVendorOrders(vendor?.id, { limit: 100 });
   const vendorOrders = useMemo(() =>
-    state.orders.filter(o =>
+    orders.filter(o =>
       vendor?.id &&
       (o.vendor_id === vendor.id || o.vendorId === vendor.id)
     ),
-    [state.orders, vendor?.id]
+    [orders, vendor?.id]
   );
 
   // Products for the low-stock card below. NOTE: this used to read
@@ -143,64 +139,70 @@ export default function VendorAnalytics() {
   // low-stock card could never show regardless of real stock levels.
   // Fetching directly (same call/cache-key VendorDashboard and
   // VendorProducts already use, so this is normally a free cache hit).
-  const { data: products } = useDataFetch(
-    () => getProducts({ vendorId: vendor?.id }),
-    [vendor?.id],
-    { cacheKey: `vendor-products-${vendor?.id}`, enabled: !!vendor?.id }
+  const { data: products } = useProducts({ vendorId: vendor?.id }, { enabled: !!vendor?.id && tab === 'products', staleTime: 60_000 });
+
+  const completedOrders = useMemo(
+    () => vendorOrders.filter(o => o.status !== 'cancelled'),
+    [vendorOrders]
   );
 
-  const completedOrders = vendorOrders.filter(o => o.status !== 'cancelled');
   const ratingDistribution = useMemo(() => {
-    const rated = completedOrders.filter(o => o.vendor_rating != null);
-    const total = rated.length || 1;
-    return [5,4,3,2,1].map(star => ({
+    const counts = new Map([5, 4, 3, 2, 1].map(star => [star, 0]));
+    let ratedCount = 0;
+    completedOrders.forEach(o => {
+      if (o.vendor_rating == null) return;
+      const star = Number(o.vendor_rating);
+      if (counts.has(star)) counts.set(star, counts.get(star) + 1);
+      ratedCount += 1;
+    });
+    const total = ratedCount || 1;
+    return [5, 4, 3, 2, 1].map(star => ({
       star,
-      count: rated.filter(o => Number(o.vendor_rating) === star).length,
-      pct: Math.round((rated.filter(o => Number(o.vendor_rating) === star).length / total) * 100),
+      count: counts.get(star) || 0,
+      pct: Math.round(((counts.get(star) || 0) / total) * 100),
     }));
   }, [completedOrders]);
 
-
-  // ── Derived analytics ────────────────────────────────────
-  const hourlyData  = useMemo(() => buildHourlyData(vendorOrders),   [vendorOrders]);
+  // Memoize every repeated O(n) analytics pass. The dashboard contains
+  // several Recharts panels, so recalculating the same order set on every
+  // tab/parent render is needlessly expensive on low-end Android.
+  const hourlyData  = useMemo(() => buildHourlyData(vendorOrders), [vendorOrders]);
   const topProducts = useMemo(() => buildTopProducts(completedOrders), [completedOrders]);
   const catData     = useMemo(() => buildCategoryData(completedOrders), [completedOrders]);
-  const repeatData  = useMemo(() => buildRepeatData(vendorOrders),   [vendorOrders]);
+  const repeatData  = useMemo(() => buildRepeatData(vendorOrders), [vendorOrders]);
 
-  const totalRevenue = completedOrders.reduce((s, o) => s + (o.total ?? 0), 0);
-  const avgOrderVal  = completedOrders.length
-    ? Math.round(totalRevenue / completedOrders.length)
-    : 0;
+  const summary = useMemo(() => {
+    const totalRevenue = completedOrders.reduce((sum, o) => sum + (o.total ?? 0), 0);
+    const unique = new Set();
+    const counts = new Map();
+    vendorOrders.forEach(o => {
+      const id = o.customer_id ?? o.customerId ?? o.customerName ?? 'anon';
+      unique.add(id);
+      counts.set(id, (counts.get(id) || 0) + 1);
+    });
+    let repeatCustomers = 0;
+    counts.forEach(count => { if (count > 1) repeatCustomers += 1; });
+    const uniqueCustomers = unique.size;
+    return {
+      totalRevenue,
+      avgOrderVal: completedOrders.length ? Math.round(totalRevenue / completedOrders.length) : 0,
+      uniqueCustomers,
+      repeatCustomers,
+      repeatRate: uniqueCustomers ? Math.round((repeatCustomers / uniqueCustomers) * 100) : 0,
+    };
+  }, [completedOrders, vendorOrders]);
 
-  const uniqueCustomers = new Set(
-    vendorOrders.map(o => o.customer_id ?? o.customerId ?? o.customerName)
-  ).size;
-
-  const repeatCustomers = new Set(
-    vendorOrders
-      .filter((o, _, arr) =>
-        arr.filter(x =>
-          (x.customer_id ?? x.customerId ?? x.customerName) ===
-          (o.customer_id ?? o.customerId ?? o.customerName)
-        ).length > 1
-      )
-      .map(o => o.customer_id ?? o.customerId ?? o.customerName)
-  ).size;
-
-  const repeatRate = uniqueCustomers
-    ? Math.round((repeatCustomers / uniqueCustomers) * 100)
-    : 0;
-
-  const peakHour = hourlyData.reduce(
+  const peakHour = useMemo(() => hourlyData.reduce(
     (best, h, i) => (h.orders > (best.orders ?? 0) ? { ...h, idx: i } : best),
     { orders: 0 }
-  );
+  ), [hourlyData]);
 
-  const lowStockProducts = vendorOrders.length === 0 ? [] :
-    (products ?? []).filter(p =>
-      (p.stock ?? 99) < 5 &&
-      (p.is_available ?? true)
-    );
+  const lowStockProducts = useMemo(() => {
+    if (vendorOrders.length === 0) return [];
+    return (products ?? []).filter(p => (p.stock ?? 99) < 5 && (p.is_available ?? true));
+  }, [products, vendorOrders.length]);
+
+  const { totalRevenue, avgOrderVal, uniqueCustomers, repeatCustomers, repeatRate } = summary;
 
   const isLoading = vendorLoading;
 
@@ -220,20 +222,7 @@ export default function VendorAnalytics() {
         showBack
       />
 
-      {/* Summary stats */}
-      <div className="px-4 py-3 grid grid-cols-2 gap-2">
-        <StatCard
-          title="Avg Order Value"
-          value={formatCurrency(avgOrderVal)}
-          icon={Package}
-        />
-        <StatCard
-          title="Total Revenue"
-          value={formatCurrency(totalRevenue)}
-          icon={TrendingUp}
-          accent
-        />
-      </div>
+      <VendorAnalyticsSummary avgOrderVal={avgOrderVal} totalRevenue={totalRevenue} />
 
       {/* Tab bar */}
       <div className="px-4 mb-4">

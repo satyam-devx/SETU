@@ -142,6 +142,25 @@
 
 /* ── SETU Component utilities ──────────────────────────── */
 @layer components {
+  /* Screen-reader-only content that remains available to assistive technology. */
+  .sr-only {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
+
+  /* Minimum comfortable mobile target; apply to icon-only controls. */
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
   /* Bottom navigation safe area */
   .bottom-nav-safe {
     padding-bottom: calc(4rem + env(safe-area-inset-bottom));
@@ -171,6 +190,11 @@
   .btn-ghost {
     @apply text-foreground/80 font-medium py-2 px-4 rounded-lg
            hover:bg-muted active:bg-muted/80 transition-colors;
+  }
+
+  /* Error/live regions should remain discoverable without moving focus. */
+  .a11y-error {
+    @apply text-destructive text-sm;
   }
 
   /* Input field */
@@ -355,12 +379,6 @@
     .animate-swipe-nudge {
       animation: none;
     }
-  }
-
-  /* Touch target minimum */
-  .touch-target {
-    min-height: 44px;
-    min-width:  44px;
   }
 
   /* Safe zones */

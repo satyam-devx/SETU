@@ -3,9 +3,9 @@ import { Bell, ShoppingBag, Wallet, Tag, Info, CheckCheck, AlertCircle } from 'l
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import AppHeader from '@/components/shared/AppHeader';
-import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/AuthContext';
-import { NotificationAPI } from '@/lib/api';
+import { useNotifications } from '@/hooks/queries/useNotifications';
+import { useNotificationMutations } from '@/hooks/mutations/useNotificationMutations';
 
 const typeIcon = { order: ShoppingBag, credit: Wallet, promo: Tag, scheme: Info, system: Bell };
 const typeColor = {
@@ -17,9 +17,10 @@ const typeColor = {
 };
 
 export default function CustomerNotifications() {
-  const { state, dispatch } = useStore();
   const { user } = useAuth();
-  const { notifications, unreadCount } = { notifications: state.notifications, unreadCount: state.unreadCount };
+  const { data: notifications = [], error: notificationsError, refetch } = useNotifications(user?.id);
+  const { markRead: markReadMutation, markAllRead: markAllReadMutation } = useNotificationMutations();
+  const unreadCount = notifications.filter(n => !n.isRead && !n.is_read).length;
 
   // These used to only dispatch to local reducer state — the read flag
   // never reached the database, so a notification marked "read" here
@@ -28,22 +29,14 @@ export default function CustomerNotifications() {
   // reflect it locally; both fire immediately for a responsive UI, but
   // the persisted call is what makes it stick.
   const markRead = (id) => {
-    dispatch({ type: 'NOTIFICATION_READ', payload: { id } });
-    if (user?.id) NotificationAPI.markRead(id);
+    if (user?.id) markReadMutation(id, user.id).catch(() => {});
   };
   const markAll = () => {
-    dispatch({ type: 'NOTIFICATIONS_READ_ALL' });
-    if (user?.id) NotificationAPI.markAllRead(user.id);
+    if (user?.id) markAllReadMutation(user.id).catch(() => {});
   };
 
   const handleRetry = async () => {
-    if (!user?.id) return;
-    const { data, error } = await NotificationAPI.getAll(user.id);
-    if (error || !data) {
-      dispatch({ type: 'NOTIFICATIONS_LOAD_ERROR', payload: { message: error?.message } });
-    } else {
-      dispatch({ type: 'HYDRATE_NOTIFICATIONS', payload: { notifications: data } });
-    }
+    await refetch();
   };
 
   return (
@@ -61,7 +54,7 @@ export default function CustomerNotifications() {
         }
       />
       <div className="px-4 py-3 space-y-2">
-        {notifications.length === 0 && state.notificationsError ? (
+        {notifications.length === 0 && notificationsError ? (
           <Card className="p-8 border-destructive/20 text-center space-y-2">
             <AlertCircle className="w-8 h-8 text-destructive mx-auto" />
             <p className="text-sm text-muted-foreground">Could not load your notifications.</p>

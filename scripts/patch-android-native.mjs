@@ -30,6 +30,11 @@ import path from 'node:path';
 const LIGHT_BG = '#FDF8F0';
 const DARK_BG = '#1A1512';
 
+if (!existsSync('android')) {
+  console.log('[patch-android-native] android/ is not present locally; native project is generated in CI.');
+  process.exit(0);
+}
+
 function findFile(startDir, filename) {
   const stack = [startDir];
   while (stack.length) {
@@ -65,7 +70,7 @@ if (!mainActivityPath) {
       )
       .replace(
         /public class MainActivity extends BridgeActivity \{/,
-        `public class MainActivity extends BridgeActivity {\n  @Override\n  public void onCreate(Bundle savedInstanceState) {\n    super.onCreate(savedInstanceState);\n    boolean isNight = (getResources().getConfiguration().uiMode\n        & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;\n    int bg = Color.parseColor(isNight ? "${DARK_BG}" : "${LIGHT_BG}");\n    getWindow().getDecorView().setBackgroundColor(bg);\n    if (getBridge() != null && getBridge().getWebView() != null) {\n      getBridge().getWebView().setBackgroundColor(bg);\n    }\n  }`
+        `public class MainActivity extends BridgeActivity {\n  @Override\n  public void onCreate(Bundle savedInstanceState) {\n    super.onCreate(savedInstanceState);\n    boolean isNight = (getResources().getConfiguration().uiMode\n        & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;\n    int bg = Color.parseColor(isNight ? "${DARK_BG}" : "${LIGHT_BG}");\n    getWindow().getDecorView().setBackgroundColor(bg);\n    if (getBridge() != null && getBridge().getWebView() != null) {\n      android.webkit.WebView webView = getBridge().getWebView();\n      webView.setBackgroundColor(bg);\n      android.webkit.WebSettings settings = webView.getSettings();\n      settings.setDomStorageEnabled(true);\n      settings.setDatabaseEnabled(true);\n      settings.setCacheMode(android.webkit.WebSettings.LOAD_DEFAULT);\n      settings.setDisplayZoomControls(false);\n      settings.setBuiltInZoomControls(false);\n    }\n  }\n\n  @Override\n  public void onTrimMemory(int level) {\n    super.onTrimMemory(level);\n    // Do not clear WebView cache or reload the SPA under pressure; those\n    // actions cause jank and destroy navigation/state. Android/Chromium\n    // owns renderer memory reclamation.\n    if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW\n        && getBridge() != null && getBridge().getWebView() != null) {\n      getBridge().getWebView().clearFocus();\n    }\n  }\n}`
       );
     writeFileSync(mainActivityPath, src, 'utf8');
     console.log(`[patch-android-native] Patched ${mainActivityPath} -- WebView background fixed.`);

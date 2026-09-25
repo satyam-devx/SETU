@@ -1,13 +1,13 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Store, IndianRupee, BarChart3, CreditCard, Settings, HelpCircle, Star, Award, FileText, Users, ChevronRight } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendorByOwnerId, getOrdersByVendor } from '@/lib/api';
+import { useVendorOrders } from '@/hooks/queries/useOrders';
 import { formatCurrency } from '@/lib/utils';
+import { useVendorByOwner } from '@/hooks/queries/useVendor';
 
 const menuItems=[
  {label:'Earnings & Payouts',icon:IndianRupee,path:'/vendor/earnings',desc:'Revenue, settlements & history'},
@@ -22,11 +22,17 @@ const menuItems=[
 ];
 export default function VendorProfile(){
  const {user}=useAuth();
- const {data:vendor,isLoading}=useDataFetch(()=>getVendorByOwnerId(user?.id),[user?.id],{enabled:!!user?.id,cacheKey:`vendor-profile-${user?.id}`});
- const {data:orders}=useDataFetch(()=>getOrdersByVendor(vendor.id,{limit:100}),[vendor?.id],{enabled:!!vendor?.id,cacheKey:`vendor-profile-orders-${vendor?.id}`});
- const orderCount=(orders??[]).filter(o=>o.status!=='cancelled').length;
- const revenue=(orders??[]).filter(o=>o.status!=='cancelled').reduce((s,o)=>s+Number(o.total||0),0);
- const reviews=(orders??[]).filter(o=>o.vendor_rating!=null).length;
+ const { data: vendor, isLoading } = useVendorByOwner(user?.id);
+ const { data: orders = [] } = useVendorOrders(vendor?.id, { limit: 100 });
+ const metrics = useMemo(() => {
+  const active = (orders ?? []).filter(o => o.status !== 'cancelled');
+  return {
+   orderCount: active.length,
+   revenue: active.reduce((s, o) => s + Number(o.total || 0), 0),
+   reviews: active.filter(o => o.vendor_rating != null).length,
+  };
+ }, [orders]);
+ const { orderCount, revenue, reviews } = metrics;
  return <div className="pb-20"><AppHeader title="Profile"/><div className="px-4 py-4 space-y-4">
   <Card className="p-4 border-border"><div className="flex items-center gap-4"><div className="w-16 h-16 rounded-2xl bg-accent/10 flex items-center justify-center"><Store className="w-8 h-8 text-accent"/></div><div className="min-w-0"><h2 className="font-bold text-lg truncate">{isLoading?'Loading…':vendor?.name||'Your Store'}</h2><p className="text-sm text-muted-foreground">{vendor?.category||'Business'}</p><div className="flex items-center gap-2 mt-1">{vendor?.is_verified&&<Badge className="bg-accent/10 text-accent text-[9px] border-0">✓ Verified</Badge>}<Badge className="text-[9px] border-0">{String(vendor?.subscription_tier||'free').toUpperCase()}</Badge>{vendor?.rating!=null&&<span className="flex items-center gap-1 text-xs"><Star className="w-3 h-3 text-amber-400 fill-amber-400"/>{Number(vendor.rating).toFixed(1)}</span>}</div></div></div></Card>
   <div className="grid grid-cols-3 gap-2"><Card className="p-3 text-center"><p className="text-xl font-bold text-primary">{orderCount}</p><p className="text-[10px] text-muted-foreground">Orders</p></Card><Card className="p-3 text-center"><p className="text-xl font-bold text-accent">{formatCurrency(revenue)}</p><p className="text-[10px] text-muted-foreground">Revenue</p></Card><Card className="p-3 text-center"><p className="text-xl font-bold">{reviews}</p><p className="text-[10px] text-muted-foreground">Reviews</p></Card></div>

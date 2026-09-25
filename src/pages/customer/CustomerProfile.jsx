@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/select';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
-import { useStore } from '@/lib/store';
+import { useCustomerOrders } from '@/hooks/queries/useOrders';
 import { getVillages } from '@/lib/api';
 import { initials, formatPhone } from '@/lib/utils';
 
@@ -46,7 +46,7 @@ const MENU_ITEMS = [
 export default function CustomerProfile() {
   const navigate = useNavigate();
   const { profile, user, signOut, updateProfile } = useAuth();
-  const { state } = useStore();
+  const { data: orders = [] } = useCustomerOrders(user?.id, { limit: 100 });
 
   const [showSignout, setShowSignout] = useState(false);
 
@@ -79,7 +79,7 @@ export default function CustomerProfile() {
     });
   }, []);
 
-  const myOrders  = state.orders.filter(o =>
+  const myOrders  = orders.filter(o =>
     user?.id && (o.customerId === user.id || o.customer_id === user.id)
   );
   const delivered = myOrders.filter(o => o.status === 'delivered').length;

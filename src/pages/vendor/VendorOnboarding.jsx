@@ -21,6 +21,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import Img from '@/components/shared/Img';
 import {
   CheckCircle, Camera, Store, MapPin, Package,
   ChevronRight, AlertCircle, Loader2, Plus, X,
@@ -34,7 +35,10 @@ import { Progress } from '@/components/ui/progress';
 import { kyc as kycService } from '@/lib/kyc';
 import { useAuth }  from '@/lib/AuthContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { upsertVendorProfile, upsertProduct, getVillages, getVendorByOwnerId, getProducts, getCategories, setVendorCategories } from '@/lib/api';
+import { getVillages, getVendorByOwnerId, getCategories } from '@/lib/api';
+import { useVendorMutations } from '@/hooks/mutations/useVendorMutations';
+import { useProductMutations } from '@/hooks/mutations/useProductMutations';
+import { useProducts } from '@/hooks/queries/useProducts';
 import { setPostLoginRedirect } from '@/lib/postLoginRedirect';
 import CategoryMultiSelect from '@/components/vendor/CategoryMultiSelect';
 
@@ -205,6 +209,7 @@ function Step1({ onNext, user }) {
 // Your version: immediate DB save, photo upload.
 // Phase 0 addition: villages fetched from DB, numeric delivery_radius.
 function Step2({ onNext, onBack, onVendorSaved, user }) {
+  const { saveProfile, updateCategories } = useVendorMutations();
   const [form, setForm] = useState({
     name: '', description: '',
     village_id: '', landmark: '', delivery_radius: 2,
@@ -318,7 +323,7 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
       // multi-select; this keeps it in sync with the first pick anyway.
       const primaryCategoryName = categories.find(c => c.id === categoryIds[0])?.name || '';
 
-      const { data: vendor, error: saveErr } = await upsertVendorProfile({
+      const { data: vendor, error: saveErr } = await saveProfile({
         owner_id:         user.id,
         name:             form.name.trim(),
         category:         primaryCategoryName,
@@ -340,7 +345,7 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
 
       // Persist the full multi-category selection (migration 082) — the
       // upsert above only set the single legacy `category` column.
-      const { error: catErr } = await setVendorCategories(vendor.id, categoryIds);
+      const { error: catErr } = await updateCategories(vendor.id, categoryIds);
       if (catErr) throw catErr;
 
       onVendorSaved(vendor);
@@ -511,6 +516,7 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
 // Your version kept entirely: live adds with image upload + DB write per product.
 // Added: onProductAdded callback so root component tracks count correctly.
 function Step3({ onNext, onBack, vendorId, onProductAdded, initialProducts = [] }) {
+  const { saveProduct } = useProductMutations();
   const fileRef = useRef(null);
   const [products, setProducts] = useState(initialProducts);
   const [form,     setForm]     = useState({ name: '', price: '', stock: '', unit: 'piece' });
@@ -582,7 +588,7 @@ function Step3({ onNext, onBack, vendorId, onProductAdded, initialProducts = [] 
         }
       }
 
-      const { data: saved, error: saveErr } = await upsertProduct({
+      const { data: saved, error: saveErr } = await saveProduct({
         vendor_id:    vendorId,
         name:         form.name.trim(),
         price:        Number(form.price),
@@ -632,7 +638,7 @@ function Step3({ onNext, onBack, vendorId, onProductAdded, initialProducts = [] 
         <Card key={p.id} className="p-3 border-border flex items-center gap-3">
           <div className="w-10 h-10 bg-muted rounded-lg shrink-0 overflow-hidden">
             {p.image_url
-              ? <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+              ? <Img src={p.image_url} alt={p.name} width={160} height={160} sizes="160px" className="w-full h-full object-cover" />
               : <Package className="w-5 h-5 text-muted-foreground m-2.5" />
             }
           </div>
@@ -1019,6 +1025,16 @@ export default function VendorOnboarding() {
   const [vendorId,        setVendorId]        = useState(null);
   const [productsCount,   setProductsCount]   = useState(0);
   const [initialProducts, setInitialProducts] = useState([]);
+  const { data: resumedProducts } = useProducts(
+    { vendorId, limit: 100, includeUnavailable: true },
+    { enabled: !!vendorId, staleTime: 20_000 },
+  );
+
+  useEffect(() => {
+    if (!vendorId || !Array.isArray(resumedProducts)) return;
+    setInitialProducts(resumedProducts);
+    setProductsCount(resumedProducts.length);
+  }, [vendorId, resumedProducts]);
 
   // Resume onboarding where the vendor left off, instead of bouncing
   // anyone with a saved-but-incomplete vendor row straight to /vendor
@@ -1043,11 +1059,6 @@ export default function VendorOnboarding() {
       // (min 2, since a vendor row only exists once Step 2 has saved).
       setStep(Math.min(Math.max((data.onboarding_step || 1) + 1, 2), 5));
 
-      const { data: existingProducts } = await getProducts({ vendorId: data.id, limit: 100 });
-      if (active && existingProducts?.length) {
-        setInitialProducts(existingProducts);
-        setProductsCount(existingProducts.length);
-      }
       if (active) setChecking(false);
     });
 

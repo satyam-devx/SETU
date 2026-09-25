@@ -15,14 +15,14 @@ import MobileNav from '@/components/shared/MobileNav';
 import ErrorBoundary from '@/components/shared/ErrorBoundary';
 import OfflineBanner from '@/components/shared/OfflineBanner';
 import { useCart } from '@/lib/cartContext';
-import { useStore } from '@/lib/store';
+import { useCustomerOrders } from '@/hooks/queries/useOrders';
 import { useRealtimeOrders, useRealtimeNotifications } from '@/hooks/useRealtimeOrders';
 import { useAuth } from '@/lib/AuthContext';
 
 function CustomerContent() {
   const { cartCount }  = useCart();
-  const { state }      = useStore();
   const { user }       = useAuth();
+  const { data: orders = [] } = useCustomerOrders(user?.id, { limit: 100 });
   const location       = useLocation();
 
   // Bootstrap realtime subscriptions for this portal
@@ -30,7 +30,7 @@ function CustomerContent() {
   useRealtimeNotifications();
 
   // Count pending (unconfirmed) orders for badge
-  const pendingOrders = state.orders.filter(o =>
+  const pendingOrders = orders.filter(o =>
     user?.id &&
     (o.customerId === user.id || o.customer_id === user.id) &&
     !['delivered', 'cancelled'].includes(o.status)

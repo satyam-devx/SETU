@@ -78,6 +78,24 @@
     "dynamic": false
   },
   {
+    "path": "/customer/seva",
+    "crawlPath": "/customer/seva",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/seva/request",
+    "crawlPath": "/customer/seva/request",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
+    "path": "/customer/seva/bookings",
+    "crawlPath": "/customer/seva/bookings",
+    "role": "customer",
+    "dynamic": false
+  },
+  {
     "path": "/customer/credit",
     "crawlPath": "/customer/credit",
     "role": "customer",
@@ -154,12 +172,6 @@
     "crawlPath": "/customer/categories",
     "role": "customer",
     "dynamic": false
-  },
-  {
-    "path": "/customer/category/:categoryId",
-    "crawlPath": "/customer/category/crawler-test-id",
-    "role": "customer",
-    "dynamic": true
   },
   {
     "path": "/customer/product/:productId",

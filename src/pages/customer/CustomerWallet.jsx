@@ -10,19 +10,24 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
-import { getWallet, getWalletTransactions } from '@/lib/api';
-import { loadRazorpayScript, initiatePayment } from '@/lib/payments';
+import { useWallet, useWalletTransactions } from '@/hooks/queries/useWallet';
+import { useWalletMutations } from '@/hooks/mutations/useWalletMutations';
+import { loadRazorpayScript } from '@/lib/payments';
 
 const QUICK_AMOUNTS = [100, 200, 500, 1000];
 
 export default function CustomerWallet() {
   const { user, profile } = useAuth();
 
-  const [wallet,       setWallet]       = useState(null);
-  const [transactions, setTransactions] = useState([]);
-  const [loadingWallet,setLoadingWallet]= useState(true);
-  const [loadingTxns,  setLoadingTxns]  = useState(true);
-  const [walletError,  setWalletError]  = useState(null);
+  const { data: walletData, isLoading: loadingWallet, error: walletQueryError, refetch: refetchWallet } = useWallet(user?.id);
+  const { data: transactionsData, isLoading: loadingTxns, refetch: refetchTransactions } = useWalletTransactions(user?.id, 0, 20);
+  const { topUp } = useWalletMutations();
+  const wallet = walletData ?? { balance: 0 };
+  const transactions = transactionsData ?? [];
+  const walletError = walletQueryError?.message ?? null;
+
+  const loadWallet = refetchWallet;
+  const loadTransactions = refetchTransactions;
 
   const [showTopup, setShowTopup] = useState(false);
   const [amount,    setAmount]    = useState('');
@@ -30,30 +35,7 @@ export default function CustomerWallet() {
   const [error,     setError]     = useState(null);
   const [done,      setDone]      = useState(false);
 
-  // ── Load wallet & transactions on mount ───────────────────
-  const loadWallet = async () => {
-    if (!user) return;
-    setLoadingWallet(true);
-    const { data, error: e } = await getWallet(user.id);
-    if (e) setWalletError(e.message);
-    else   setWallet(data ?? { balance: 0 });
-    setLoadingWallet(false);
-  };
-
-  const loadTransactions = async () => {
-    if (!user) return;
-    setLoadingTxns(true);
-    const { data } = await getWalletTransactions(user.id, { limit: 20 });
-    setTransactions(data ?? []);
-    setLoadingTxns(false);
-  };
-
-  useEffect(() => {
-    loadRazorpayScript();
-    loadWallet();
-    loadTransactions();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  useEffect(() => { loadRazorpayScript(); }, []);
 
   // ── Razorpay top-up ───────────────────────────────────────
   const handleTopup = async () => {
@@ -77,12 +59,11 @@ export default function CustomerWallet() {
     setError(null);
 
     try {
-      const rzpResult = await initiatePayment({
+      const rzpResult = await topUp({
         amount:        n,
         customerId:    user.id,
         customerName:  profile?.name,
         customerPhone: profile?.phone,
-        type:          'wallet_topup',
       });
 
       if (rzpResult.error) throw new Error(rzpResult.error);

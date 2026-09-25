@@ -1,3 +1,4 @@
+import Img from '@/components/shared/Img';
 // ═══════════════════════════════════════════════════════════
 // SETU — AdminVendorApproval (v2 — Live DB)
 // Replaces hardcoded mock with real getPendingVendors() call.
@@ -107,7 +108,7 @@ export default function AdminVendorApproval() {
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-start gap-3">
                     {v.image_url ? (
-                      <img src={v.image_url} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
+                      <Img src={v.image_url} alt="" width={40} height={40} sizes="40px" className="w-10 h-10 rounded-lg object-cover shrink-0" />
                     ) : (
                       <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
                         <Store className="w-5 h-5 text-muted-foreground" />
@@ -200,7 +201,7 @@ export default function AdminVendorApproval() {
                     {v.image_url && (
                       <div>
                         <p className="text-xs text-muted-foreground mb-1">Shop photo</p>
-                        <img src={v.image_url} alt="shop" className="w-full max-h-40 object-cover rounded-lg" />
+                        <Img src={v.image_url} alt="shop" width={640} height={160} sizes="(max-width: 640px) 100vw, 640px" className="w-full max-h-40 object-cover rounded-lg" />
                       </div>
                     )}
                   </div>

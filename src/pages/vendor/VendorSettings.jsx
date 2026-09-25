@@ -25,8 +25,10 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendorByOwnerId, updateVendorSettings, getVendorHours, saveVendorHours, getCategories, getVendorCategories, setVendorCategories } from '@/lib/api';
+
+import { useVendorMutations } from '@/hooks/mutations/useVendorMutations';
+import { useVendorByOwner, useVendorHours, useVendorCategories } from '@/hooks/queries/useVendor';
+import { useCategories } from '@/hooks/queries/useCatalog';
 import CategoryMultiSelect from '@/components/vendor/CategoryMultiSelect';
 
 const DEFAULT_HOURS = [
@@ -37,29 +39,16 @@ const DEFAULT_HOURS = [
 
 export default function VendorSettings() {
   const { signOut, user } = useAuth();
+  const { updateSettings, saveHours, updateCategories } = useVendorMutations();
 
   // ── Vendor profile ────────────────────────────────────────
-  const { data: vendor, isLoading: vendorLoading, invalidate: invalidateVendor } = useDataFetch(
-    () => getVendorByOwnerId(user?.id),
-    [user?.id],
-    { cacheKey: `vendor-profile-${user?.id}`, enabled: !!user?.id }
-  );
-  const { data: storedHours } = useDataFetch(
-    () => getVendorHours(vendor.id),
-    [vendor?.id],
-    { cacheKey: `vendor-hours-${vendor?.id}`, enabled: !!vendor?.id }
-  );
+  const { data: vendor, isLoading: vendorLoading, refetch: invalidateVendor } = useVendorByOwner(user?.id);
+  const { data: storedHours } = useVendorHours(vendor?.id);
   // Shop categories (migration 082) — the "category-management" ask:
   // vendors can now belong to several categories, editable here anytime
   // (not just once, at onboarding).
-  const { data: allCategories, isLoading: allCatsLoading } = useDataFetch(
-    () => getCategories(), [], { cacheKey: 'categories', staleTime: 120000 }
-  );
-  const { data: vendorCats } = useDataFetch(
-    () => getVendorCategories(vendor.id),
-    [vendor?.id],
-    { cacheKey: `vendor-categories-${vendor?.id}`, enabled: !!vendor?.id }
-  );
+  const { data: allCategories, isLoading: allCatsLoading } = useCategories({ staleTime: 120000 });
+  const { data: vendorCats } = useVendorCategories(vendor?.id);
 
   // ── Toggle states (seeded from DB) ────────────────────────
   const [orderNotifs, setOrderNotifs] = useState(true);
@@ -135,7 +124,7 @@ export default function VendorSettings() {
     // CONFLICT upsert could, which is what was crashing this save with a
     // not-null violation on vendors.name (a column this payload never
     // includes, and never needs to — the row already exists).
-    const { error } = await updateVendorSettings(vendor.id, {
+    const { error } = await updateSettings(vendor.id, {
       is_open:    storeOpen,
       preferences: {
         order_notifs: orderNotifs,
@@ -146,7 +135,7 @@ export default function VendorSettings() {
       },
     });
 
-    const { error: hoursError } = await saveVendorHours(vendor.id, [
+    const { error: hoursError } = await saveHours(vendor.id, [
       { ...(hours[2] || {}), dayIndex: 0 },
       { ...(hours[0] || {}), dayIndex: 1 },
       { ...(hours[0] || {}), dayIndex: 2 },
@@ -156,7 +145,7 @@ export default function VendorSettings() {
       { ...(hours[1] || {}), dayIndex: 6 },
     ].map(h => ({...h, open: h.open, close: h.close})));
 
-    const { error: catError } = await setVendorCategories(vendor.id, categoryIds);
+    const { error: catError } = await updateCategories(vendor.id, categoryIds);
 
     setSaving(false);
     if (error || hoursError || catError) {

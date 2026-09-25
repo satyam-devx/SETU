@@ -13,6 +13,7 @@ import {
   Loader2, PackageX, Package, Plus, Pencil,
   CheckSquare, Square, Layers,
 } from 'lucide-react';
+import Img from '@/components/shared/Img';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -663,7 +664,7 @@ export default function AdminProducts() {
                   {/* Image */}
                   <div className="w-8 h-8 rounded-lg bg-muted shrink-0 overflow-hidden">
                     {p.image_url
-                      ? <img src={p.image_url} alt="" className="w-full h-full object-cover" />
+                      ? <Img src={p.image_url} alt="" width={64} height={64} sizes="64px" className="w-full h-full object-cover" />
                       : <Package className="w-4 h-4 text-muted-foreground m-auto mt-2" />}
                   </div>
 

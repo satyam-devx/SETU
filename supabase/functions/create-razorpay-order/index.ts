@@ -1,3 +1,7 @@
+// Required Supabase Vault Secrets:
+//   RAZORPAY_KEY_ID — required by this function.
+//   RAZORPAY_KEY_SECRET — required by this function.
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.7?target=deno&no-check=true"
 import { corsHeaders } from "../_shared/cors.ts"

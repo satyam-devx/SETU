@@ -10,7 +10,7 @@
 //   - Existing actions unchanged
 // ═══════════════════════════════════════════════════════════
 
-import { createContext, useContext, useReducer } from 'react';
+import { createContext, useContext, useReducer, useMemo } from 'react';
 import React from 'react';
 import { RIDERS, NOTIFICATIONS, WALLET } from './mockData';
 import { isSupabaseConfigured } from './supabase';
@@ -20,33 +20,6 @@ import { isSupabaseConfigured } from './supabase';
 // fake ₹1250 wallet balance before DB hydration. Gate it explicitly.
 const DEMO = !isSupabaseConfigured;
 
-// ── ORDER STATUS MACHINE ──────────────────────────────────
-export const ORDER_STATUS = {
-  PENDING:    'pending',
-  CONFIRMED:  'confirmed',
-  PREPARING:  'preparing',
-  READY:      'ready',
-  PICKED_UP:  'picked_up',
-  ON_THE_WAY: 'on_the_way',
-  DELIVERED:  'delivered',
-  CANCELLED:  'cancelled',
-};
-
-export const ORDER_TRANSITIONS = {
-  [ORDER_STATUS.PENDING]:    [ORDER_STATUS.CONFIRMED, ORDER_STATUS.CANCELLED],
-  [ORDER_STATUS.CONFIRMED]:  [ORDER_STATUS.PREPARING, ORDER_STATUS.CANCELLED],
-  [ORDER_STATUS.PREPARING]:  [ORDER_STATUS.READY],
-  [ORDER_STATUS.READY]:      [ORDER_STATUS.PICKED_UP],
-  [ORDER_STATUS.PICKED_UP]:  [ORDER_STATUS.ON_THE_WAY],
-  [ORDER_STATUS.ON_THE_WAY]: [ORDER_STATUS.DELIVERED],
-  [ORDER_STATUS.DELIVERED]:  [],
-  [ORDER_STATUS.CANCELLED]:  [],
-};
-
-export function canTransition(from, to) {
-  return ORDER_TRANSITIONS[from]?.includes(to) ?? false;
-}
-
 // ── FALLBACK USER ─────────────────────────────────────────
 const FALLBACK_USER = null;
 
@@ -54,7 +27,6 @@ const FALLBACK_USER = null;
 const initialState = {
   // Start with empty orders — hydrated from DB after auth.
   // Mock seed data only shown in demo mode (no Supabase configured).
-  orders:          [],
   riders:          DEMO ? RIDERS : [],
   notifications:   DEMO ? NOTIFICATIONS : [],
   notificationsError: null,
@@ -65,43 +37,6 @@ const initialState = {
   unreadCount:     0,
   isHydrated:      false,   // true once Supabase data has loaded
 };
-
-// ── NORMALISE order from Supabase → store shape ───────────
-function normaliseOrder(dbRow) {
-  if (!dbRow) return null;
-  return {
-    id:            dbRow.id,
-    orderNumber:   dbRow.order_number  ?? dbRow.orderNumber,
-    customerId:    dbRow.customer_id   ?? dbRow.customerId,
-    customerName:  dbRow.customer_name ?? dbRow.customerName,
-    vendorId:      dbRow.vendor_id     ?? dbRow.vendorId,
-    vendorName:    dbRow.vendor_name   ?? dbRow.vendorName,
-    riderId:       dbRow.rider_id      ?? dbRow.riderId,
-    riderName:     dbRow.rider_name    ?? dbRow.riderName,
-    village:       dbRow.village,
-    village_id:    dbRow.village_id,
-    status:        dbRow.status,
-    paymentMethod: dbRow.payment_method ?? dbRow.paymentMethod ?? 'COD',
-    paymentStatus: dbRow.payment_status ?? dbRow.paymentStatus ?? 'pending',
-    subtotal:      dbRow.subtotal ?? 0,
-    deliveryFee:   dbRow.delivery_fee ?? dbRow.deliveryFee ?? 0,
-    platformFee:   dbRow.platform_fee ?? dbRow.platformFee ?? 0,
-    total:         dbRow.total ?? 0,
-    is_cod:        dbRow.is_cod ?? dbRow.paymentMethod === 'COD',
-    items:         dbRow.order_items   ?? dbRow.items ?? [],
-    cancelReason:  dbRow.cancel_reason ?? dbRow.cancelReason,
-    vendorRating:  dbRow.vendor_rating ?? dbRow.vendorRating,
-    riderRating:   dbRow.rider_rating  ?? dbRow.riderRating,
-    isRated:       dbRow.is_rated      ?? dbRow.isRated ?? false,
-    createdAt:     dbRow.created_at    ?? dbRow.createdAt,
-    confirmedAt:   dbRow.confirmed_at  ?? dbRow.confirmedAt,
-    readyAt:       dbRow.ready_at      ?? dbRow.readyAt,
-    pickedUpAt:    dbRow.picked_up_at  ?? dbRow.pickedUpAt,
-    deliveredAt:   dbRow.delivered_at  ?? dbRow.deliveredAt,
-    cancelledAt:   dbRow.cancelled_at  ?? dbRow.cancelledAt,
-    _source:       'db',
-  };
-}
 
 function normaliseNotification(row) {
   if (!row) return null;
@@ -150,82 +85,16 @@ function setuReducer(state, action) {
     // ── Phase 2: DB hydration ──────────────────────────────
 
     case 'HYDRATE_FROM_DB': {
-      const { orders, notifications, wallet, riders } = action.payload;
-      const normOrders = (orders ?? []).map(normaliseOrder).filter(Boolean);
+      const { notifications, wallet, riders } = action.payload;
       const normNotifs = (notifications ?? []).map(normaliseNotification).filter(Boolean);
       return {
         ...state,
-        orders:        normOrders.length  ? normOrders  : state.orders,
         notifications: normNotifs.length  ? normNotifs  : state.notifications,
         wallet:        wallet             ?? state.wallet,
         riders:        riders             ?? state.riders,
         unreadCount:   normNotifs.filter(n => !n.isRead).length || state.unreadCount,
         isHydrated:    true,
       };
-    }
-
-    case 'HYDRATE_ORDERS': {
-      const { orders, mode } = action.payload;
-      const normOrders = (orders ?? []).map(normaliseOrder).filter(Boolean);
-      if (!normOrders.length) return state;
-
-      // Merge: DB rows win over seed rows; preserve optimistic rows not yet in DB
-      const dbIds    = new Set(normOrders.map(o => o.id));
-      const seedOnly = state.orders.filter(o => !dbIds.has(o.id) && o._source === 'optimistic');
-      return {
-        ...state,
-        orders: [...normOrders, ...seedOnly],
-      };
-    }
-
-    // ── Realtime order actions (dispatched by useRealtimeOrders) ──
-    // These action names are what the realtime hook emits; previously
-    // the reducer had no matching cases, so order data from the initial
-    // DB fetch + realtime never reached state.orders at all (vendor/
-    // rider dashboards, live orders, order-detail store lookups were
-    // all silently empty). These cases close that gap.
-
-    case 'SET_ORDERS': {
-      // Initial DB fetch for a role — replace that role's known rows
-      // while preserving any optimistic rows not yet persisted.
-      const { orders } = action.payload;
-      const normOrders = (orders ?? []).map(normaliseOrder).filter(Boolean);
-      const dbIds      = new Set(normOrders.map(o => o.id));
-      // Keep existing orders that aren't in this fetch (other roles'
-      // rows / optimistic rows), de-duped by id.
-      const kept = state.orders.filter(o => !dbIds.has(o.id));
-      return { ...state, orders: [...normOrders, ...kept] };
-    }
-
-    case 'ORDER_CREATED': {
-      const order = normaliseOrder(action.payload.order);
-      if (!order) return state;
-      // Realtime echo of an order we already have (incl. optimistic) → merge.
-      if (state.orders.find(o => o.id === order.id)) {
-        return {
-          ...state,
-          orders: state.orders.map(o => (o.id === order.id ? { ...o, ...order } : o)),
-        };
-      }
-      return { ...state, orders: [order, ...state.orders] };
-    }
-
-    case 'UPDATE_ORDER_STATUS': {
-      const { orderId, updates } = action.payload;
-      const norm = normaliseOrder(updates);
-      if (!norm) return state;
-      const exists = state.orders.some(o => o.id === orderId);
-      return {
-        ...state,
-        orders: exists
-          ? state.orders.map(o => (o.id === orderId ? { ...o, ...norm } : o))
-          : [norm, ...state.orders],
-      };
-    }
-
-    case 'ORDER_REMOVED': {
-      const { orderId } = action.payload;
-      return { ...state, orders: state.orders.filter(o => o.id !== orderId) };
     }
 
     case 'HYDRATE_NOTIFICATIONS': {
@@ -258,222 +127,6 @@ function setuReducer(state, action) {
         ...state,
         notifications: [norm, ...state.notifications],
         unreadCount:   state.unreadCount + 1,
-      };
-    }
-
-    // ── Order actions (unchanged logic, DB sync happens in components) ──
-
-    case 'ORDER_ADVANCE_STATUS': {
-      const { orderId, newStatus, meta } = action.payload;
-      return {
-        ...state,
-        orders: state.orders.map(o =>
-          o.id === orderId ? {
-            ...o,
-            status:  newStatus,
-            ...meta,
-            [`${newStatus}At`]: new Date().toISOString(),
-            _source: 'optimistic',
-          } : o
-        ),
-      };
-    }
-
-    case 'ORDER_PLACE': {
-      const incoming = action.payload;
-      // Normalise in case it came from DB via Realtime
-      const order = incoming._source
-        ? incoming
-        : {
-          id:            incoming.id          ?? `o${Date.now()}`,
-          orderNumber:   incoming.order_number ?? incoming.orderNumber ?? `SETU-OPT-${Date.now()}`,
-          customerId:    incoming.customer_id  ?? incoming.customerId,
-          customerName:  incoming.customer_name ?? incoming.customerName,
-          vendorId:      incoming.vendor_id    ?? incoming.vendorId,
-          vendorName:    incoming.vendor_name  ?? incoming.vendorName,
-          village:       incoming.village,
-          village_id:    incoming.village_id,
-          status:        incoming.status       ?? ORDER_STATUS.PENDING,
-          paymentMethod: incoming.payment_method ?? incoming.paymentMethod ?? 'COD',
-          paymentStatus: incoming.payment_status ?? incoming.paymentStatus ?? 'pending',
-          subtotal:      incoming.subtotal  ?? 0,
-          deliveryFee:   incoming.delivery_fee ?? incoming.deliveryFee  ?? 0,
-          platformFee:   incoming.platform_fee ?? incoming.platformFee  ?? 0,
-          total:         incoming.total     ?? 0,
-          is_cod:        incoming.is_cod    ?? false,
-          items:         incoming.order_items ?? incoming.items ?? [],
-          createdAt:     incoming.created_at  ?? incoming.createdAt ?? new Date().toISOString(),
-          _source:       'optimistic',
-        };
-
-      // Avoid duplicates from Realtime echo
-      if (state.orders.find(o => o.id === order.id)) return state;
-
-      const notification = {
-        id:        `n${Date.now()}`,
-        type:      'order',
-        title:     'Order Placed! 🎉',
-        body:      `${order.orderNumber} placed. Waiting for vendor confirmation.`,
-        isRead:    false,
-        createdAt: new Date().toISOString(),
-      };
-
-      return {
-        ...state,
-        orders:        [order, ...state.orders],
-        notifications: [notification, ...state.notifications],
-        unreadCount:   state.unreadCount + 1,
-      };
-    }
-
-    case 'ORDER_CANCEL': {
-      const { orderId, reason } = action.payload;
-      const order = state.orders.find(o => o.id === orderId);
-      if (!order || !canTransition(order.status, ORDER_STATUS.CANCELLED)) return state;
-      return {
-        ...state,
-        orders: state.orders.map(o =>
-          o.id === orderId ? {
-            ...o,
-            status:       ORDER_STATUS.CANCELLED,
-            cancelReason: reason,
-            cancelledAt:  new Date().toISOString(),
-            _source:      'optimistic',
-          } : o
-        ),
-      };
-    }
-
-    case 'ORDER_RATE': {
-      const { orderId, vendorRating, riderRating, comment } = action.payload;
-      return {
-        ...state,
-        orders: state.orders.map(o =>
-          o.id === orderId ? {
-            ...o,
-            vendorRating,
-            riderRating,
-            ratingComment: comment,
-            isRated:       true,
-          } : o
-        ),
-      };
-    }
-
-    case 'RIDER_ACCEPT_ORDER': {
-      const { orderId, riderId } = action.payload;
-      const rider = state.riders.find(r => r.id === riderId);
-      return {
-        ...state,
-        orders: state.orders.map(o =>
-          o.id === orderId ? {
-            ...o,
-            riderId,
-            riderName:  rider?.name || 'Assigned Rider',
-            status:     ORDER_STATUS.PICKED_UP,
-            acceptedAt: new Date().toISOString(),
-            _source:    'optimistic',
-          } : o
-        ),
-      };
-    }
-
-    case 'RIDER_DELIVER': {
-      const { orderId, photoUrl, codCollected, riderId, amount } = action.payload;
-      return {
-        ...state,
-        orders: state.orders.map(o =>
-          o.id === orderId ? {
-            ...o,
-            status:          ORDER_STATUS.DELIVERED,
-            deliveredAt:     new Date().toISOString(),
-            deliveryPhotoUrl: photoUrl,
-            codCollected:    codCollected ?? o.is_cod,
-            _source:         'optimistic',
-          } : o
-        ),
-        riders: state.riders.map(r =>
-          r.id === riderId ? {
-            ...r,
-            todayDeliveries: r.todayDeliveries + 1,
-            totalDeliveries: r.totalDeliveries + 1,
-            todayEarnings:   r.todayEarnings + 80,
-            totalEarnings:   r.totalEarnings + 80,
-            codBalance:      r.codBalance + (codCollected ? (amount || 0) : 0),
-          } : r
-        ),
-        notifications: [
-          {
-            id:        `n${Date.now()}`,
-            type:      'order',
-            title:     'Order Delivered! ✅',
-            body:      'Order has been delivered successfully.',
-            isRead:    false,
-            createdAt: new Date().toISOString(),
-          },
-          ...state.notifications,
-        ],
-        unreadCount: state.unreadCount + 1,
-      };
-    }
-
-    case 'VENDOR_CONFIRM_ORDER': {
-      const { orderId } = action.payload;
-      return {
-        ...state,
-        orders: state.orders.map(o =>
-          o.id === orderId ? {
-            ...o,
-            status:      ORDER_STATUS.CONFIRMED,
-            confirmedAt: new Date().toISOString(),
-            _source:     'optimistic',
-          } : o
-        ),
-      };
-    }
-
-    case 'VENDOR_START_PREPARING': {
-      const { orderId } = action.payload;
-      return {
-        ...state,
-        orders: state.orders.map(o =>
-          o.id === orderId ? {
-            ...o,
-            status:  ORDER_STATUS.PREPARING,
-            _source: 'optimistic',
-          } : o
-        ),
-      };
-    }
-
-    case 'VENDOR_MARK_READY': {
-      const { orderId } = action.payload;
-      return {
-        ...state,
-        orders: state.orders.map(o =>
-          o.id === orderId ? {
-            ...o,
-            status:  ORDER_STATUS.READY,
-            readyAt: new Date().toISOString(),
-            _source: 'optimistic',
-          } : o
-        ),
-      };
-    }
-
-    case 'VENDOR_REJECT_ORDER': {
-      const { orderId, reason } = action.payload;
-      return {
-        ...state,
-        orders: state.orders.map(o =>
-          o.id === orderId ? {
-            ...o,
-            status:       ORDER_STATUS.CANCELLED,
-            cancelReason: reason || 'Rejected by vendor',
-            cancelledAt:  new Date().toISOString(),
-            _source:      'optimistic',
-          } : o
-        ),
       };
     }
 
@@ -547,8 +200,9 @@ const SetuStoreContext = createContext(null);
 
 export function SetuStoreProvider({ children }) {
   const [state, dispatch] = useReducer(setuReducer, initialState);
+  const contextValue = useMemo(() => ({ state, dispatch }), [state]);
   return (
-    <SetuStoreContext.Provider value={{ state, dispatch }}>
+    <SetuStoreContext.Provider value={contextValue}>
       {children}
     </SetuStoreContext.Provider>
   );
@@ -561,17 +215,6 @@ export function useStore() {
 }
 
 // ── SELECTOR HOOKS ────────────────────────────────────────
-export function useOrders(filter) {
-  const { state } = useStore();
-  if (!filter) return state.orders;
-  return state.orders.filter(filter);
-}
-
-export function useOrder(orderId) {
-  const { state } = useStore();
-  return state.orders.find(o => o.id === orderId);
-}
-
 export function useCurrentUser() {
   const { state } = useStore();
   return state.currentUser;

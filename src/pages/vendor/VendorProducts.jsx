@@ -8,7 +8,7 @@
 //  - Delete product via deleteProduct
 //  - Loading skeleton + error state
 // ═══════════════════════════════════════════════════════════
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Search, Edit2, Trash2, Package, AlertCircle, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -16,10 +16,49 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import VirtualizedList from '@/components/shared/VirtualizedList';
 import AppHeader from '@/components/shared/AppHeader';
+import Img from '@/components/shared/Img';
 import { useAuth } from '@/lib/AuthContext';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendorByOwnerId, getProducts, upsertProduct, deleteProduct } from '@/lib/api';
+import { useProducts, useProductMutations } from '@/hooks/queries/useProducts';
+import { useVendorByOwner } from '@/hooks/queries/useVendor';
+
+const ProductRow = React.memo(function ProductRow({ product: p, toggling, deleting, onToggle, onDelete }) {
+  const isAvailable = p.is_available ?? p.isAvailable ?? true;
+  const image = p.image_url ?? p.image ?? '/placeholder-product.jpg';
+  const mrp = p.mrp ?? p.price;
+  const stock = p.stock ?? 0;
+  return (
+    <Card className={`p-3 border h-full ${isAvailable ? 'border-border' : 'border-border opacity-60'}`}>
+      <div className="flex items-start gap-3">
+        <div className="w-14 h-14 rounded-lg bg-muted shrink-0 overflow-hidden">
+          <Img src={image} alt={p.name} width={56} height={56} sizes="56px" className="w-full h-full object-cover" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold truncate">{p.name}</p>
+          <p className="text-xs text-muted-foreground truncate">{p.name_hindi ?? p.nameHindi} · {p.category}</p>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-sm font-bold">₹{p.price}</span>
+            {mrp > p.price && <span className="text-xs line-through text-muted-foreground">₹{mrp}</span>}
+            <Badge variant="outline" className="text-[9px]">Stock: {stock}</Badge>
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          {toggling === p.id ? <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" /> : (
+            <Switch checked={isAvailable} onCheckedChange={() => onToggle(p)} />
+          )}
+          <div className="flex gap-1">
+            <Link to={`/vendor/products/${p.id}/edit`}><Button variant="ghost" size="icon" className="h-7 w-7"><Edit2 className="w-3.5 h-3.5" /></Button></Link>
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" disabled={deleting === p.id} onClick={() => onDelete(p)}>
+              {deleting === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            </Button>
+          </div>
+        </div>
+      </div>
+      {stock < 5 && <div className="mt-2 text-xs text-amber-600 font-medium flex items-center gap-1">⚠ Low stock — only {stock} left</div>}
+    </Card>
+  );
+});
 
 function ProductSkeleton() {
   return (
@@ -37,13 +76,10 @@ export default function VendorProducts() {
   const [toggling, setToggling] = useState(null); // productId being toggled
   const [deleting, setDeleting] = useState(null); // productId being deleted
   const [actionErr, setActionErr] = useState(null);
+  const { saveProduct, removeProduct } = useProductMutations();
 
   // 1. Fetch vendor for this user
-  const { data: vendor, isLoading: vendorLoading } = useDataFetch(
-    () => getVendorByOwnerId(user?.id),
-    [user?.id],
-    { cacheKey: `vendor-profile-${user?.id}`, enabled: !!user?.id }
-  );
+  const { data: vendor, isLoading: vendorLoading } = useVendorByOwner(user?.id);
 
   // 2. Fetch products for this vendor
   const {
@@ -51,11 +87,7 @@ export default function VendorProducts() {
     isLoading: productsLoading,
     error: productsError,
     refetch,
-  } = useDataFetch(
-    () => getProducts({ vendorId: vendor?.id, includeUnavailable: true }),
-    [vendor?.id],
-    { cacheKey: `vendor-products-${vendor?.id}`, enabled: !!vendor?.id }
-  );
+  } = useProducts({ vendorId: vendor?.id, includeUnavailable: true }, { enabled: !!vendor?.id, staleTime: 60_000 });
 
   // Local optimistic copy so toggles feel instant
   const [localProducts, setLocalProducts] = useState(null);
@@ -68,9 +100,10 @@ export default function VendorProducts() {
 
   const isLoading = vendorLoading || productsLoading;
 
-  const filtered = products.filter(p =>
-    !query || p.name.toLowerCase().includes(query.toLowerCase())
-  );
+  const normalizedQuery = query.trim().toLowerCase();
+  const filtered = useMemo(() => products.filter(p =>
+    !normalizedQuery || p.name.toLowerCase().includes(normalizedQuery)
+  ), [products, normalizedQuery]);
 
   // ── Toggle availability ──────────────────────────────────
   const handleToggle = useCallback(async (product) => {
@@ -84,7 +117,7 @@ export default function VendorProducts() {
       (ps ?? []).map(p => p.id === product.id ? { ...p, is_available: newVal } : p)
     );
 
-    const { error } = await upsertProduct({ ...product, is_available: newVal });
+    const { error } = await saveProduct({ ...product, is_available: newVal });
     if (error) {
       // Rollback
       setLocalProducts(ps =>
@@ -93,7 +126,7 @@ export default function VendorProducts() {
       setActionErr(`Failed to update ${product.name}: ${error.message}`);
     }
     setToggling(null);
-  }, [toggling]);
+  }, [saveProduct, toggling]);
 
   // ── Delete product ────────────────────────────────────────
   const handleDelete = useCallback(async (product) => {
@@ -102,15 +135,15 @@ export default function VendorProducts() {
     setActionErr(null);
 
     setLocalProducts(ps => (ps ?? []).filter(p => p.id !== product.id));
-    const { error } = await deleteProduct(product.id);
+    const { error } = await removeProduct(product.id, { vendorId: vendor?.id, categoryId: product.category_id });
     if (error) {
       setLocalProducts(ps => [...(ps ?? []), product]); // re-add on fail
       setActionErr(`Failed to delete: ${error.message}`);
     }
     setDeleting(null);
-  }, []);
+  }, [removeProduct, vendor?.id]);
 
-  const availableCount = products.filter(p => p.is_available ?? p.isAvailable ?? true).length;
+  const availableCount = useMemo(() => products.filter(p => p.is_available ?? p.isAvailable ?? true).length, [products]);
 
   return (
     <div className="pb-24">
@@ -174,73 +207,38 @@ export default function VendorProducts() {
         )}
 
         {!isLoading && !productsError && filtered.length > 0 && (
-          <div className="space-y-2">
-            {filtered.map(p => {
-              const isAvailable = p.is_available ?? p.isAvailable ?? true;
-              const image       = p.image_url ?? p.image ?? '/placeholder-product.jpg';
-              const mrp         = p.mrp ?? p.price;
-              const stock       = p.stock ?? 0;
-
-              return (
-                <Card
+          filtered.length > 40 ? (
+            <VirtualizedList
+              items={filtered}
+              itemHeight={144}
+              height="68vh"
+              getKey={p => p.id}
+              renderItem={p => (
+                <div className="pb-2 h-full">
+                  <ProductRow
+                    product={p}
+                    toggling={toggling}
+                    deleting={deleting}
+                    onToggle={handleToggle}
+                    onDelete={handleDelete}
+                  />
+                </div>
+              )}
+            />
+          ) : (
+            <div className="space-y-2">
+              {filtered.map(p => (
+                <ProductRow
                   key={p.id}
-                  className={`p-3 border ${isAvailable ? 'border-border' : 'border-border opacity-60'}`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="w-14 h-14 rounded-lg bg-muted shrink-0 overflow-hidden">
-                      <img src={image} alt={p.name} className="w-full h-full object-cover" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate">{p.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {p.name_hindi ?? p.nameHindi} · {p.category}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-sm font-bold">₹{p.price}</span>
-                        {mrp > p.price && (
-                          <span className="text-xs line-through text-muted-foreground">₹{mrp}</span>
-                        )}
-                        <Badge variant="outline" className="text-[9px]">Stock: {stock}</Badge>
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-2 shrink-0">
-                      {toggling === p.id
-                        ? <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                        : <Switch
-                            checked={isAvailable}
-                            onCheckedChange={() => handleToggle(p)}
-                          />
-                      }
-                      <div className="flex gap-1">
-                        <Link to={`/vendor/products/${p.id}/edit`}>
-                          <Button variant="ghost" size="icon" className="h-7 w-7">
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </Button>
-                        </Link>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive"
-                          disabled={deleting === p.id}
-                          onClick={() => handleDelete(p)}
-                        >
-                          {deleting === p.id
-                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            : <Trash2 className="w-3.5 h-3.5" />
-                          }
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                  {stock < 5 && (
-                    <div className="mt-2 text-xs text-amber-600 font-medium flex items-center gap-1">
-                      ⚠ Low stock — only {stock} left
-                    </div>
-                  )}
-                </Card>
-              );
-            })}
-          </div>
+                  product={p}
+                  toggling={toggling}
+                  deleting={deleting}
+                  onToggle={handleToggle}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </div>
+          )
         )}
       </div>
 

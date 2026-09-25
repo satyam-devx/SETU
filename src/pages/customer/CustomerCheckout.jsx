@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, MapPin, Smartphone, CreditCard, Wallet,
@@ -10,13 +10,13 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { useCart } from '@/lib/cartContext';
-import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/AuthContext';
 import { useVillage } from '@/lib/village';
 import { useFeatureFlag } from '@/lib/featureFlags';
-import { OrderAPI, PaymentAPI, cancelOrderWithRefund, getFeeConfig, CouponAPI, getAddresses } from '@/lib/api';
-import { loadRazorpayScript, initiatePayment } from '@/lib/payments';
-import { useDataFetch } from '@/hooks/useDataFetch';
+import { CouponAPI } from '@/lib/api';
+import { useFeeConfig } from '@/hooks/queries/useCatalog';
+import { useAddresses } from '@/hooks/queries/useAddresses';
+import { useCheckoutMutations } from '@/hooks/mutations/useCheckoutMutations';
 import SwipeToConfirm from '@/components/shared/SwipeToConfirm';
 
 const PAY_METHODS = [
@@ -71,8 +71,8 @@ function resolveVendor(firstItem) {
 }
 
 export default function CustomerCheckout() {
+  const { submitCheckout } = useCheckoutMutations();
   const { items, totalPrice, clearCart }  = useCart();
-  const { state, dispatch }               = useStore();
   const { user, profile }                 = useAuth();
   const { village }                       = useVillage();
   const navigate                          = useNavigate();
@@ -91,11 +91,7 @@ export default function CustomerCheckout() {
     isLoading: addressesLoading,
     error: addressesError,
     refetch: refetchAddresses,
-  } = useDataFetch(
-    () => getAddresses(user?.id),
-    [user?.id],
-    { cacheKey: `addresses:${user?.id}`, enabled: !!user?.id }
-  );
+  } = useAddresses(user?.id);
   // getAddresses orders is_default first, so [0] is the default (or the
   // only one, or the earliest-added if none is marked default).
   const selectedAddress = addresses?.[0] ?? null;
@@ -118,10 +114,16 @@ export default function CustomerCheckout() {
   // Defaults match the server defaults so the estimate is correct even
   // before the fetch resolves; the authoritative total still comes from
   // create_order on the server.
-  const [feeCfg, setFeeCfg] = useState({
-    commission_pct: 1, delivery_flat: 20, free_threshold: 200,
-    credit_discount_pct: 10, credit_discount_max: 500,
-  });
+  const { data: feeCfgData } = useFeeConfig({ staleTime: 300_000 });
+  const feeCfg = useMemo(() => ({
+    commission_pct: 1,
+    delivery_flat: 20,
+    free_threshold: 200,
+    credit_discount_pct: 10,
+    credit_discount_max: 500,
+    ...(feeCfgData ?? {}),
+  }), [feeCfgData]);
+
 
   // Coupon state
   const [couponCode, setCouponCode]         = useState('');
@@ -131,16 +133,16 @@ export default function CustomerCheckout() {
   const [couponBusy, setCouponBusy]         = useState(false);
 
   // Wallet balance from store (hydrated from Supabase on app load)
-  const walletBalance = state.wallet?.balance ?? 0;
+  const walletBalance = Number(profile?.wallet_balance ?? 0);
 
   // Feature-flag gating: hide payment methods whose module is disabled.
   const walletEnabled  = useFeatureFlag('wallet');
   const onlineEnabled  = useFeatureFlag('payments');
   const couponsEnabled = useFeatureFlag('coupons');
-  const payMethods = PAY_METHODS.filter(pm =>
+  const payMethods = useMemo(() => PAY_METHODS.filter(pm =>
     (pm.id !== 'wallet' || walletEnabled) &&
     (pm.id !== 'upi'    || onlineEnabled)
-  );
+  ), [walletEnabled, onlineEnabled]);
 
   // If the selected method got disabled, fall back to the first available.
   useEffect(() => {
@@ -186,10 +188,6 @@ export default function CustomerCheckout() {
     setAppliedCode(null); setCouponDiscount(0); setCouponCode(''); setCouponMsg(null);
   };
 
-  useEffect(() => {
-    loadRazorpayScript();
-    getFeeConfig().then(({ data }) => { if (data) setFeeCfg((prev) => ({ ...prev, ...data })); });
-  }, []);
 
   // Guard against reaching Checkout with nothing to check out — e.g. the
   // cart was already cleared by a completed order and the user hits the
@@ -205,164 +203,64 @@ export default function CustomerCheckout() {
   if (items.length === 0 && !placed) return null;
 
   const handlePlaceOrder = async () => {
-    // Re-entry guard: the trigger button is already disabled while
-    // placing is true, but that disabled state only takes effect on
-    // React's next render — a fast double-tap (common on the lower-end
-    // Android hardware this app targets) can fire this handler twice
-    // before that happens. Guard here too rather than rely on the
-    // button alone.
+    // Re-entry guard: protect the handler itself in addition to the disabled UI.
     if (placing) return;
     if (!vendor.id) {
       setError('Cannot determine vendor. Please clear cart and try again.');
       return;
     }
     if (!selectedAddress) {
-      // Previously this was never actually checked — an order could be
-      // placed with no real address on file at all (see the
-      // delivery_address fix above), leaving the vendor/rider nothing
-      // usable to deliver to.
       setError('Please add a delivery address before placing your order.');
+      return;
+    }
+
+    // Client-side wallet check is UX only. The authoritative payment amount
+    // and balance check remain server-side in pay_order_from_wallet().
+    if (payMethod === 'wallet' && !walletSufficient) {
+      setError(`Insufficient wallet balance. Available: ₹${walletBalance}, Required: ₹${grandTotal}`);
       return;
     }
 
     setPlacing(true);
     setError(null);
 
-    // ── Pre-flight: wallet balance check ─────────────────────
-    if (payMethod === 'wallet' && !walletSufficient) {
-      setError(`Insufficient wallet balance. Available: ₹${walletBalance}, Required: ₹${grandTotal}`);
-      setPlacing(false);
-      return;
-    }
-
     try {
-      // 1. Build order payload — NO prices/totals sent. The server
-      //    (create_order RPC) recomputes everything from the products
-      //    table and returns the authoritative order, including total.
       const orderPayload = {
         vendor_id:        vendor.id,
-        village_id:       village?.id   ?? profile?.village_id ?? null,
-        items:            items.map(i => ({
-          product_id: i.id,
-          qty:        i.quantity,
-        })),
+        village_id:       village?.id ?? profile?.village_id ?? null,
+        items:            items.map(i => ({ product_id: i.id, qty: i.quantity })),
         payment_method:   ({ cod: 'COD', upi: 'UPI', wallet: 'wallet' })[payMethod] ?? 'COD',
         use_credit:       useCredit,
         coupon_code:      appliedCode ?? null,
         idempotency_key:  idempotencyKey,
-        address_id: selectedAddress?.id ?? null,
-        delivery_address: selectedAddress
-          ? `${selectedAddress.address}${selectedAddress.landmark ? ', ' + selectedAddress.landmark : ''}`
-          : (profile?.village ?? village?.name ?? ''),
+        address_id:       selectedAddress.id,
+        delivery_address: `${selectedAddress.address}${selectedAddress.landmark ? ', ' + selectedAddress.landmark : ''}`,
       };
 
-      const { data: order, error: orderError } = await OrderAPI.create(orderPayload);
-      if (orderError) throw orderError;
+      const result = await submitCheckout({
+        orderPayload,
+        paymentMethod: payMethod,
+        customerId: user?.id,
+        vendorId: vendor?.id,
+        customerName: profile?.name,
+        customerPhone: profile?.phone,
+      });
 
-      // Authoritative amount to charge comes from the server, never the client.
-      const serverTotal = order.total ?? grandTotal;
-
-      // A retry (same idempotency key, response to the first attempt
-      // never arrived) can come back already paid — the wallet path
-      // already has its own already-paid check inside
-      // pay_order_from_wallet, but UPI has no equivalent: retrying
-      // would open a SECOND Razorpay checkout for an order that's
-      // already settled. Skip straight to success for any order that
-      // already shows paid, regardless of which payment method this
-      // submission asked for.
-      if (order.payment_status === 'paid') {
-        clearCart();
-        setPlaced(true);
-        setTimeout(() => navigate(`/customer/orders/${order.id}`), 2500);
+      if (result?.cancelled) {
+        // The checkout attempt is now permanently cancelled. A fresh
+        // idempotency key is required for the next genuine attempt.
+        setIdempotencyKey(newIdempotencyKey());
         return;
       }
 
-      // 2. Handle payment
-      if (payMethod === 'upi') {
-        try {
-          const rzpResult = await initiatePayment({
-            amount:        serverTotal,
-            orderId:       order.id,
-            customerId:    user.id,
-            customerName:  profile?.name,
-            customerPhone: profile?.phone,
-          });
-
-          if (rzpResult.error)     throw new Error(rzpResult.error);
-          if (rzpResult.cancelled) {
-            // Use atomic cancel (no refund needed — payment never captured)
-            await cancelOrderWithRefund(order.id, user.id, 'customer', 'Payment cancelled by user');
-            // This order is now dead — reusing the same idempotency key
-            // on the next tap would replay it (cancelled) instead of
-            // creating the fresh order a genuine retry needs.
-            setIdempotencyKey(newIdempotencyKey());
-            setPlacing(false);
-            return;
-          }
-          // Webhook confirms payment → order status + payment_status updated server-side.
-          // DO NOT set payment_status from here — the guard trigger will reject it.
-        } catch (payErr) {
-          // Any UPI failure — SDK/script didn't load, the create-order edge
-          // function errored, or Razorpay's own "payment.failed" event —
-          // used to leave the order `create_order` had already committed
-          // sitting there uncancelled forever. Worse, since the cart was
-          // only cleared on eventual success, tapping "Place Order" again
-          // created a SECOND order on top of it — a vendor could end up
-          // with several duplicate pending orders from one failed
-          // checkout attempt. Cancel this one before surfacing the error
-          // so a retry starts clean.
-          await cancelOrderWithRefund(order.id, user.id, 'customer', 'Payment failed').catch(() => {});
-          setIdempotencyKey(newIdempotencyKey()); // see cancelled-branch comment above
-          throw payErr;
-        }
-
-      } else if (payMethod === 'wallet') {
-        // Single atomic RPC: charges order.total, confirms order, credits escrow.
-        const { data: walletRes, error: walletError } = await PaymentAPI.payOrderFromWallet(order.id);
-
-        // PASS 7 FIX: a same-order retry after a real, already-committed
-        // success is reported by the RPC as success:true with
-        // already_paid:true (see migration 059) — it therefore never
-        // reaches this `if (walletError)` branch at all, and is handled
-        // by the normal success path below exactly as it should be:
-        // the order genuinely was placed and paid, just not on this
-        // particular call. This block only ever runs for a GENUINE
-        // payment failure (insufficient funds, or the order having
-        // become non-payable for some other real reason) — never for
-        // an already-successful payment — so cancelling here remains
-        // safe and correct.
-        if (walletError) {
-          // Wallet debit failed — cancel the order atomically (nothing captured)
-          await cancelOrderWithRefund(order.id, user.id, 'customer', 'Wallet payment failed');
-          setIdempotencyKey(newIdempotencyKey()); // see UPI cancelled-branch comment above
-          throw new Error(walletError.message ?? 'Wallet payment failed. Please try again.');
-        }
-
-        if (walletRes?.already_paid) {
-          // Reconciliation path: this exact order was already paid by
-          // an earlier attempt whose response we never received. Do
-          // NOT re-debit, do NOT cancel — treat it as the success it
-          // already is.
-          dispatch({
-            type:    'UPDATE_WALLET_BALANCE',
-            payload: { balance: walletRes?.new_balance ?? walletBalance },
-          });
-        } else {
-          dispatch({
-            type:    'UPDATE_WALLET_BALANCE',
-            payload: { balance: walletRes?.new_balance ?? (walletBalance - serverTotal) },
-          });
-        }
-      }
-      // COD: no payment action — stays 'pending'
-
-      // 3. Success
       clearCart();
       setPlaced(true);
-      setTimeout(() => navigate(`/customer/orders/${order.id}`), 2500);
-
+      setTimeout(() => navigate(`/customer/orders/${result.data.id}`), 2500);
     } catch (err) {
       console.error('[Checkout Error]', err);
+      // A failed payment is cancelled by the checkout mutation boundary.
+      // Keep the key fresh so the next retry creates a new order attempt.
+      if (payMethod === 'upi' || payMethod === 'wallet') setIdempotencyKey(newIdempotencyKey());
       setError(err.message || 'Failed to place order. Please try again.');
     } finally {
       setPlacing(false);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   CheckCircle, Clock, Package, Bike, MapPin,
@@ -11,10 +11,12 @@ import { Textarea } from '@/components/ui/textarea';
 import AppHeader from '@/components/shared/AppHeader';
 import OrderTrackingMap from '@/components/maps/OrderTrackingMap';
 import { useRealtimeOrder } from '@/hooks/useRealtimeOrders';
-import { useStore, canTransition, ORDER_STATUS } from '@/lib/store';
+import { canTransition, ORDER_STATUS } from '@/lib/order-state';
 import { useAuth } from '@/lib/AuthContext';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { getOrderById, rateOrder, cancelOrderWithRefund, getDeliveryOTP } from '@/lib/api';
+import { useOrder } from '@/hooks/queries/useOrders';
+import { useOrderMutations } from '@/hooks/mutations/useOrderMutations';
+import { getDeliveryOTP } from '@/lib/api';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 // ── Timeline config per status ──────────────────────────
 const TIMELINE = {
@@ -115,31 +117,14 @@ function useLastUpdated(order) {
 export default function CustomerOrderDetail() {
   const { orderId }  = useParams();
   const navigate     = useNavigate();
-  const { state, dispatch } = useStore();
   const { user } = useAuth();
   const [deliveryOtp, setDeliveryOtp] = useState(null);
   const [otpError, setOtpError] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
 
-  // 1. Check global store first (hydrated by CustomerOrders)
-  const storeOrder = state.orders.find(o => o.id === orderId);
-
-  // 2. Fetch from DB only when not in store
-  const {
-    data: fetchedOrder, isLoading: fetchLoading,
-    error: fetchError, refetch: refetchOrder,
-  } = useDataFetch(
-    () => getOrderById(orderId),
-    [orderId],
-    { cacheKey: `order:${orderId}`, enabled: !storeOrder && !!orderId }
-  );
-
-  // 3. Realtime subscription merges live updates into store
+  const { data: order, isLoading, error: fetchError, refetch: refetchOrder } = useOrder(orderId);
+  const { cancelOrder, rateOrder: submitRating } = useOrderMutations();
   useRealtimeOrder(orderId);
-
-  // Prefer realtime-updated store copy, fall back to fetched
-  const order = state.orders.find(o => o.id === orderId) ?? fetchedOrder;
-  const isLoading = fetchLoading && !order;
 
   const lastUpdated = useLastUpdated(order);
 
@@ -151,6 +136,8 @@ export default function CustomerOrderDetail() {
   const [cancelReason,    setCancelReason]    = useState('');
   const [cancelError,     setCancelError]     = useState(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const cancelTitleRef = useRef(null);
+  const cancelDialogRef = useFocusTrap(showCancelModal, { initialFocusRef: cancelTitleRef, onEscape: () => setShowCancelModal(false) });
   const [copied,          setCopied]          = useState(false);
   const [actionLoading,   setActionLoading]   = useState(false);
 
@@ -215,13 +202,12 @@ export default function CustomerOrderDetail() {
     // immediately after the UI had already flipped to "Cancelled",
     // leaving the order looking cancelled locally while the order was
     // untouched on the server).
-    const { error } = await cancelOrderWithRefund(order.id, user?.id, 'customer', cancelReason);
+    const { error } = await cancelOrder(order.id, user?.id, 'customer', cancelReason, { customerId: user?.id });
     setCancelling(false);
     if (error) {
       setCancelError(error.message || 'Could not cancel this order. Please try again.');
       return;
     }
-    dispatch({ type: 'ORDER_CANCEL', payload: { orderId: order.id, reason: cancelReason } });
     setShowCancelModal(false);
   };
 
@@ -236,7 +222,7 @@ export default function CustomerOrderDetail() {
     if (rating === 0) return;
     setActionLoading(true);
     setRatingError(null);
-    const { error } = await rateOrder({ orderId: order.id, vendorRating: rating, riderRating: rating, comment: ratingComment });
+    const { error } = await submitRating({ orderId: order.id, vendorRating: rating, riderRating: rating, comment: ratingComment }, { customerId: user?.id });
     setActionLoading(false);
     if (error) {
       // Used to unconditionally show "Thanks for rating!" even when the
@@ -245,7 +231,6 @@ export default function CustomerOrderDetail() {
       setRatingError(error.message || 'Could not submit your rating. Please try again.');
       return;
     }
-    dispatch({ type: 'ORDER_RATE', payload: { orderId: order.id, vendorRating: rating, riderRating: rating, comment: ratingComment } });
     setRatingSubmitted(true);
   };
 
@@ -540,9 +525,9 @@ export default function CustomerOrderDetail() {
 
       {/* Cancel modal */}
       {showCancelModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-end">
-          <div className="bg-background rounded-t-2xl p-6 w-full max-w-md mx-auto">
-            <h3 className="font-bold text-base mb-1">Cancel Order</h3>
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-end" role="presentation">
+          <div ref={cancelDialogRef} className="bg-background rounded-t-2xl p-6 w-full max-w-md mx-auto" role="dialog" aria-modal="true" aria-labelledby="cancel-order-title">
+            <h3 ref={cancelTitleRef} tabIndex={-1} id="cancel-order-title" className="font-bold text-base mb-1 outline-none">Cancel Order</h3>
             <p className="text-xs text-muted-foreground mb-3">Please tell us why you're cancelling</p>
             <div className="space-y-2 mb-3">
               {['Changed my mind', 'Ordered by mistake', 'Vendor taking too long', 'Found elsewhere'].map(r => (
@@ -557,14 +542,16 @@ export default function CustomerOrderDetail() {
                 </button>
               ))}
             </div>
+            <label htmlFor="cancel-order-reason" className="sr-only">Cancellation reason</label>
             <Textarea
+              id="cancel-order-reason"
               placeholder="Or describe your reason..."
               className="text-sm mb-3 h-16"
               value={cancelReason}
               onChange={e => setCancelReason(e.target.value)}
             />
             {cancelError && (
-              <p className="text-xs text-destructive mb-3 flex items-center gap-1.5">
+              <p className="text-xs text-destructive mb-3 flex items-center gap-1.5" role="alert">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {cancelError}
               </p>
             )}

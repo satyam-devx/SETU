@@ -4,8 +4,7 @@ import { ArrowLeft, Star, Search, AlertCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendors } from '@/lib/api';
+import { useVendorsByVillage } from '@/hooks/queries/useCatalog';
 import { useVillage } from '@/lib/village';
 import Img from '@/components/shared/Img';
 import { smartGoBack } from '@/lib/utils';
@@ -25,11 +24,7 @@ export default function CustomerVendors() {
   const [query, setQuery] = useState('');
   const { village } = useVillage();
 
-  const { data: vendors, isLoading, error, refetch } = useDataFetch(
-    () => getVendors({ villageId: village?.id }),
-    [village?.id],
-    { cacheKey: `vendors:village:${village?.id}`, enabled: true }
-  );
+  const { data: vendors, isLoading, error, refetch } = useVendorsByVillage(village?.id);
 
   const list = vendors ?? [];
   const filtered = list.filter(v =>

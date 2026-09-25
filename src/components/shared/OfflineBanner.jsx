@@ -5,30 +5,18 @@
 // Does NOT block the UI — allows browsing cached data.
 // ═══════════════════════════════════════════════════════════
 import React, { useState, useEffect } from 'react';
+import { subscribeNetwork } from '@/lib/network-state';
 import { WifiOff, Wifi } from 'lucide-react';
 
 export default function OfflineBanner() {
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
   const [showRestored, setShowRestored] = useState(false);
 
-  useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
-      setShowRestored(true);
-      setTimeout(() => setShowRestored(false), 3000);
-    };
-    const handleOffline = () => {
-      setIsOnline(false);
-      setShowRestored(false);
-    };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
+  useEffect(() => subscribeNetwork(online => {
+    setIsOnline(online);
+    if (online) { setShowRestored(true); const timer = setTimeout(() => setShowRestored(false), 3000); return () => clearTimeout(timer); }
+    setShowRestored(false);
+  }), []);
 
   if (isOnline && !showRestored) return null;
 

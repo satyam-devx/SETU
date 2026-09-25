@@ -10,6 +10,7 @@ import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
 import { AdminAPI } from '@/lib/api';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { subscribeRealtimeChannel } from '@/lib/realtime-manager';
 
 const KYC_STYLE = {
   approved: 'bg-green-100 text-green-700',
@@ -52,13 +53,12 @@ export default function AdminRiders() {
   // Realtime: rider online status
   useEffect(() => {
     if (!isSupabaseConfigured) return; // demo mode has no real Supabase project — see CHANGELOG.md
-    const channel = supabase
-      .channel('admin-riders-online')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'riders' }, (payload) => {
-        setRiders(prev => prev.map(r => r.id === payload.new.id ? { ...r, ...payload.new } : r));
-      })
-      .subscribe();
-    return () => supabase.removeChannel(channel);
+    return subscribeRealtimeChannel({
+      key: 'admin:riders',
+      build: (channel, emit) => channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'riders' }, emit),
+      onEvent: payload => setRiders(prev => prev.map(r => r.id === payload.new.id ? { ...r, ...payload.new } : r)),
+      onRecover: loadData,
+    });
   }, []);
 
   const handleToggleActive = async (riderId, current) => {

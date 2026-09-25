@@ -10,33 +10,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
-import { RiderAPI } from '@/lib/api';
+import { useRiderByUser } from '@/hooks/queries/useRider';
 import { supabase } from '@/lib/supabase';
 
 export default function RiderProfile() {
   const { user } = useAuth();
 
-  const [rider,    setRider]    = useState(null);
-  const [loading,  setLoading]  = useState(true);
+  const { data: rider, isLoading: loading } = useRiderByUser(user?.id);
   const [editing,  setEditing]  = useState(false);
   const [phone,    setPhone]    = useState('');
   const [saving,   setSaving]   = useState(false);
   const [saved,    setSaved]    = useState(false);
   const [saveErr,  setSaveErr]  = useState(null);
-
-  // ── Load real rider row ──────────────────────────────────
-  useEffect(() => {
-    if (!user?.id) return;
-
-    RiderAPI.getProfile(user.id).then(({ data, error }) => {
-      if (error) console.warn('[RiderProfile] load error:', error.message);
-      if (data) {
-        setRider(data);
-        setPhone(data.phone ?? '');
-      }
-      setLoading(false);
-    });
-  }, [user?.id]);
 
   // ── Real per-document verification status ─────────────────
   // The checklist below used to read rider.aadhaar_verified,
@@ -71,7 +56,7 @@ export default function RiderProfile() {
     if (error) {
       setSaveErr('Could not save. Try again.');
     } else {
-      setRider(r => ({ ...r, phone }));
+      // Query cache is refreshed by the mutation boundary after save.
       setSaved(true);
       setEditing(false);
       setTimeout(() => setSaved(false), 2500);

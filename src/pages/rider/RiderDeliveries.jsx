@@ -11,11 +11,10 @@ import AppHeader from '@/components/shared/AppHeader';
 import { useNavigate } from 'react-router-dom';
 import RiderNavigationMap from '@/components/maps/RiderNavigationMap';
 import { useAuth } from '@/lib/AuthContext';
-import { RiderAPI } from '@/lib/api';
-import { useStore, useRiderState } from '@/lib/store';
-import { useDataFetch } from '@/hooks/useDataFetch';
+import { useRiderByUser } from '@/hooks/queries/useRider';
+import { useRiderOrders, fetchOrderPage } from '@/hooks/queries/useOrders';
+import { useRiderState } from '@/lib/store';
 import { useRiderLocation } from '@/hooks/useRiderLocation';
-import { supabase } from '@/lib/supabase';
 
 const ACTIVE_STATUSES = ['accepted', 'picked_up', 'on_the_way', 'ready'];
 
@@ -24,16 +23,8 @@ export default function RiderDeliveries() {
   const navigate = useNavigate();
 
   // ── Resolve riders.id from user.id ──────────────────────
-  const [riderId,  setRiderId]  = useState(null);
-  const [resolving, setResolving] = useState(true);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    RiderAPI.getProfile(user.id).then(({ data }) => {
-      if (data?.id) setRiderId(data.id);
-      setResolving(false);
-    });
-  }, [user?.id]);
+  const { data: rider, isLoading: resolving } = useRiderByUser(user?.id);
+  const riderId = rider?.id ?? null;
 
   // Live GPS position for the map's rider marker — this page's map
   // usage was passing a `riderUuid` prop that RiderNavigationMap has
@@ -56,19 +47,7 @@ export default function RiderDeliveries() {
   // now includes the customer's phone for the "call customer" button
   // below — see getOrdersByRider) seeds/refreshes the store instead;
   // live updates still arrive through the layout's single channel.
-  const { state, dispatch } = useStore();
-  const { data: fetchedOrders, isLoading: ordersLoading } = useDataFetch(
-    () => RiderAPI.getOrders(riderId, { limit: 50 }),
-    [riderId],
-    { cacheKey: `rider-orders-${riderId}`, enabled: !!riderId }
-  );
-  useEffect(() => {
-    if (fetchedOrders?.length) dispatch({ type: 'SET_ORDERS', payload: { orders: fetchedOrders } });
-  }, [fetchedOrders, dispatch]);
-  const liveOrders = useMemo(
-    () => riderId ? state.orders.filter(o => (o.riderId ?? o.rider_id) === riderId) : [],
-    [state.orders, riderId]
-  );
+  const { data: liveOrders = [], isLoading: ordersLoading } = useRiderOrders(riderId, { limit: 50 });
 
   const activeDeliveries = liveOrders.filter(o =>
     ACTIVE_STATUSES.includes(o.status)
@@ -86,31 +65,18 @@ export default function RiderDeliveries() {
     if (tab !== 'completed' || !riderId) return;
     setLoadingCompleted(true);
 
-    supabase
-      .from('orders')
-      .select('id, order_number, status, total, customer_name, vendor_name, delivery_address, created_at, is_cod')
-      .eq('rider_id', riderId)
-      .eq('status', 'delivered')
-      .range(0, PAGE_SIZE - 1)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        setCompleted(data ?? []);
-        setPage(0);
-        setHasMore((data?.length ?? 0) === PAGE_SIZE);
-        setLoadingCompleted(false);
-      });
+    fetchOrderPage('rider', riderId, 0, PAGE_SIZE, 'delivered').then(({ data }) => {
+      setCompleted(data ?? []);
+      setPage(0);
+      setHasMore((data?.length ?? 0) === PAGE_SIZE);
+      setLoadingCompleted(false);
+    });
   }, [tab, riderId]);
 
   const loadMoreCompleted = async () => {
     if (!riderId) return;
     const nextPage = page + 1;
-    const { data } = await supabase
-      .from('orders')
-      .select('id, order_number, status, total, customer_name, vendor_name, delivery_address, created_at, is_cod')
-      .eq('rider_id', riderId)
-      .eq('status', 'delivered')
-      .range(nextPage * PAGE_SIZE, (nextPage + 1) * PAGE_SIZE - 1)
-      .order('created_at', { ascending: false });
+    const { data } = await fetchOrderPage('rider', riderId, nextPage, PAGE_SIZE, 'delivered');
 
     setCompleted(prev => [...prev, ...(data ?? [])]);
     setPage(nextPage);

@@ -15,8 +15,10 @@
 // ═══════════════════════════════════════════════════════════
 
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
-import { Suspense, lazy, useEffect } from 'react';
+import { Profiler, Suspense, lazy, useEffect } from 'react';
 import { Toaster } from '@/components/ui/toaster';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '@/lib/query-client';
 import ScrollToTop from './components/ScrollToTop';
 import { CartProvider } from '@/lib/cartContext';
 import { SetuStoreProvider, useStore } from '@/lib/store';
@@ -34,6 +36,10 @@ import AppUpdateBanner from '@/components/shared/AppUpdateBanner';
 import { confirmHealthyBoot } from '@/lib/appUpdater';
 import { Capacitor } from '@capacitor/core';
 import { isSupabaseConfigured, isDemoModeEnabled } from '@/lib/supabase';
+import { useOfflineRecovery } from '@/hooks/useOfflineRecovery';
+import { initializeMobileRuntime } from '@/lib/mobile-runtime';
+import { useLocation } from 'react-router-dom';
+import { markRoute, recordRender, setPerformanceContext } from '@/lib/performance-monitor';
 
 // ── Eager: Auth & onboarding — tiny, always needed first ─
 import LoginOTP           from '@/pages/auth/LoginOTP';
@@ -177,7 +183,7 @@ const SuperAdminDeveloper = lazy(() => import('@/pages/superadmin/SuperAdminDeve
 // ── Portal loading fallback ───────────────────────────────
 function PortalFallback() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
+    <div className="min-h-screen flex items-center justify-center bg-background" role="status" aria-live="polite" aria-busy="true">
       <div className="flex flex-col items-center gap-3">
         <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
         <p className="text-xs text-muted-foreground">Loading…</p>
@@ -187,6 +193,21 @@ function PortalFallback() {
 }
 
 // ── AUTH → STORE BRIDGE ───────────────────────────────────
+function PerformanceRouteTracker() {
+  const location = useLocation();
+
+  useEffect(() => {
+    markRoute(location.pathname);
+    setPerformanceContext({ route: location.pathname });
+  }, [location.pathname]);
+
+  return null;
+}
+
+function performanceProfiler(id, phase, actualDuration, baseDuration, startTime, commitTime) {
+  recordRender({ id, phase, actualDuration, baseDuration, startTime, commitTime });
+}
+
 function AuthStoreBridge() {
   const { profile } = useAuth();
   const { dispatch } = useStore();
@@ -260,12 +281,23 @@ function ConfigErrorScreen() {
 
 // ── APP ───────────────────────────────────────────────────
 function App() {
+  useOfflineRecovery();
   // Confirms this bundle booted successfully to the native OTA plugin —
   // must run unconditionally, before any early return. On a fresh OTA
   // activation this runs a bounded health check first and rolls back
   // automatically if it fails (see src/lib/appUpdater.js). No-op on web.
   useEffect(() => {
     confirmHealthyBoot();
+    let disposed = false;
+    let cleanup = null;
+    initializeMobileRuntime().then(fn => {
+      if (disposed) fn?.();
+      else cleanup = fn;
+    }).catch(error => console.warn('[App] mobile runtime init failed:', error?.message));
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
   }, []);
 
   // SETU is portrait-only — lock orientation on native so the layout
@@ -286,6 +318,7 @@ function App() {
 
   return (
     <ErrorBoundary portal="SETU" fallbackRoute="/login">
+    <QueryClientProvider client={queryClient}>
     <Router basename={import.meta.env.BASE_URL}>
       <AuthProvider>
         <PermissionsProvider>
@@ -295,11 +328,13 @@ function App() {
           <AuthStoreBridge />
           <CartProvider>
             <VillageProvider>
+            <PerformanceRouteTracker />
             <AppBackground />
             <AppUpdateBanner />
             <ScrollToTop />
             <MaintenanceBanner />
             <CommandPalette />
+            <Profiler id="SETU-Routes" onRender={performanceProfiler}>
             <Routes>
 
               {/* ── Public / auth routes (eager) ── */}
@@ -497,6 +532,7 @@ function App() {
               <Route path="*" element={<NotFound />} />
 
             </Routes>
+            </Profiler>
             </VillageProvider>
             <Toaster />
           </CartProvider>
@@ -506,6 +542,7 @@ function App() {
         </PermissionsProvider>
       </AuthProvider>
     </Router>
+    </QueryClientProvider>
     </ErrorBoundary>
   );
 }

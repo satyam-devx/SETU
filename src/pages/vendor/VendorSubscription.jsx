@@ -16,8 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendorByOwnerId } from '@/lib/api';
+import { useVendorByOwner } from '@/hooks/queries/useVendor';
 
 const PLANS = [
   {
@@ -39,11 +38,7 @@ const PLANS = [
 
 export default function VendorSubscription() {
   const { user } = useAuth();
-  const { data: vendor, isLoading } = useDataFetch(
-    () => getVendorByOwnerId(user?.id),
-    [user?.id],
-    { cacheKey: `vendor-profile-${user?.id}`, enabled: !!user?.id }
-  );
+  const { data: vendor, isLoading } = useVendorByOwner(user?.id);
   const current = String(vendor?.subscription_tier || 'free').toLowerCase();
   const currentPlan = PLANS.find(p => p.name.toLowerCase() === current) ?? PLANS[0];
 

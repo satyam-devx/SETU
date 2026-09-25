@@ -4,8 +4,7 @@ import { ArrowLeft, Star, MapPin, Clock, ShoppingBag, AlertCircle } from 'lucide
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendorById, getVendorCategories } from '@/lib/api';
+import { useVendor, useVendorCategories, useVendorProducts } from '@/hooks/queries/useVendor';
 import Img from '@/components/shared/Img';
 import ProductCard from '@/components/customer/ProductCard';
 import { smartGoBack } from '@/lib/utils';
@@ -32,18 +31,11 @@ export default function CustomerVendorProfile() {
   const navigate = useNavigate();
 
   // getVendorById selects '*, products(*)' — products nested under vendor
-  const { data: vendor, isLoading, error } = useDataFetch(
-    () => getVendorById(vendorId),
-    [vendorId],
-    { cacheKey: `vendor:${vendorId}`, enabled: !!vendorId }
-  );
+  const { data: vendor, isLoading, error } = useVendor(vendorId);
   // Full category set (migration 082) — a shop can belong to several
   // categories now; vendor.category (below) is only ever the first one.
-  const { data: vendorCategories } = useDataFetch(
-    () => getVendorCategories(vendorId),
-    [vendorId],
-    { cacheKey: `vendor-categories-${vendorId}`, enabled: !!vendorId }
-  );
+  const { data: vendorCategories } = useVendorCategories(vendorId);
+  const { data: products = [], isLoading: productsLoading, error: productsError, refetch: refetchProducts } = useVendorProducts(vendorId, { limit: 20 });
 
   if (isLoading) return <VendorSkeleton />;
 
@@ -74,9 +66,7 @@ export default function CustomerVendorProfile() {
   // Products may be nested (from the select join) or absent. Was
   // capped at 6 with no way to see the rest of a vendor's catalog —
   // raised the cap and note the remainder instead of hiding it outright.
-  const availableProducts = (vendor.products ?? []).filter(p => p.is_available !== false);
-  const vendorProducts    = availableProducts.slice(0, 20);
-  const hiddenCount       = availableProducts.length - vendorProducts.length;
+  const vendorProducts = products ?? [];
 
   return (
     <div className="pb-20">
@@ -145,17 +135,22 @@ export default function CustomerVendorProfile() {
           </div>
         </Card>
 
-        {vendorProducts.length > 0 ? (
+        {productsLoading ? (
+          <div className="grid grid-cols-2 gap-3">
+            {[1, 2, 3, 4].map(i => <div key={i} className="h-40 rounded-xl bg-muted animate-pulse" />)}
+          </div>
+        ) : productsError ? (
+          <Card className="p-4 border-border text-center">
+            <p className="text-sm text-destructive">Could not load vendor products.</p>
+            <button onClick={refetchProducts} className="text-xs text-primary font-semibold underline mt-2">Retry</button>
+          </Card>
+        ) : vendorProducts.length > 0 ? (
           <div>
             <h3 className="font-semibold text-sm mb-2">Products</h3>
             <div className="grid grid-cols-2 gap-3">
               {vendorProducts.map(p => <ProductCard key={p.id} product={p} />)}
             </div>
-            {hiddenCount > 0 && (
-              <p className="text-xs text-muted-foreground text-center mt-3">
-                +{hiddenCount} more product{hiddenCount === 1 ? '' : 's'} from this vendor — search to find them
-              </p>
-            )}
+
           </div>
         ) : (
           <Card className="p-4 border-border text-center">

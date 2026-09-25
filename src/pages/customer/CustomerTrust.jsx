@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import AppHeader from '@/components/shared/AppHeader';
-import { useStore } from '@/lib/store';
+import { useAuth } from '@/lib/AuthContext';
 
 const SCORE_TIERS = [
   { min: 0,   max: 399, label: 'Starter',  color: 'text-gray-500',   bg: 'bg-gray-100' },
@@ -39,9 +39,7 @@ const PERKS = [
 ];
 
 export default function CustomerTrust() {
-  const { state }  = useStore();
-  const score      = state.currentUser.setuScore;
-  const isVerified = state.currentUser.isVerified;
+  const { setuScore: score = 500, isVerified = false } = useAuth();
   const tier       = SCORE_TIERS.find(t => score >= t.min && score <= t.max) || SCORE_TIERS[0];
   const nextTier   = SCORE_TIERS[SCORE_TIERS.findIndex(t => t.label === tier.label) + 1];
   const pctToNext  = nextTier ? Math.round(((score - tier.min) / (nextTier.min - tier.min)) * 100) : 100;

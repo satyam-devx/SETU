@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { MapPin, Pencil, Trash2, CheckCircle, Loader2, AlertCircle, Plus } from 'lucide-react';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
-import { getAddresses, createAddress, updateAddress, setDefaultAddress, deleteAddress } from '@/lib/api';
+import { getAddresses } from '@/lib/api';
+import { useAddressMutations } from '@/hooks/mutations/useAddressMutations';
 
 const LABELS = ['Home', 'Work', 'Farm', 'Other'];
 const EMPTY_FORM = { label: 'Home', address: '', landmark: '' };
@@ -187,6 +188,7 @@ function AddressCard({ addr, onEdit, onDelete, onSetDefault, busy }) {
 // ── Main page ───────────────────────────────────────────────────
 export default function CustomerAddresses() {
   const { user } = useAuth();
+  const { add, update, setDefault, remove } = useAddressMutations();
 
   const [addresses, setAddresses] = useState([]);
   const [loading,   setLoading]   = useState(true);
@@ -256,7 +258,7 @@ export default function CustomerAddresses() {
     setFormError(null);
 
     if (formMode === 'new') {
-      const { data, error: err } = await createAddress(user.id, {
+      const { data, error: err } = await add(user.id, {
         label:     form.label,
         address:   form.address.trim(),
         landmark:  form.landmark.trim(),
@@ -272,7 +274,7 @@ export default function CustomerAddresses() {
         closeForm();
       }
     } else {
-      const { data, error: err } = await updateAddress(formMode, {
+      const { data, error: err } = await update(formMode, {
         label:    form.label,
         address:  form.address.trim(),
         landmark: form.landmark.trim(),
@@ -293,7 +295,7 @@ export default function CustomerAddresses() {
   // ── Set default ────────────────────────────────────────────
   const handleSetDefault = async (id) => {
     setBusyId(id);
-    const { error: err } = await setDefaultAddress(id, user?.id);
+    const { error: err } = await setDefault(id, user?.id);
     if (!err) {
       setAddresses(prev => prev.map(a => ({ ...a, isDefault: a.id === id })));
     } else {
@@ -306,7 +308,7 @@ export default function CustomerAddresses() {
   const handleDelete = async (id) => {
     setBusyId(id);
     const wasDefault = addresses.find(a => a.id === id)?.isDefault;
-    const { error: err } = await deleteAddress(id);
+    const { error: err } = await remove(id, user?.id);
     if (!err) {
       setAddresses(prev => {
         const remaining = prev.filter(a => a.id !== id);

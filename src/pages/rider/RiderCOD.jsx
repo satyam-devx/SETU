@@ -9,8 +9,10 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
-import { RiderAPI } from '@/lib/api';
+import { useRiderByUser } from '@/hooks/queries/useRider';
+import { useRiderMutations } from '@/hooks/mutations/useRiderMutations';
 import { supabase } from '@/lib/supabase';
+import { subscribeRealtimeChannel } from '@/lib/realtime-manager';
 
 const STATUS_CONFIG = {
   pending_confirmation: { label: 'Pending',   color: 'bg-amber-100 text-amber-700' },
@@ -22,18 +24,11 @@ const DENOMINATIONS = [2000, 500, 200, 100, 50, 20, 10];
 
 export default function RiderCOD() {
   const { user } = useAuth();
+  const { submitDeposit } = useRiderMutations();
 
   // ── Resolve riders.id ────────────────────────────────────
-  const [riderId,  setRiderId]  = useState(null);
-  const [resolving, setResolving] = useState(true);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    RiderAPI.getProfile(user.id).then(({ data }) => {
-      if (data?.id) setRiderId(data.id);
-      setResolving(false);
-    });
-  }, [user?.id]);
+  const { data: rider, isLoading: resolving } = useRiderByUser(user?.id);
+  const riderId = rider?.id ?? null;
 
   // ── Data state ───────────────────────────────────────────
   const [deposits,       setDeposits]       = useState([]);
@@ -78,28 +73,21 @@ export default function RiderCOD() {
     loadData();
 
     // Realtime: update when admin confirms/rejects
-    const channel = supabase
-      .channel(`cod-deposits-${riderId}`)
-      .on('postgres_changes', {
-        event:  '*',
-        schema: 'public',
-        table:  'cod_deposits',
-        filter: `rider_id=eq.${riderId}`,
-      }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          setDeposits(prev => [payload.new, ...prev]);
-        } else if (payload.eventType === 'UPDATE') {
-          setDeposits(prev =>
-            prev.map(d => d.id === payload.new.id ? payload.new : d)
-          );
-          if (payload.new.status === 'confirmed') {
-            setCodBalance(0);
-          }
-        }
-      })
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
+    const unsubscribe = subscribeRealtimeChannel({
+      key: `rider:cod-deposits:${riderId}`,
+      build: (channel, emit) => channel.on('postgres_changes', {
+        event: '*', schema: 'public', table: 'cod_deposits', filter: `rider_id=eq.${riderId}`,
+      }, emit),
+      onEvent: payload => {
+        if (payload.eventType === 'INSERT') setDeposits(prev => prev.some(d => d.id === payload.new.id) ? prev : [payload.new, ...prev]);
+        else if (payload.eventType === 'UPDATE') {
+          setDeposits(prev => prev.map(d => d.id === payload.new.id ? payload.new : d));
+          if (payload.new.status === 'confirmed') setCodBalance(0);
+        } else if (payload.eventType === 'DELETE') setDeposits(prev => prev.filter(d => d.id !== payload.old?.id));
+      },
+      onRecover: loadData,
+    });
+    return unsubscribe;
   }, [riderId]);
 
   // ── Denomination helpers ─────────────────────────────────
@@ -138,15 +126,9 @@ export default function RiderCOD() {
     setSubmitting(true);
     setSubmitError(null);
 
-    const payload = {
-      rider_id:   riderId,
-      amount:     n,
-      status:     'pending_confirmation',
-      created_at: new Date().toISOString(),
-      ...(computedDenomTotal > 0 ? { denomination_breakdown: denomMap } : {}),
-    };
-
-    const { error } = await supabase.from('cod_deposits').insert(payload);
+    const { error } = await submitDeposit(
+      riderId, n, computedDenomTotal > 0 ? denomMap : null, { userId: user?.id }
+    );
 
     if (error) {
       setSubmitError(error.message ?? 'Submission failed. Please try again.');

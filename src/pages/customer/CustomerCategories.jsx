@@ -17,9 +17,9 @@ import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, AlertCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { useDataFetch } from '@/hooks/useDataFetch';
+import { useProductsByCategory } from '@/hooks/queries/useProducts';
 import { useInView } from '@/hooks/useInView';
-import { getCategoryPreviews, getProducts } from '@/lib/api';
+import { useCategoryPreviews } from '@/hooks/queries/useCatalog';
 import { CategorySkeleton, ProductCardSkeleton } from '@/components/shared/SkeletonCard';
 import EmptyState from '@/components/shared/EmptyState';
 import CategoryCard from '@/components/customer/CategoryCard';
@@ -41,11 +41,12 @@ function ShelfSkeletonRow() {
 function CategoryShelf({ cat }) {
   const [ref, inView] = useInView({ rootMargin: '400px 0px' });
 
-  const { data: products, isLoading, error } = useDataFetch(
-    () => getProducts({ category: cat.name, limit: 8 }),
-    [cat.name],
-    { cacheKey: `categories-page:shelf:${cat.id}`, enabled: inView, staleTime: 60_000 }
-  );
+  const { data: products, isLoading, error } = useProductsByCategory(cat.id, {
+    page: 0,
+    limit: 8,
+    enabled: inView,
+    staleTime: 60_000,
+  });
 
   return (
     <section ref={ref} className="mb-6" aria-labelledby={`cat-shelf-${cat.id}`}>
@@ -81,11 +82,7 @@ export default function CustomerCategories() {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
 
-  const { data: categories, isLoading, error, refetch } = useDataFetch(
-    () => getCategoryPreviews(),
-    [],
-    { cacheKey: 'category-previews' }
-  );
+  const { data: categories, isLoading, error, refetch } = useCategoryPreviews();
 
   const list = categories ?? [];
 

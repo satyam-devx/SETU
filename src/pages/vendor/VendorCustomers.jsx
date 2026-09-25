@@ -5,14 +5,14 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendorByOwnerId, getOrdersByVendor } from '@/lib/api';
+import { useVendorOrders } from '@/hooks/queries/useOrders';
 import { formatCurrency } from '@/lib/utils';
+import { useVendorByOwner } from '@/hooks/queries/useVendor';
 
 export default function VendorCustomers() {
   const {user}=useAuth();
-  const {data:vendor}=useDataFetch(()=>getVendorByOwnerId(user?.id),[user?.id],{enabled:!!user?.id,cacheKey:`vendor-profile-${user?.id}`});
-  const {data:orders,isLoading,error}=useDataFetch(()=>getOrdersByVendor(vendor.id,{limit:100}),[vendor?.id],{enabled:!!vendor?.id,cacheKey:`vendor-customers-${vendor?.id}`});
+  const { data: vendor } = useVendorByOwner(user?.id);
+  const { data: orders = [], isLoading, error } = useVendorOrders(vendor?.id, { limit: 100 });
   const [query,setQuery]=useState('');
   const customers=useMemo(()=>{
     const map=new Map();

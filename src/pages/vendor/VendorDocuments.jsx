@@ -18,13 +18,15 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import AppHeader from '@/components/shared/AppHeader';
 
-import {
-  getKycRecords,
-  upsertKycRecord,
-  getVendorByOwnerId,
-} from '@/lib/api';
+import { upsertKycRecord } from '@/lib/api';
 
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { subscribeRealtimeChannel } from '@/lib/realtime-manager';
+import { useAuth } from '@/lib/AuthContext';
+import { useKycRecords } from '@/hooks/queries/useVendor';
+import { queryClientInstance } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
+import { validateDocumentSignature } from '@/lib/upload-security';
 
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                    */
@@ -167,111 +169,38 @@ function getRecordForType(records, type) {
 /* -------------------------------------------------------------------------- */
 
 export default function VendorDocuments() {
-  const [records, setRecords] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const {
+    data: records = [],
+    isLoading: loading,
+    error: queryError,
+    refetch,
+  } = useKycRecords(user?.id);
   const [uploadingType, setUploadingType] = useState(null);
   const [error, setError] = useState('');
 
   const inputRefs = useRef({});
 
-  /* ---------------------------------------------------------------------- */
-  /* Load authenticated user's real KYC records                             */
-  /* ---------------------------------------------------------------------- */
-
-  const loadDocuments = async () => {
-    setLoading(true);
-    setError('');
-
-    try {
-      if (!isSupabaseConfigured) {
-        /*
-         * Demo/offline mode intentionally has NO fake document data.
-         * Everything starts as "Not Uploaded".
-         */
-        setRecords([]);
-        return;
-      }
-
-      const {
-        data: {
-          user,
-        } = {},
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (authError) {
-        throw authError;
-      }
-
-      if (!user?.id) {
-        throw new Error('Please sign in again to view your documents.');
-      }
-
-      const result = await getKycRecords(user.id);
-
-      if (result.error) {
-        throw new Error(result.error.message);
-      }
-
-      setRecords(Array.isArray(result.data) ? result.data : []);
-    } catch (err) {
-      console.error('[VendorDocuments] load:', err);
-      setError(
-        err?.message ||
-          'Unable to load your business documents. Please try again.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadDocuments();
-  }, []);
+    if (queryError) setError(queryError.message || 'Unable to load your business documents. Please try again.');
+  }, [queryError]);
 
   /* ---------------------------------------------------------------------- */
   /* Real-time KYC updates                                                   */
   /* ---------------------------------------------------------------------- */
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return undefined;
+    if (!isSupabaseConfigured || !user?.id) return undefined;
 
-    let channel;
-
-    const subscribe = async () => {
-      const {
-        data: {
-          user,
-        } = {},
-      } = await supabase.auth.getUser();
-
-      if (!user?.id) return;
-
-      channel = supabase
-        .channel(`vendor-kyc-${user.id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'kyc_records',
-            filter: `user_id=eq.${user.id}`,
-          },
-          () => {
-            loadDocuments();
-          }
-        )
-        .subscribe();
-    };
-
-    subscribe();
-
-    return () => {
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
-    };
-  }, []);
+    return subscribeRealtimeChannel({
+      key: `kyc:${user.id}`,
+      build: (channel, emit) => channel.on('postgres_changes', {
+        event: '*', schema: 'public', table: 'kyc_records', filter: `user_id=eq.${user.id}`,
+      }, emit),
+      onEvent: () => refetch(),
+      onRecover: () => refetch(),
+    });
+  }, [user?.id, refetch]);
 
   /* ---------------------------------------------------------------------- */
   /* Merge database records with the real document definitions               */
@@ -353,35 +282,11 @@ export default function VendorDocuments() {
 
     setError('');
 
-    const maxSize = 10 * 1024 * 1024;
-
-    if (file.size > maxSize) {
-      setError(
-        `${document.name} must be smaller than 10 MB.`
-      );
-      return;
-    }
-
-    const allowedTypes =
-      document.type === 'shop_photo' || document.type === 'selfie'
-        ? ['image/jpeg', 'image/png', 'image/webp']
-        : [
-            'image/jpeg',
-            'image/png',
-            'image/webp',
-            'application/pdf',
-          ];
-
-    if (!allowedTypes.includes(file.type)) {
-      setError(
-        `${document.name} supports ${
-          document.type === 'shop_photo' || document.type === 'selfie'
-            ? 'JPG, PNG or WebP'
-            : 'JPG, PNG, WebP or PDF'
-        }.`
-      );
-      return;
-    }
+    const allowedTypes = document.type === 'shop_photo' || document.type === 'selfie'
+      ? new Set(['image/jpeg', 'image/png', 'image/webp'])
+      : new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+    const validation = await validateDocumentSignature(file, { maxBytes: 10 * 1024 * 1024, allowedTypes });
+    if (!validation.ok) { setError(`${document.name}: ${validation.error}`); return; }
 
     setUploadingType(document.type);
 
@@ -390,17 +295,6 @@ export default function VendorDocuments() {
         throw new Error(
           'Document uploads require a configured SETU backend.'
         );
-      }
-
-      const {
-        data: {
-          user,
-        } = {},
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (authError) {
-        throw authError;
       }
 
       if (!user?.id) {
@@ -496,7 +390,8 @@ export default function VendorDocuments() {
         throw new Error(result.error.message);
       }
 
-      await loadDocuments();
+      await queryClientInstance.invalidateQueries(queryKeys.kyc.byUser(user.id));
+      await refetch();
     } catch (err) {
       console.error('[VendorDocuments] upload:', err);
 
@@ -619,7 +514,7 @@ export default function VendorDocuments() {
                   size="sm"
                   variant="outline"
                   className="mt-2 h-7 text-xs"
-                  onClick={loadDocuments}
+                  onClick={refetch}
                   disabled={loading}
                 >
                   <RefreshCw className="w-3 h-3 mr-1" />

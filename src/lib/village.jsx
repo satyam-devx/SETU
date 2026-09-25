@@ -22,7 +22,7 @@
 // with no separate village-context setter for each call site to
 // remember to invoke.
 // ═══════════════════════════════════════════════════════════
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { getVillages, getVillageById } from './api';
 import { useAuth } from './AuthContext';
 
@@ -68,13 +68,10 @@ export function VillageProvider({ children }) {
     return () => { mounted = false; };
   }, [profile?.village_id, villages, authLoading]);
 
+  const contextValue = useMemo(() => ({ village, villageId: village?.id ?? null, villages, loading }), [village, villages, loading]);
+
   return (
-    <VillageContext.Provider value={{
-      village,
-      villageId: village?.id ?? null,
-      villages,
-      loading,
-    }}>
+    <VillageContext.Provider value={contextValue}>
       {children}
     </VillageContext.Provider>
   );

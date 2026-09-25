@@ -6,15 +6,18 @@
 // ═══════════════════════════════════════════════════════════
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { isSupabaseConfigured } from '@/lib/supabase';
+import { subscribeRealtimeChannel } from '@/lib/realtime-manager';
 import { useStore } from '@/lib/store';
 import { NotificationAPI } from '@/lib/api';
+import { useNotificationMutations } from '@/hooks/mutations/useNotificationMutations';
 
 /**
  * @param {string} userId  - authenticated user's UUID
  */
 export function useRealtimeNotifications(userId) {
   const { state, dispatch } = useStore();
+  const { markRead: markReadMutation, markAllRead: markAllReadMutation } = useNotificationMutations();
   const channelRef = useRef(null);
 
   const [notifications, setNotifications] = useState(state.notifications);
@@ -58,60 +61,44 @@ export function useRealtimeNotifications(userId) {
 
     if (!isSupabaseConfigured || !userId) return;
 
-    const channel = supabase
-      .channel(`notifications-${userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event:  'INSERT',
-          schema: 'public',
-          table:  'notifications',
-          filter: `user_id=eq.${userId}`,
-        },
-        (payload) => {
-          const newNotif = payload.new;
+    const recover = () => fetchNotifications();
+    const unsubscribe = subscribeRealtimeChannel({
+      key: `notifications:${userId}`,
+      build: (channel, emit) => {
+        channel.on('postgres_changes', {
+          event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}`,
+        }, emit);
+      },
+      onEvent: payload => {
+        const updated = payload.new;
+        if (!updated) return;
+        if (payload.eventType === 'INSERT') {
           setNotifications(prev => {
-            if (prev.find(n => n.id === newNotif.id)) return prev;
-            const updated = [newNotif, ...prev];
-            syncUnread(updated);
-            return updated;
+            if (prev.find(n => n.id === updated.id)) return prev;
+            const list = [updated, ...prev];
+            syncUnread(list);
+            return list;
           });
           setUnreadCount(c => c + 1);
-
-          // Update store
-          dispatch({
-            type:    'NOTIFICATION_RECEIVED',
-            payload: { notification: newNotif },
-          });
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event:  'UPDATE',
-          schema: 'public',
-          table:  'notifications',
-          filter: `user_id=eq.${userId}`,
-        },
-        (payload) => {
-          const updated = payload.new;
+          dispatch({ type: 'NOTIFICATION_RECEIVED', payload: { notification: updated } });
+        } else if (payload.eventType === 'UPDATE') {
           setNotifications(prev => {
             const list = prev.map(n => n.id === updated.id ? updated : n);
             syncUnread(list);
             return list;
           });
+        } else if (payload.eventType === 'DELETE') {
+          setNotifications(prev => {
+            const list = prev.filter(n => n.id !== (payload.old?.id ?? updated.id));
+            syncUnread(list);
+            return list;
+          });
         }
-      )
-      .subscribe();
-
-    channelRef.current = channel;
-
-    return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-    };
+      },
+      onRecover: recover,
+    });
+    channelRef.current = unsubscribe;
+    return () => { unsubscribe(); channelRef.current = null; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
@@ -135,9 +122,9 @@ export function useRealtimeNotifications(userId) {
     dispatch({ type: 'NOTIFICATION_READ', payload: { id } });
 
     if (isSupabaseConfigured) {
-      await NotificationAPI.markRead(id);
+      await markReadMutation(id, userId);
     }
-  }, [dispatch, syncUnread]);
+  }, [dispatch, syncUnread, markReadMutation, userId]);
 
   // ── Mark all read ──
   const markAllRead = useCallback(async () => {
@@ -146,9 +133,9 @@ export function useRealtimeNotifications(userId) {
     dispatch({ type: 'NOTIFICATIONS_READ_ALL' });
 
     if (isSupabaseConfigured && userId) {
-      await NotificationAPI.markAllRead(userId);
+      await markAllReadMutation(userId);
     }
-  }, [userId, dispatch]);
+  }, [userId, dispatch, markAllReadMutation]);
 
   const refetch = useCallback(() => fetchNotifications(), [fetchNotifications]);
 

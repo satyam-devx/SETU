@@ -8,7 +8,7 @@
 //  - Pagination-ready (load more)
 //  - Accessible tabs with ARIA
 // ═══════════════════════════════════════════════════════════
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ShoppingBag, Search } from 'lucide-react';
 import AppHeader from '@/components/shared/AppHeader';
@@ -16,9 +16,7 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import EmptyState from '@/components/shared/EmptyState';
 import { OrderRowSkeleton } from '@/components/shared/SkeletonCard';
 import { useAuth } from '@/lib/AuthContext';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { useStore } from '@/lib/store';
-import { getOrdersByCustomer } from '@/lib/api';
+import { useCustomerOrders, fetchOrderPage } from '@/hooks/queries/useOrders';
 import { formatCurrency, timeAgo } from '@/lib/utils';
 
 const TABS = [
@@ -47,16 +45,10 @@ function filterOrders(orders, tab, query) {
 export default function CustomerOrders() {
   const navigate       = useNavigate();
   const { user }       = useAuth();
-  const { state }      = useStore();
   const [tab, setTab]  = useState('all');
   const [query, setQuery] = useState('');
 
-  // Fetch from DB; merge with store (which gets realtime updates)
-  const { data: dbOrders, isLoading, error, refetch } = useDataFetch(
-    () => getOrdersByCustomer(user?.id),
-    [user?.id],
-    { cacheKey: `orders-customer-${user?.id}`, enabled: !!user?.id }
-  );
+  const { data: dbOrders = [], isLoading, error, refetch } = useCustomerOrders(user?.id, { page: 0, limit: 20 });
 
   // ── Pagination ──────────────────────────────────────────────
   // getOrdersByCustomer already supports page/limit server-side, but
@@ -68,6 +60,7 @@ export default function CustomerOrders() {
   const [page,        setPage]        = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore,     setHasMore]     = useState(false);
+  const loadMoreLock = useRef(false);
 
   useEffect(() => {
     setExtraOrders([]);
@@ -76,23 +69,20 @@ export default function CustomerOrders() {
   }, [dbOrders]);
 
   const handleLoadMore = async () => {
-    if (loadingMore || !hasMore || !user?.id) return;
+    if (loadMoreLock.current || loadingMore || !hasMore || !user?.id) return;
+    loadMoreLock.current = true;
     setLoadingMore(true);
     const nextPage = page + 1;
-    const { data, error: pageError } = await getOrdersByCustomer(user.id, { page: nextPage, limit: PAGE_SIZE });
+    const { data, error: pageError } = await fetchOrderPage('customer', user.id, nextPage, PAGE_SIZE);
     setLoadingMore(false);
+    loadMoreLock.current = false;
     if (pageError || !data) return;
     setExtraOrders(prev => [...prev, ...data]);
     setPage(nextPage);
     setHasMore(data.length >= PAGE_SIZE);
   };
 
-  // Merge: prefer DB orders + any realtime-added orders from store
-  const storeOrders = state.orders.filter(o =>
-    user?.id && (o.customerId === user.id || o.customer_id === user.id)
-  );
-  const combinedDbOrders = dbOrders?.length ? [...dbOrders, ...extraOrders] : dbOrders;
-  const allOrders = combinedDbOrders?.length ? combinedDbOrders : storeOrders;
+  const allOrders = [...(dbOrders ?? []), ...extraOrders];
   const filtered  = filterOrders(allOrders, tab, query);
   // "Load More" only makes sense browsing the full unfiltered history —
   // search/tab-filtering only ever look at what's been paged in so far,

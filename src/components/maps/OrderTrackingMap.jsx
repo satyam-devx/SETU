@@ -8,6 +8,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { initLeaflet, calculateETA, getDistance } from '@/lib/maps';
 import { supabase } from '@/lib/supabase';
+import { subscribeRealtimeChannel } from '@/lib/realtime-manager';
 import { Loader2, WifiOff, Clock } from 'lucide-react';
 
 // OSM tile URL — no key needed
@@ -82,33 +83,36 @@ export default function OrderTrackingMap({ riderId, vendorLoc, customerLoc }) {
             iconAnchor: [8, 8],
           });
 
-          channelRef.current = supabase
-            .channel(`rider-loc-${riderId}`)
-            .on('postgres_changes', {
-              event:  'UPDATE',
-              schema: 'public',
-              table:  'rider_locations',
-              filter: `rider_id=eq.${riderId}`,
-            }, (payload) => {
+          channelRef.current = subscribeRealtimeChannel({
+            key: `rider-location:${riderId}`,
+            build: (channel, emit) => channel.on('postgres_changes', {
+              event: 'UPDATE', schema: 'public', table: 'rider_locations', filter: `rider_id=eq.${riderId}`,
+            }, emit),
+            onEvent: payload => {
               if (!mounted || !mapRef.current) return;
               const { lat, lng } = payload.new;
-
               if (!riderRef.current) {
-                riderRef.current = L.marker([lat, lng], { icon: orangeIcon })
-                  .addTo(mapRef.current)
-                  .bindPopup('🛵 Rider');
+                riderRef.current = L.marker([lat, lng], { icon: orangeIcon }).addTo(mapRef.current).bindPopup('🛵 Rider');
               } else {
                 riderRef.current.setLatLng([lat, lng]);
               }
-
-              // Pan map to follow rider smoothly
               mapRef.current.panTo([lat, lng], { animate: true, duration: 0.8 });
-
-              // Update ETA
               const dist = getDistance(lat, lng, customerLoc.lat, customerLoc.lng);
               setEta(calculateETA(dist));
-            })
-            .subscribe();
+            },
+            onRecover: async () => {
+              const { data } = await supabase.from('rider_locations').select('*').eq('rider_id', riderId).order('recorded_at', { ascending: false }).limit(1).maybeSingle();
+              if (data) {
+                const dist = getDistance(data.lat, data.lng, customerLoc.lat, customerLoc.lng);
+                setEta(calculateETA(dist));
+                if (mounted && mapRef.current) {
+                  if (!riderRef.current) riderRef.current = L.marker([data.lat, data.lng], { icon: orangeIcon }).addTo(mapRef.current).bindPopup('🛵 Rider');
+                  else riderRef.current.setLatLng([data.lat, data.lng]);
+                  mapRef.current.panTo([data.lat, data.lng], { animate: true, duration: 0.8 });
+                }
+              }
+            },
+          });
         }
 
       } catch (err) {
@@ -122,7 +126,7 @@ export default function OrderTrackingMap({ riderId, vendorLoc, customerLoc }) {
     return () => {
       mounted = false;
       if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
+        channelRef.current();
         channelRef.current = null;
       }
       if (mapRef.current) {

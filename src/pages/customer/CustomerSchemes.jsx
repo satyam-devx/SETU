@@ -5,9 +5,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import AppHeader from '@/components/shared/AppHeader';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { getSchemes } from '@/lib/api';
+import { useSchemes } from '@/hooks/queries/useCatalog';
 
+import { safeExternalUrl } from '@/lib/frontend-security';
 const CATEGORY_COLORS = {
   Agriculture: 'bg-green-100 text-green-700',
   Employment:  'bg-blue-100 text-blue-700',
@@ -21,11 +21,7 @@ export default function CustomerSchemes() {
   const [expanded, setExpanded] = useState(null);
   const [filter,   setFilter]   = useState('all');
 
-  const { data: schemes, isLoading, error, refetch } = useDataFetch(
-    () => getSchemes(),
-    [],
-    { cacheKey: 'schemes:all', staleTime: 120_000 }
-  );
+  const { data: schemes, isLoading, error, refetch } = useSchemes({}, { staleTime: 120_000 });
 
   const list = schemes ?? [];
 
@@ -164,7 +160,7 @@ export default function CustomerSchemes() {
                   {!scheme.applied && (
                     scheme.apply_url ? (
                       <Button className="w-full h-8 text-xs gap-1" asChild>
-                        <a href={scheme.apply_url} target="_blank" rel="noopener noreferrer">
+                        <a href={safeExternalUrl(scheme.apply_url)} target="_blank" rel="noopener noreferrer">
                           <ExternalLink className="w-3 h-3" /> Apply / Learn More
                         </a>
                       </Button>

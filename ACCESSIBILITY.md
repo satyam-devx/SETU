@@ -27,15 +27,15 @@ Test on a real low-end Android device where possible.
 
 ### Screen reader (TalkBack on Android, NVDA on desktop)
 - [ ] Every screen has a logical heading order (h1→h2…), no skipped levels.
-- [ ] All actionable controls announce a name + role (buttons, links, switches).
+- [x] F11 hardened custom actionable controls and language selection to use native buttons/labels; continue manual portal-wide verification.
 - [ ] Icon-only buttons have an `aria-label` (back, notifications, dismiss).
 - [ ] Images: meaningful `alt`; decorative images `alt=""`. `<Img>` defaults to
       `alt=""` — confirm callers pass real text for content images.
-- [ ] Form fields have associated `<label>`s; errors are announced
+- [x] F11 added explicit labels and alert semantics to custom support/cancel forms; continue portal-wide manual verification.
       (`role="alert"`/`aria-live`) — see `ProtectedRoute` error state as the pattern.
 - [ ] Dynamic updates (toasts, order status, loading) use `aria-live` and don't
       steal focus unexpectedly.
-- [ ] Modals/sheets trap focus and restore it on close; Esc closes them.
+- [x] Custom modals/sheets use the shared focus-trap pattern and restore focus on close; Esc closes them. See `src/hooks/useFocusTrap.js` and `DOCUMENTS/F11-UX-ACCESSIBILITY-ENGINEERING.md`.
 
 ### Keyboard only (no pointer)
 - [ ] Every interactive element is reachable and operable via Tab/Enter/Space.

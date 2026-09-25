@@ -24,7 +24,7 @@ import React, {
   createContext,
   useContext,
   useState,
-  useEffect,
+  useEffect, useMemo,
   useCallback,
 } from 'react';
 import { Capacitor } from '@capacitor/core';
@@ -298,7 +298,8 @@ export function AuthProvider({ children }) {
     return await supabase.auth.signUp({ email, password });
   }, []);
 
-  const value = {
+  const value = useMemo(() => ({
+
     user, session, profile,
     isLoading, isAuthenticated, isProfileLoaded,
     authError, clearError,
@@ -317,7 +318,12 @@ export function AuthProvider({ children }) {
     reloadProfile: async () => {
       if (user) await loadProfile(user);
     },
-  };
+  
+  }), [
+    user, session, profile, isLoading, isAuthenticated, isProfileLoaded,
+    authError, clearError, signOut, sendOTP, verifyOTP,
+    signInWithEmail, signUpWithEmail, signInWithGoogle, createProfile, updateProfile,
+  ]);
 
   return (
     <AuthContext.Provider value={value}>

@@ -29,6 +29,13 @@ export default class ErrorBoundary extends React.Component {
   }
 
   handleReset = () => {
+    // Re-rendering the same crashing subtree can immediately throw again.
+    // A full reload clears module/component state and is the safest recovery
+    // path for a production WebView after an unrecoverable render fault.
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+      return;
+    }
     this.setState({ hasError: false, error: null, errorInfo: null });
   };
 
@@ -38,7 +45,7 @@ export default class ErrorBoundary extends React.Component {
     const { portal = 'App', fallbackRoute = '/' } = this.props;
 
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-background px-6 gap-5">
+      <div role="alert" aria-live="assertive" className="min-h-screen flex flex-col items-center justify-center bg-background px-6 gap-5">
         <div className="w-14 h-14 rounded-2xl bg-destructive/10 flex items-center justify-center">
           <AlertTriangle className="w-7 h-7 text-destructive" />
         </div>
@@ -55,6 +62,7 @@ export default class ErrorBoundary extends React.Component {
         </div>
         <div className="flex gap-3">
           <button
+            type="button"
             onClick={this.handleReset}
             className="flex items-center gap-2 text-sm text-primary font-medium"
           >

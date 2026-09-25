@@ -18,16 +18,14 @@ import Img from '@/components/shared/Img';
 import { useCart } from '@/lib/cartContext';
 import { formatCurrency, calcOrderTotals } from '@/lib/utils';
 
-function CartItem({ item }) {
-  const { updateQuantity, removeItem } = useCart();
-
+const CartItem = React.memo(function CartItem({ item, updateQuantity, removeItem }) {
   return (
     <div className="setu-card p-3 flex gap-3">
       {/* Image — object-contain, not object-cover: vendor photos vary in
           aspect ratio and object-cover inside this fixed square box was
           cropping the top/bottom off anything not already square. */}
       <div className="w-16 h-16 rounded-lg bg-muted shrink-0 overflow-hidden">
-        <Img src={item.image_url} alt={item.name} className="w-full h-full object-contain" />
+        <Img src={item.image_url} alt={item.name} width={64} height={64} sizes="64px" className="w-full h-full object-contain" />
       </div>
 
       {/* Details */}
@@ -80,11 +78,11 @@ function CartItem({ item }) {
       </div>
     </div>
   );
-}
+});
 
 export default function CustomerCart() {
   const navigate = useNavigate();
-  const { items, totalItems, totalPrice, clearCart } = useCart();
+  const { items, totalItems, totalPrice, clearCart, updateQuantity, removeItem } = useCart();
 
   const { subtotal, deliveryFee, platformFee, total } = calcOrderTotals(
     items.map(i => ({ price: i.price, qty: i.quantity }))
@@ -145,7 +143,7 @@ export default function CustomerCart() {
           <div className="space-y-3" role="list" aria-label="Cart items">
             {items.map(item => (
               <div key={item.id} role="listitem">
-                <CartItem item={item} />
+                <CartItem item={item} updateQuantity={updateQuantity} removeItem={removeItem} />
               </div>
             ))}
           </div>

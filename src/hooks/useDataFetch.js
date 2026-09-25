@@ -1,120 +1,138 @@
-// ═══════════════════════════════════════════════════════════
-// SETU — useDataFetch
-// Unified data-fetching hook with:
-//   - Loading / error / data states
-//   - Automatic retry on network errors (up to 3x)
-//   - Stale-while-revalidate pattern (SWR-lite)
-//   - Abort on unmount to prevent state updates after unmount
-//   - Ready for React Query migration (same interface)
+// SETU — useDataFetch compatibility adapter (F2)
 //
-// Constitution: "Backend-first mindset. Every hook designed
-// so future backend implementation requires minimal frontend changes."
-// ═══════════════════════════════════════════════════════════
-import { useState, useEffect, useCallback, useRef } from 'react';
+// Existing consumers keep the same API while the implementation runs through
+// the TanStack Query-backed SETU query client adapter. This preserves legacy
+// callers while sharing the same cache, dedupe, invalidation, retry and GC policy.
 
-const cache = new Map(); // in-memory SWR cache (per session)
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { queryClientInstance } from '@/lib/query-client';
 
-/**
- * @param {Function} fetcher - async function returning { data, error }
- * @param {Array}    deps    - re-fetch when these change
- * @param {Object}   opts    - { cacheKey, retries, staleTime, enabled }
- */
+let anonymousQueryId = 0;
+
+function toError(error) {
+  if (error instanceof Error) return error;
+  return new Error(error?.message || String(error || 'Network error'));
+}
+
 export function useDataFetch(fetcher, deps = [], opts = {}) {
   const {
-    cacheKey   = null,
-    retries    = 2,
-    staleTime  = 30_000,   // 30s
-    enabled    = true,
-    onSuccess  = null,
-    onError    = null,
+    cacheKey = null,
+    retries = 2,
+    staleTime = 30_000,
+    enabled = true,
+    onSuccess = null,
+    onError = null,
   } = opts;
 
-  const [data,      setData]      = useState(() => cacheKey ? cache.get(cacheKey)?.data ?? null : null);
-  const [isLoading, setIsLoading] = useState(enabled && !data);
-  const [error,     setError]     = useState(null);
-  const [lastFetch, setLastFetch] = useState(0);
-  const abortRef  = useRef(null);
+  const localKeyRef = useRef(null);
+  if (!localKeyRef.current) {
+    localKeyRef.current = cacheKey ?? `__useDataFetch:${++anonymousQueryId}`;
+  }
+  const key = cacheKey ?? localKeyRef.current;
+  const initial = queryClientInstance.getQueryState(key);
+  const [state, setState] = useState(() => ({
+    data: initial?.data ?? null,
+    error: initial?.error ?? null,
+    isFetching: Boolean(initial?.isFetching),
+    updatedAt: initial?.updatedAt ?? 0,
+  }));
   const mountedRef = useRef(true);
+  const fetcherRef = useRef(fetcher);
+  const onSuccessRef = useRef(onSuccess);
+  const onErrorRef = useRef(onError);
+  const staleTimeRef = useRef(staleTime);
+  const retriesRef = useRef(retries);
+  fetcherRef.current = fetcher;
+  onSuccessRef.current = onSuccess;
+  onErrorRef.current = onError;
+  staleTimeRef.current = staleTime;
+  retriesRef.current = retries;
 
-  const run = useCallback(async (attempt = 0) => {
+  const sync = useCallback(() => {
+    if (!key) return;
+    const next = queryClientInstance.getQueryState(key);
+    if (!mountedRef.current || !next) return;
+    setState({
+      data: next.data ?? null,
+      error: next.error ?? null,
+      isFetching: next.isFetching,
+      updatedAt: next.updatedAt,
+    });
+  }, [key]);
+
+  const run = useCallback(async ({ force = false } = {}) => {
     if (!enabled) return;
-
-    // SWR: if cache fresh, skip refetch but still return cached data
-    if (cacheKey && cache.has(cacheKey)) {
-      const cached = cache.get(cacheKey);
-      if (Date.now() - cached.ts < staleTime) {
-        setData(cached.data);
-        setIsLoading(false);
-        return;
-      }
-    }
-
-    setIsLoading(true);
-    setError(null);
-
+    sync();
     try {
-      const result = await fetcher();
-      if (!mountedRef.current) return;
-
-      if (result.error) {
-        if (attempt < retries) {
-          const delay = Math.min(400 * 2 ** attempt, 3000);
-          setTimeout(() => mountedRef.current && run(attempt + 1), delay);
-          return;
-        }
-        setError(result.error);
-        onError?.(result.error);
-      } else {
-        setData(result.data);
-        setLastFetch(Date.now());
-        if (cacheKey) cache.set(cacheKey, { data: result.data, ts: Date.now() });
-        onSuccess?.(result.data);
-      }
-    } catch (e) {
-      if (!mountedRef.current) return;
-      if (attempt < retries) {
-        setTimeout(() => mountedRef.current && run(attempt + 1), 600);
-        return;
-      }
-      const err = { message: e.message || 'Network error' };
-      setError(err);
-      onError?.(err);
-    } finally {
-      if (mountedRef.current) setIsLoading(false);
+      const data = await queryClientInstance.fetchQuery(key, fetcherRef.current, {
+        staleTime: staleTimeRef.current,
+        retries: retriesRef.current,
+        force,
+      });
+      if (!mountedRef.current) return data;
+      setState(prev => ({ ...prev, data: data ?? null, error: null, isFetching: false, updatedAt: Date.now() }));
+      onSuccessRef.current?.(data);
+      return data;
+    } catch (error) {
+      const normalized = toError(error);
+      if (!mountedRef.current) return undefined;
+      setState(prev => ({ ...prev, error: normalized, isFetching: false }));
+      onErrorRef.current?.(normalized);
+      return undefined;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, cacheKey, staleTime, retries, ...deps]);
+  }, [enabled, key, sync]);
 
   useEffect(() => {
     mountedRef.current = true;
+    if (!enabled) return () => { mountedRef.current = false; };
+
+    const unsubscribe = queryClientInstance.subscribe(key, sync);
+    const cached = queryClientInstance.getQueryState(key);
+    if (cached) {
+      setState({
+        data: cached.data ?? null,
+        error: cached.error ?? null,
+        isFetching: cached.isFetching,
+        updatedAt: cached.updatedAt,
+      });
+    }
+
     run();
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+      unsubscribe();
+    };
+  // `deps` are intentionally part of the query identity supplied by callers.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [run]);
+  }, [key, enabled, run, ...deps]);
 
-  const refetch = useCallback(() => {
-    if (cacheKey) cache.delete(cacheKey); // bust cache
-    run();
-  }, [run, cacheKey]);
+  const refetch = useCallback(() => run({ force: true }), [run]);
 
-  const invalidate = useCallback((key) => {
-    cache.delete(key || cacheKey);
-  }, [cacheKey]);
+  const invalidate = useCallback((targetKey = key) => {
+    return queryClientInstance.invalidateQueries(targetKey);
+  }, [key]);
+
+  const isStale = !state.updatedAt || Date.now() - state.updatedAt >= staleTime;
 
   return {
-    data,
-    isLoading,
-    error,
+    data: state.data,
+    isLoading: state.isFetching && state.data == null,
+    isFetching: state.isFetching,
+    error: state.error,
     refetch,
     invalidate,
-    isStale: Date.now() - lastFetch > staleTime,
+    isStale,
   };
 }
 
-// Utility: clear all or prefix-matched cache entries
 export function clearCache(prefix = null) {
-  if (!prefix) { cache.clear(); return; }
-  for (const key of cache.keys()) {
-    if (key.startsWith(prefix)) cache.delete(key);
+  if (!prefix) {
+    queryClientInstance.clear();
+    return;
   }
+  queryClientInstance.removeQueries(prefix);
+}
+
+export function invalidateQueries(keyOrPredicate) {
+  return queryClientInstance.invalidateQueries(keyOrPredicate);
 }

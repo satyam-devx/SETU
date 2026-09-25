@@ -23,8 +23,8 @@ import {
 import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
 import { useAuth } from '@/lib/AuthContext';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import { getVendorByOwnerId, getOrdersByVendor } from '@/lib/api';
+import { useVendorByOwner } from '@/hooks/queries/useVendor';
+import { useVendorOrders } from '@/hooks/queries/useOrders';
 import { formatCurrency } from '@/lib/utils';
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -70,27 +70,21 @@ export default function VendorEarnings() {
   const navigate = useNavigate();
 
   // ── Vendor profile ────────────────────────────────────────
-  const { data: vendor } = useDataFetch(
-    () => getVendorByOwnerId(user?.id),
-    [user?.id],
-    { cacheKey: `vendor-profile-${user?.id}`, enabled: !!user?.id }
-  );
+  const { data: vendor } = useVendorByOwner(user?.id);
 
   // ── Server-fetched vendor orders ─────────────────────────
-  const { data: fetchedOrders } = useDataFetch(
-    () => getOrdersByVendor(vendor.id, { limit: 100 }),
-    [vendor?.id],
-    { enabled: !!vendor?.id, cacheKey: `vendor-earnings-orders-${vendor?.id}` }
-  );
+  const { data: fetchedOrders = [] } = useVendorOrders(vendor?.id, { limit: 100 });
 
   const vendorOrders = useMemo(() =>
     (fetchedOrders ?? []).filter(o => o.status !== 'cancelled'),
     [fetchedOrders]
   );
 
-  const totalRevenue = vendorOrders.reduce((s, o) => s + (o.total ?? 0), 0);
-  const platformFees = vendorOrders.reduce((s, o) => s + (o.platform_fee ?? o.platformFee ?? 0), 0);
-  const netEarnings  = totalRevenue - platformFees;
+  const { totalRevenue, platformFees, netEarnings } = useMemo(() => {
+    const total = vendorOrders.reduce((s, o) => s + (o.total ?? 0), 0);
+    const fees = vendorOrders.reduce((s, o) => s + (o.platform_fee ?? o.platformFee ?? 0), 0);
+    return { totalRevenue: total, platformFees: fees, netEarnings: total - fees };
+  }, [vendorOrders]);
 
   // ── Chart data derived from real orders ───────────────────
   const weeklyData  = useMemo(() => buildWeeklyChart(vendorOrders),  [vendorOrders]);
@@ -99,14 +93,14 @@ export default function VendorEarnings() {
   const chartKey    = period === 'week' ? 'day'       : 'week';
 
   // ── Recent order settlements for the list ────────────────
-  const recentSettlements = vendorOrders.slice(0, 6).map(o => ({
+  const recentSettlements = useMemo(() => vendorOrders.slice(0, 6).map(o => ({
     id:       o.order_number ?? o.orderNumber ?? o.id,
     customer: o.customer_name ?? o.customerName ?? 'Customer',
     amount:   o.total ?? 0,
     fee:      o.platform_fee ?? o.platformFee ?? 0,
     net:      (o.total ?? 0) - (o.platform_fee ?? o.platformFee ?? 0),
     time:     new Date(o.created_at ?? o.createdAt).toLocaleTimeString('en-IN', { timeStyle: 'short' }),
-  }));
+  })), [vendorOrders]);
 
   return (
     <div className="pb-20">

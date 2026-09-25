@@ -14,20 +14,21 @@
 //  - Voice search integrated
 //  - Accessibility: proper aria labels, roles
 // ═══════════════════════════════════════════════════════════
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Search, Mic, MapPin, ChevronRight, Star, Bell,
   ShoppingCart, RefreshCw, Loader2, CheckCircle2, AlertCircle,
 } from 'lucide-react';
-import { useStore } from '@/lib/store';
+import { useCustomerOrders } from '@/hooks/queries/useOrders';
+import { useNotifications } from '@/hooks/queries/useNotifications';
+import Img from '@/components/shared/Img';
 import { useVillage } from '@/lib/village';
 import { useAuth } from '@/lib/AuthContext';
 import { useCart } from '@/lib/cartContext';
-import { useDataFetch } from '@/hooks/useDataFetch';
-import {
-  getCategoryPreviews, getVendors, getProducts, getSchemes, getSevaProviders,
-} from '@/lib/api';
+import { safeExternalUrl, safeInternalRedirect } from '@/lib/frontend-security';
+import { useCategoryPreviews, useVendorsByVillage, useSchemes, useSevaProvidersByVillage } from '@/hooks/queries/useCatalog';
+import { useProducts } from '@/hooks/queries/useProducts';
 import { useFcmToken } from '@/hooks/useFcmToken';
 import {
   BannerSkeleton, CategorySkeleton, VendorCardSkeleton, ProductCardSkeleton,
@@ -37,6 +38,7 @@ import BannerCard from '@/components/shared/BannerCard';
 import CategoriesCarousel from '@/components/customer/CategoriesCarousel';
 import ProductCard from '@/components/customer/ProductCard';
 import { useRealtimeBanners } from '@/hooks/useRealtimeBanners';
+import { useInView } from '@/hooks/useInView';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -55,11 +57,13 @@ function VendorCard({ vendor }) {
       <div className="setu-card overflow-hidden">
         <div className="h-24 bg-muted relative overflow-hidden">
           {vendor.image_url && !imgErr ? (
-            <img
+            <Img
               src={vendor.image_url}
               alt={vendor.name}
+              width={160}
+              height={96}
+              sizes="160px"
               className="w-full h-full object-cover"
-              loading="lazy"
               onError={() => setImgErr(true)}
             />
           ) : (
@@ -126,9 +130,11 @@ function SevaProviderCard({ p }) {
 // ── Main ──────────────────────────────────────────────────
 export default function CustomerHome() {
   const navigate      = useNavigate();
-  const { state }     = useStore();
   const { village, villages: allVillages, loading: villageLoading } = useVillage();
   const { user, updateProfile } = useAuth();
+  const { data: orders = [] } = useCustomerOrders(user?.id, { limit: 100 });
+  const { data: notifications = [] } = useNotifications(user?.id, { limit: 30 });
+  const unreadCount = useMemo(() => notifications.filter(n => !n.read && !n.is_read).length, [notifications]);
   const { cartCount } = useCart();
   const [query, setQuery]           = useState('');
   const [bannerIdx, setBannerIdx]   = useState(0);
@@ -187,43 +193,36 @@ export default function CustomerHome() {
   }, []);
 
   // Live orders: only show if user is authenticated (never show u1 mock orders)
-  const liveOrders = state.orders.filter(o =>
+  const liveOrders = useMemo(() => orders.filter(o =>
     user?.id && (o.customerId === user.id || o.customer_id === user.id) &&
     !['delivered', 'cancelled'].includes(o.status)
-  );
+  ), [orders, user?.id]);
 
   // ── Data fetching ─────────────────────────────────────
-  const {
-    data: categories, isLoading: catsLoading,
-    error: catsError, refetch: refetchCats,
-  } = useDataFetch(
-    () => getCategoryPreviews(),
-    [], { cacheKey: 'category-previews' }
-  );
-  const {
-    data: vendors, isLoading: vendorsLoading,
-    error: vendorsError, refetch: refetchVendors,
-  } = useDataFetch(
-    () => getVendors({ villageId: village?.id }),
-    [village?.id], { cacheKey: `vendors-${village?.id}` }
-  );
-  const {
-    data: sevaProviders, isLoading: sevaLoading,
-  } = useDataFetch(
-    () => getSevaProviders({ villageId: village?.id }),
-    [village?.id], { cacheKey: `seva-providers-home-${village?.id}` }
-  );
-  const {
-    data: products, isLoading: productsLoading,
-    error: productsError, refetch: refetchProducts,
-  } = useDataFetch(
-    () => getProducts({ limit: 6 }),
-    [], { cacheKey: 'home-products' }
-  );
-  const { data: schemes, isLoading: schemesLoading }     = useDataFetch(
-    () => getSchemes(),
-    [], { cacheKey: 'schemes', staleTime: 300_000 }
-  );
+  const { data: categories, isLoading: catsLoading, error: catsError, refetch: refetchCats } = useCategoryPreviews();
+
+  // Home's above-the-fold critical path is intentionally limited to location,
+  // banners and categories. Below-the-fold sections opt into fetching only
+  // when they approach the viewport, reducing initial network/CPU work on
+  // low-end Android/WebView connections.
+  const [vendorsRef, vendorsInView] = useInView({ rootMargin: '500px 0px' });
+  const [sevaRef, sevaInView] = useInView({ rootMargin: '500px 0px' });
+  const [productsRef, productsInView] = useInView({ rootMargin: '700px 0px' });
+  const [schemesRef, schemesInView] = useInView({ rootMargin: '700px 0px' });
+
+  const { data: vendors, isLoading: vendorsLoading, error: vendorsError, refetch: refetchVendors } = useVendorsByVillage(village?.id, {
+    enabled: vendorsInView,
+  });
+  const { data: sevaProviders, isLoading: sevaLoading } = useSevaProvidersByVillage(village?.id, {}, {
+    enabled: sevaInView,
+  });
+  const { data: products, isLoading: productsLoading, error: productsError, refetch: refetchProducts } = useProducts({ limit: 6 }, {
+    enabled: productsInView,
+    staleTime: 30_000,
+  });
+  const { data: schemes, isLoading: schemesLoading } = useSchemes({ staleTime: 300_000 }, {
+    enabled: schemesInView,
+  });
 
   // ── Banners: real data + realtime (see useRealtimeBanners) ─────
   const { banners, isLoading: bannersLoading, error: bannersError, refetch: refetchBanners } =
@@ -252,6 +251,11 @@ export default function CustomerHome() {
   }, [query, navigate]);
 
   const activeBanner = banners[bannerIdx] ?? null;
+  const visibleVendors = useMemo(() => {
+    const open = (vendors ?? []).filter(v => v.is_open);
+    const closed = (vendors ?? []).filter(v => !v.is_open);
+    return [...open, ...closed];
+  }, [vendors]);
 
   return (
     <div className="pb-nav animate-fade-in" role="main" aria-label="SETU Home">
@@ -305,11 +309,11 @@ export default function CustomerHome() {
               </span>
             )}
           </Link>
-          <Link to="/customer/notifications" className="relative" aria-label={`Notifications, ${state.unreadCount} unread`}>
+          <Link to="/customer/notifications" className="relative" aria-label={`Notifications, ${unreadCount} unread`}>
             <Bell className="w-5 h-5 text-muted-foreground" />
-            {state.unreadCount > 0 && (
+            {unreadCount > 0 && (
               <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-white text-[9px] flex items-center justify-center font-bold">
-                {state.unreadCount > 9 ? '9+' : state.unreadCount}
+                {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
           </Link>
@@ -382,16 +386,16 @@ export default function CustomerHome() {
               layout space below it, and stay anchored to it as the
               page scrolls. */}
           <div className="relative">
-            {activeBanner.link?.startsWith('http') ? (
+            {safeExternalUrl(activeBanner.link) ? (
               // External URL — the admin form explicitly allows this
               // (placeholder: "/customer/vendors or https://…"), but a
               // React Router <Link> would mis-navigate it as an
               // internal route rather than leaving the app.
-              <a href={activeBanner.link} target="_blank" rel="noopener noreferrer" className="block">
+              <a href={safeExternalUrl(activeBanner.link)} target="_blank" rel="noopener noreferrer" className="block">
                 <BannerCard banner={activeBanner} className="min-h-[130px]" imageEager />
               </a>
             ) : activeBanner.link ? (
-              <Link to={activeBanner.link} className="block">
+              <Link to={safeInternalRedirect(activeBanner.link, '#')} className="block">
                 <BannerCard banner={activeBanner} className="min-h-[130px]" imageEager />
               </Link>
             ) : (
@@ -453,7 +457,7 @@ export default function CustomerHome() {
       </section>
 
       {/* ── Nearby Vendors ──────────────────────────── */}
-      <section className="mb-6" aria-labelledby="vendors-title">
+      <section ref={vendorsRef} className="mb-6" aria-labelledby="vendors-title">
         <div className="section-header px-4">
           <h3 id="vendors-title" className="section-title">Nearby Vendors</h3>
           <Link to="/customer/vendors" className="section-link">See All</Link>
@@ -477,10 +481,7 @@ export default function CustomerHome() {
           />
         ) : (
           <div className="scroll-strip px-4" role="list" aria-label="Nearby vendors">
-            {vendors.filter(v => v.is_open).map(v => (
-              <div key={v.id} role="listitem"><VendorCard vendor={v} /></div>
-            ))}
-            {vendors.filter(v => !v.is_open).map(v => (
+            {visibleVendors.map(v => (
               <div key={v.id} role="listitem"><VendorCard vendor={v} /></div>
             ))}
           </div>
@@ -488,7 +489,7 @@ export default function CustomerHome() {
       </section>
 
       {/* ── Seva Providers ────────────────────────────── */}
-      <section className="mb-6" aria-labelledby="seva-title">
+      <section ref={sevaRef} className="mb-6" aria-labelledby="seva-title">
         <div className="section-header px-4">
           <h3 id="seva-title" className="section-title">Local Services Near You</h3>
           <Link to="/customer/seva" className="section-link">See All</Link>
@@ -518,7 +519,7 @@ export default function CustomerHome() {
       </section>
 
       {/* ── Popular Products ─────────────────────────── */}
-      <section className="px-4 mb-6" aria-labelledby="products-title">
+      <section ref={productsRef} className="px-4 mb-6" aria-labelledby="products-title">
         <div className="section-header">
           <h3 id="products-title" className="section-title">Popular Products</h3>
           <Link to="/customer/search" className="section-link">See All</Link>
@@ -546,7 +547,7 @@ export default function CustomerHome() {
 
       {/* ── Government Schemes ───────────────────────── */}
       {!schemesLoading && !!schemes?.length && (
-        <section className="px-4 mb-6" aria-labelledby="schemes-title">
+        <section ref={schemesRef} className="px-4 mb-6" aria-labelledby="schemes-title">
           <div className="section-header">
             <h3 id="schemes-title" className="section-title">Government Schemes</h3>
             <Link to="/customer/schemes" className="section-link">See All</Link>

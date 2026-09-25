@@ -18,6 +18,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { updateProfile } from '@/lib/api';
+import { assetUrl } from '@/lib/media';
 
 // Firebase config comes from env vars set in .env.local
 // All VITE_FIREBASE_* vars are public (client-side) — no secret here.
@@ -89,10 +90,9 @@ export function useFcmToken() {
       if (!messaging) return;
 
       // Register (or retrieve cached) SW, then get the token
-      const swRegistration = await navigator.serviceWorker.register(
-        '/firebase-messaging-sw.js',
-        { scope: '/' }
-      );
+      const swUrl = assetUrl('/firebase-messaging-sw.js');
+      const swScope = new URL(import.meta.env.BASE_URL, window.location.origin).pathname;
+      const swRegistration = await navigator.serviceWorker.register(swUrl, { scope: swScope });
 
       const { getToken } = await import('firebase/messaging');
       const token = await getToken(messaging, {
