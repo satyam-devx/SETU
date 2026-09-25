@@ -1,0 +1,1 @@
+import{r as e}from"./query-client-5Sd3m0SE.js";import{E as t}from"./index-x47U3hRO.js";function n({customerId:n,orderId:r}={}){let i=0;return n&&(i+=e.invalidateQueries(t.wallet.customer(n)),i+=e.invalidateQueries(t.wallet.transactions(n))),r&&(i+=e.invalidateQueries(t.payments.detail(r))),i}export{n as t};
