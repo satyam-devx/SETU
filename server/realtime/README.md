@@ -65,3 +65,18 @@ This is intentionally an incremental migration. Existing Supabase Realtime chann
 - Gateway health reports active WebSocket connections and room count.
 - `REALTIME_MAX_CONNECTIONS` protects the gateway from unbounded connection growth.
 - Client falls back to direct Supabase GPS writes if the optional gateway is unavailable.
+
+
+## Redis distributed data-plane controls
+
+The gateway now exposes a small authenticated HTTP API on the same port as the WebSocket service:
+
+- `GET /v1/cache/categories` — Redis cache-aside for active categories.
+- `GET /v1/cache/category-previews` — Redis cache-aside for home category previews.
+- `GET /v1/cache/products/:id` — Redis cache-aside for public product details.
+- `GET /v1/cache/vendors/:id` — Redis cache-aside for public vendor details.
+- `POST /v1/orders` — authenticated order mutation with a required `Idempotency-Key`.
+
+Every `/v1/*` request receives an atomic Redis fixed-window IP limit, plus a user limit when authenticated. Order creation has an additional per-user limit. Redis stores completed idempotent responses for 24h by default and uses a short-lived processing claim to prevent concurrent duplicate execution across gateway replicas.
+
+The database `create_order()` idempotency key remains the final correctness boundary. Redis is an accelerator/coordination layer, not the financial source of truth.

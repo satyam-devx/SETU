@@ -13,6 +13,7 @@
  * Redis is never exposed to the browser.
  */
 import http from 'node:http';
+import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { createClient as createRedisClient } from 'redis';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -27,6 +28,17 @@ const ALLOWED_ORIGINS = (process.env.REALTIME_ALLOWED_ORIGINS || '*')
   .split(',').map(s => s.trim()).filter(Boolean);
 const LOCATION_RATE_LIMIT_SECONDS = Math.max(3, Number(process.env.RIDER_LOCATION_MIN_INTERVAL_SECONDS || 5));
 const MAX_CONNECTIONS = Math.max(50, Number(process.env.REALTIME_MAX_CONNECTIONS || 5000));
+const API_RATE_LIMIT = Math.max(10, Number(process.env.API_RATE_LIMIT_PER_MINUTE || 120));
+const API_RATE_WINDOW_SECONDS = Math.max(10, Number(process.env.API_RATE_LIMIT_WINDOW_SECONDS || 60));
+const ORDER_RATE_LIMIT = Math.max(1, Number(process.env.ORDER_RATE_LIMIT_PER_MINUTE || 10));
+const CACHE_TTL_SECONDS = Math.max(5, Number(process.env.REDIS_CACHE_TTL_SECONDS || 60));
+const IDEMPOTENCY_TTL_SECONDS = Math.max(300, Number(process.env.REDIS_IDEMPOTENCY_TTL_SECONDS || 86400));
+const IDEMPOTENCY_LOCK_SECONDS = Math.max(15, Number(process.env.REDIS_IDEMPOTENCY_LOCK_SECONDS || 120));
+const RATE_LIMIT_SCRIPT = `
+local current = redis.call('INCR', KEYS[1])
+if current == 1 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end
+return current
+`;
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
   throw new Error('SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are required by the realtime gateway');
@@ -220,6 +232,26 @@ async function bridgeSupabase() {
     await publishEvent({ ...event, room: `order:${row.id}` });
   });
 
+  channel.on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, async payload => {
+    const row = payload.new || payload.old;
+    if (row?.id) await redis.del(`setu:cache:v1:product:${row.id}`);
+    if (row?.vendor_id) await redis.del(`setu:cache:v1:vendor:${row.vendor_id}`);
+    await redis.del('setu:cache:v1:category-previews');
+  });
+
+  channel.on('postgres_changes', { event: '*', schema: 'public', table: 'vendors' }, async payload => {
+    const row = payload.new || payload.old;
+    if (row?.id) await redis.del(`setu:cache:v1:vendor:${row.id}`);
+    await redis.del('setu:cache:v1:category-previews');
+  });
+
+  channel.on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, async payload => {
+    const row = payload.new || payload.old;
+    if (row?.id) await redis.del(`setu:cache:v1:category:${row.id}`);
+    await redis.del('setu:cache:v1:categories');
+    await redis.del('setu:cache:v1:category-previews');
+  });
+
   channel.on('postgres_changes', { event: '*', schema: 'public', table: 'rider_locations' }, async payload => {
     const row = payload.new || payload.old;
     if (!row?.rider_id) return;
@@ -238,6 +270,255 @@ async function bridgeSupabase() {
   log('Supabase bridge:', status);
 }
 
+
+function stableStringify(value) {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;
+}
+
+function sha256(value) {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+async function getBearerUser(req) {
+  const header = String(req.headers.authorization || '');
+  if (!header.startsWith('Bearer ')) return null;
+  const token = header.slice(7).trim();
+  if (!token) return null;
+  const { data, error } = await authClient.auth.getUser(token);
+  if (error || !data?.user) return null;
+  return { user: data.user, token };
+}
+
+function clientIp(req) {
+  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return forwarded || req.socket.remoteAddress || 'unknown';
+}
+
+async function rateLimit(key, limit, windowSeconds) {
+  const count = Number(await redis.eval(RATE_LIMIT_SCRIPT, {
+    keys: [key],
+    arguments: [String(limit), String(windowSeconds)],
+  }));
+  return { allowed: count <= limit, count, limit, windowSeconds };
+}
+
+async function cacheAside(key, ttlSeconds, loader) {
+  const cached = await redis.get(key);
+  if (cached !== null) {
+    try { return { value: JSON.parse(cached), hit: true }; } catch { await redis.del(key); }
+  }
+
+  // Single-flight across gateway replicas. If another instance is filling
+  // the same key, briefly wait for it instead of stampeding Postgres.
+  const lockKey = `${key}:fill-lock`;
+  const lock = await redis.set(lockKey, '1', { NX: true, EX: 10 });
+  if (lock !== 'OK') {
+    for (let i = 0; i < 5; i += 1) {
+      await new Promise(resolve => setTimeout(resolve, 40 * (i + 1)));
+      const retry = await redis.get(key);
+      if (retry !== null) {
+        try { return { value: JSON.parse(retry), hit: true }; } catch { break; }
+      }
+    }
+  }
+
+  const value = await loader();
+  await redis.set(key, JSON.stringify(value), { EX: ttlSeconds });
+  if (lock === 'OK') await redis.del(lockKey);
+  return { value, hit: false };
+}
+
+async function readJson(req, maxBytes = 64 * 1024) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    let raw = '';
+    req.setEncoding('utf8');
+    req.on('data', chunk => {
+      size += Buffer.byteLength(chunk);
+      if (size > maxBytes) { reject(Object.assign(new Error('Request body too large'), { statusCode: 413 })); req.destroy(); return; }
+      raw += chunk;
+    });
+    req.on('end', () => {
+      if (!raw) return resolve({});
+      try { resolve(JSON.parse(raw)); } catch { reject(Object.assign(new Error('Invalid JSON body'), { statusCode: 400 })); }
+    });
+    req.on('error', reject);
+  });
+}
+
+function sendJson(res, status, body, headers = {}) {
+  const payload = JSON.stringify(body);
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers });
+  res.end(payload);
+}
+
+async function cachedPublicData(pathname, url) {
+  if (pathname === '/v1/cache/categories') {
+    return cacheAside('setu:cache:v1:categories', CACHE_TTL_SECONDS, async () => {
+      const { data, error } = await admin.from('categories')
+        .select('id,name,name_hindi,icon,image_url,sort_order,is_active')
+        .eq('is_active', true).order('sort_order');
+      if (error) throw error;
+      return data || [];
+    });
+  }
+  if (pathname === '/v1/cache/category-previews') {
+    return cacheAside('setu:cache:v1:category-previews', CACHE_TTL_SECONDS, async () => {
+      const { data, error } = await admin.from('category_previews').select('*').order('sort_order');
+      if (error) throw error;
+      return data || [];
+    });
+  }
+  const productMatch = pathname.match(/^\/v1\/cache\/products\/([^/]+)$/);
+  if (productMatch) {
+    const id = decodeURIComponent(productMatch[1]);
+    return cacheAside(`setu:cache:v1:product:${id}`, CACHE_TTL_SECONDS, async () => {
+      const { data, error } = await admin.from('products')
+        .select('id,vendor_id,name,name_hindi,description,price,mrp,unit,stock,image_url,is_available,category,category_id,is_seasonal,vendors(id,name,rating,village)')
+        .eq('id', id).maybeSingle();
+      if (error) throw error;
+      return data || null;
+    });
+  }
+  const vendorMatch = pathname.match(/^\/v1\/cache\/vendors\/([^/]+)$/);
+  if (vendorMatch) {
+    const id = decodeURIComponent(vendorMatch[1]);
+    return cacheAside(`setu:cache:v1:vendor:${id}`, CACHE_TTL_SECONDS, async () => {
+      const { data, error } = await admin.from('vendors')
+        .select('id,name,category,village_id,village,image_url,rating,review_count,is_open,delivery_radius,trust_score,subscription_tier,lat,lng,is_active')
+        .eq('id', id).maybeSingle();
+      if (error) throw error;
+      return data || null;
+    });
+  }
+  return null;
+}
+
+async function handleHttpApi(req, res, url) {
+  const pathname = url.pathname;
+  if (!pathname.startsWith('/v1/')) return false;
+
+  const ipLimit = await rateLimit(`setu:rl:v1:ip:${clientIp(req)}`, API_RATE_LIMIT, API_RATE_WINDOW_SECONDS);
+  if (!ipLimit.allowed) {
+    sendJson(res, 429, { error: 'Too many requests', code: 'RATE_LIMITED', retryAfterSeconds: API_RATE_WINDOW_SECONDS }, {
+      'retry-after': String(API_RATE_WINDOW_SECONDS), 'x-ratelimit-limit': String(ipLimit.limit), 'x-ratelimit-remaining': '0',
+    });
+    return true;
+  }
+
+  const auth = await getBearerUser(req);
+  if (auth) {
+    const userLimit = await rateLimit(`setu:rl:v1:user:${auth.user.id}`, API_RATE_LIMIT, API_RATE_WINDOW_SECONDS);
+    if (!userLimit.allowed) {
+      sendJson(res, 429, { error: 'Too many requests', code: 'RATE_LIMITED', retryAfterSeconds: API_RATE_WINDOW_SECONDS }, {
+        'retry-after': String(API_RATE_WINDOW_SECONDS), 'x-ratelimit-limit': String(userLimit.limit), 'x-ratelimit-remaining': '0',
+      });
+      return true;
+    }
+  }
+
+  if (req.method === 'GET') {
+    const cached = await cachedPublicData(pathname, url);
+    if (cached) {
+      sendJson(res, 200, cached.value, { 'x-setu-cache': cached.hit ? 'HIT' : 'MISS', 'x-ratelimit-limit': String(ipLimit.limit) });
+      return true;
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/v1/orders') {
+    if (!auth) { sendJson(res, 401, { error: 'Authentication required', code: 'AUTH_REQUIRED' }); return true; }
+    const orderLimit = await rateLimit(`setu:rl:orders:${auth.user.id}`, ORDER_RATE_LIMIT, 60);
+    if (!orderLimit.allowed) {
+      sendJson(res, 429, { error: 'Too many order attempts', code: 'ORDER_RATE_LIMITED', retryAfterSeconds: 60 }, { 'retry-after': '60' });
+      return true;
+    }
+
+    const idempotencyKey = String(req.headers['idempotency-key'] || '').trim();
+    if (!idempotencyKey || idempotencyKey.length > 128) {
+      sendJson(res, 400, { error: 'A valid Idempotency-Key header is required', code: 'IDEMPOTENCY_KEY_REQUIRED' });
+      return true;
+    }
+
+    let body;
+    try { body = await readJson(req); } catch (error) { sendJson(res, error.statusCode || 400, { error: error.message }); return true; }
+    const fingerprint = sha256(stableStringify(body));
+    const resultKey = `setu:idempotency:v1:${auth.user.id}:${idempotencyKey}`;
+    const existingRaw = await redis.get(resultKey);
+    if (existingRaw) {
+      const existing = JSON.parse(existingRaw);
+      if (existing.fingerprint !== fingerprint) {
+        sendJson(res, 409, { error: 'Idempotency key was already used with a different request', code: 'IDEMPOTENCY_KEY_REUSED' });
+        return true;
+      }
+      if (existing.state === 'completed') {
+        sendJson(res, existing.status || 200, existing.body, { 'x-setu-idempotent-replay': 'true' });
+        return true;
+      }
+      sendJson(res, 409, { error: 'This request is already being processed', code: 'IDEMPOTENCY_IN_PROGRESS' });
+      return true;
+    }
+
+    const claim = { state: 'processing', fingerprint, createdAt: new Date().toISOString() };
+    const claimed = await redis.set(resultKey, JSON.stringify(claim), { NX: true, EX: IDEMPOTENCY_LOCK_SECONDS });
+    if (claimed !== 'OK') {
+      const raced = await redis.get(resultKey);
+      if (raced) {
+        const parsed = JSON.parse(raced);
+        if (parsed.fingerprint !== fingerprint) { sendJson(res, 409, { error: 'Idempotency key was already used with a different request', code: 'IDEMPOTENCY_KEY_REUSED' }); return true; }
+        if (parsed.state === 'completed') { sendJson(res, parsed.status || 200, parsed.body, { 'x-setu-idempotent-replay': 'true' }); return true; }
+      }
+      sendJson(res, 409, { error: 'This request is already being processed', code: 'IDEMPOTENCY_IN_PROGRESS' });
+      return true;
+    }
+
+    try {
+      const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { autoRefreshToken: false, persistSession: false },
+        global: { headers: { Authorization: `Bearer ${auth.token}` } },
+      });
+      const { data, error } = await client.rpc('create_order', {
+        p_vendor_id: body.vendor_id,
+        p_items: (body.items || []).map(i => ({ product_id: i.product_id, qty: i.qty })),
+        p_payment_method: body.payment_method,
+        p_delivery_address: body.delivery_address ?? null,
+        p_village_id: body.village_id ?? null,
+        p_delivery_notes: body.delivery_notes ?? null,
+        p_use_credit: !!body.use_credit,
+        p_coupon_code: body.coupon_code ?? null,
+        p_idempotency_key: idempotencyKey,
+        p_address_id: body.address_id ?? null,
+      });
+      if (error) throw error;
+      if (!data?.success) {
+        const status = /authentication|permission/i.test(String(data?.error)) ? 403 : 409;
+        const responseBody = { error: data?.error || 'Could not create order', code: 'ORDER_REJECTED' };
+        await redis.set(resultKey, JSON.stringify({ state: 'completed', fingerprint, status, body: responseBody }), { EX: IDEMPOTENCY_TTL_SECONDS });
+        sendJson(res, status, responseBody);
+        return true;
+      }
+      const responseBody = data;
+      await redis.set(resultKey, JSON.stringify({ state: 'completed', fingerprint, status: 200, body: responseBody }), { EX: IDEMPOTENCY_TTL_SECONDS });
+      // Order creation changes product stock and order data; invalidate the
+      // affected cache entries rather than serving stale inventory forever.
+      if (body.items?.length) for (const item of body.items) await redis.del(`setu:cache:v1:product:${item.product_id}`);
+      sendJson(res, 200, responseBody, { 'x-setu-idempotency': 'stored' });
+      return true;
+    } catch (error) {
+      // Keep the DB's own idempotency key as the final safety net. Redis
+      // claim expires automatically so a transient gateway crash cannot
+      // permanently wedge a checkout attempt.
+      await redis.del(resultKey);
+      sendJson(res, 502, { error: error.message || 'Order service unavailable', code: 'ORDER_SERVICE_ERROR' });
+      return true;
+    }
+  }
+
+  sendJson(res, 404, { error: 'Not found' });
+  return true;
+}
+
 async function start() {
   await redis.connect();
   await redisSubscriber.connect();
@@ -253,7 +534,30 @@ async function start() {
 
   await bridgeSupabase();
 
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
+    const requestUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    const requestOrigin = String(req.headers.origin || '');
+    if (requestOrigin && isOriginAllowed(requestOrigin)) {
+      res.setHeader('access-control-allow-origin', requestOrigin);
+      res.setHeader('vary', 'Origin');
+      res.setHeader('access-control-allow-headers', 'Authorization, Content-Type, Idempotency-Key');
+      res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS');
+      res.setHeader('access-control-max-age', '600');
+    }
+    if (requestUrl.pathname.startsWith('/v1/') && req.method === 'OPTIONS') {
+      res.writeHead(isOriginAllowed(requestOrigin) ? 204 : 403);
+      res.end();
+      return;
+    }
+    if (requestUrl.pathname.startsWith('/v1/')) {
+      try {
+        await handleHttpApi(req, res, requestUrl);
+      } catch (error) {
+        console.error('[SETU realtime] HTTP API error:', error);
+        if (!res.headersSent) sendJson(res, 500, { error: 'Internal server error', code: 'INTERNAL_ERROR' });
+      }
+      return;
+    }
     if (req.url === '/health' || req.url === '/healthz') {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ ok: true, service: 'setu-realtime', redis: redis.isReady, connections: connectionCount, rooms: rooms.size }));

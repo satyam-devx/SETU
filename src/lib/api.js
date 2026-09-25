@@ -20,6 +20,34 @@ import { PRODUCTS, VENDORS, ORDERS, NOTIFICATIONS, VILLAGES, CATEGORIES, SEVA_PR
 
 // ── Helpers ───────────────────────────────────────────────
 
+// Optional Redis-backed SETU API gateway. The gateway is colocated with the
+// WebSocket service, so it can apply distributed rate limits, cache-aside
+// reads, and server-side idempotency before requests reach Supabase.
+const REALTIME_URL = import.meta.env.VITE_REALTIME_URL || '';
+const API_GATEWAY_URL = import.meta.env.VITE_API_GATEWAY_URL || REALTIME_URL.replace(/^ws(s?):\/\//, 'http$1:').replace(/\/ws\/?$/, '');
+
+async function getGatewayAccessToken() {
+  if (!API_GATEWAY_URL || !isSupabaseConfigured) return null;
+  const { data } = await supabase.auth.getSession();
+  return data?.session?.access_token || null;
+}
+
+async function gatewayRequest(path, { method = 'GET', body, idempotencyKey, signal } = {}) {
+  if (!API_GATEWAY_URL) return null;
+  const token = await getGatewayAccessToken();
+  const headers = { accept: 'application/json' };
+  if (token) headers.authorization = `Bearer ${token}`;
+  if (body !== undefined) headers['content-type'] = 'application/json';
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+  const response = await fetch(`${API_GATEWAY_URL}${path}`, {
+    method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal,
+  });
+  let payload = null;
+  try { payload = await response.json(); } catch { payload = { error: response.statusText }; }
+  if (!response.ok) return { data: null, error: { message: payload?.error || `Gateway request failed (${response.status})`, code: payload?.code, status: response.status } };
+  return { data: payload, error: null, cache: response.headers.get('x-setu-cache') || null, replay: response.headers.get('x-setu-idempotent-replay') === 'true' };
+}
+
 function ok(data)    { return { data, error: null }; }
 function err(e, ctx) {
   const msg = e?.message || e?.error_description || String(e) || 'Unknown error';
@@ -80,11 +108,14 @@ export async function getVillageById(id) {
 
 // ── Categories ────────────────────────────────────────────
 
-export async function getCategories() {
+export async function getCategories(signal) {
+  const gateway = await gatewayRequest('/v1/cache/categories', { signal });
+  if (gateway) return gateway;
   return safeQuery(
     () => supabaseRead.from('categories').select('*').eq('is_active', true).order('sort_order'),
     CATEGORIES,
-    'getCategories'
+    'getCategories',
+    signal
   );
 }
 
@@ -93,7 +124,9 @@ export async function getCategories() {
 // Demo-mode fallback derives the same shape from the mock PRODUCTS
 // list (matched by category name) rather than hand-maintaining a
 // separate mock dataset that could drift out of sync with it.
-export async function getCategoryPreviews() {
+export async function getCategoryPreviews(signal) {
+  const gateway = await gatewayRequest('/v1/cache/category-previews', { signal });
+  if (gateway) return gateway;
   return safeQuery(
     () => supabaseRead.from('category_previews').select('*').order('sort_order'),
     CATEGORIES.map(c => {
@@ -104,7 +137,8 @@ export async function getCategoryPreviews() {
         product_count: inCategory.length,
       };
     }),
-    'getCategoryPreviews'
+    'getCategoryPreviews',
+    signal
   );
 }
 
@@ -153,6 +187,7 @@ export async function getProductsByCategory(categoryId, { page = 0, limit = 20 }
   })(), 'getProductsByCategory', signal);
 }
 
+
 // ── Vendors ───────────────────────────────────────────────
 
 export async function getVendors({ villageId, category, page = 0, limit = 20 } = {}, signal) {
@@ -175,6 +210,8 @@ export async function getVendors({ villageId, category, page = 0, limit = 20 } =
 }
 
 export async function getVendorById(id, signal) {
+  const gateway = await gatewayRequest(`/v1/cache/vendors/${encodeURIComponent(id)}`, { signal });
+  if (gateway) return gateway;
   return safeQuery(
     () => supabase.from('vendors').select('*').eq('id', id).single(),
     VENDORS.find(v => v.id === id) || null,
@@ -326,6 +363,10 @@ export async function getProducts({ vendorId, category, search, page = 0, limit 
 }
 
 export async function getProductById(id, { vendorId } = {}, signal) {
+  if (!vendorId) {
+    const gateway = await gatewayRequest(`/v1/cache/products/${encodeURIComponent(id)}`, { signal });
+    if (gateway) return gateway;
+  }
   return safeQuery(() => {
     let q = supabase.from('products').select('*, vendors(name, rating, village)').eq('id', id);
     if (vendorId) q = q.eq('vendor_id', vendorId);
@@ -496,6 +537,19 @@ export async function placeOrder(orderPayload) {
   }
 
   try {
+    // When the Redis-backed gateway is configured, order creation goes
+    // through it. The gateway enforces distributed API limits and stores
+    // the idempotent response in Redis; create_order() remains the final
+    // database-level idempotency/transaction boundary.
+    if (API_GATEWAY_URL && orderPayload.idempotency_key) {
+      const gateway = await gatewayRequest('/v1/orders', {
+        method: 'POST',
+        body: orderPayload,
+        idempotencyKey: orderPayload.idempotency_key,
+      });
+      if (gateway) return gateway;
+    }
+
     const { data, error } = await supabase.rpc('create_order', {
       p_vendor_id:        orderPayload.vendor_id,
       p_items:            (orderPayload.items || []).map(i => ({
