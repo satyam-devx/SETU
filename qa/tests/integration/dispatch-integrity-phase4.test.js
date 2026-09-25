@@ -9,6 +9,10 @@ const sql = fs.readFileSync(path.join(root, 'supabase/migrations/20240101000093_
 const api = fs.readFileSync(path.join(root, 'src/lib/api.js'), 'utf8');
 const rider = fs.readFileSync(path.join(root, 'src/pages/rider/RiderDashboard.jsx'), 'utf8');
 const layout = fs.readFileSync(path.join(root, 'src/pages/rider/RiderLayout.jsx'), 'utf8');
+// F6: the per-page realtime subscription was consolidated into a single
+// shared hook — this is now the source of truth for the offer/assignment
+// channel, not RiderDashboard.jsx.
+const hook = fs.readFileSync(path.join(root, 'src/hooks/useRiderDispatchRealtime.js'), 'utf8');
 
 
 describe('Phase 4 dispatch-integrity static assertions', () => {
@@ -35,8 +39,15 @@ describe('Phase 4 dispatch-integrity static assertions', () => {
     
     assert.match(api, /from\('rider_offers'\)/i);
     assert.match(api, /respond_to_rider_offer/i);
-    assert.match(rider, /rider-dispatch-offers-/i);
-    assert.match(rider, /table: 'rider_offers'/i);
-    assert.match(layout, /rider-dispatch-badge-/i);
+    // RiderDashboard still consumes the server-matched offers query —
+    // it just no longer opens its own realtime channel for them.
+    assert.match(rider, /useRiderOffers\(/i);
+    assert.match(hook, /table: 'rider_offers'/i);
+    assert.match(hook, /key: `rider-dispatch:\$\{riderId\}`/);
+    // RiderLayout owns the one shared dispatch channel per rider portal,
+    // and the nav badge count is derived from the same offers query the
+    // hook keeps fresh — there's no longer a dedicated badge channel key.
+    assert.match(layout, /useRiderDispatchRealtime\(rider\?\.id\)/);
+    assert.match(layout, /badge: available \|\| null/);
   });
 });
