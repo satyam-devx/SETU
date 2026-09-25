@@ -42,27 +42,42 @@ describe('Workstream 1 — pay_order_from_wallet (the actual checkout path)', ()
   });
 });
 
-// ── Workstream 2: CustomerCheckout.jsx retry handling ─────────
-describe('Workstream 2 — CustomerCheckout.jsx no longer cancels an already-paid order', () => {
-  const source = read('src/pages/customer/CustomerCheckout.jsx');
+// ── Workstream 2: checkout retry handling ──────────────────────
+// F1-D.3 moved this choreography out of CustomerCheckout.jsx into a
+// mutation-boundary hook pair. The already_paid literal itself no longer
+// appears in the JS layer at all — PaymentAPI.payOrderFromWallet folds
+// already_paid into an ordinary *success* response (error: null), so the
+// mutation hook's generic "throw only on error" rule is what keeps an
+// already-paid retry from ever reaching the cancel branch. These tests
+// check that structural guarantee instead of a literal string match.
+describe('Workstream 2 — checkout no longer cancels an already-paid wallet retry', () => {
+  const checkoutSource = read('src/hooks/mutations/useCheckoutMutations.js');
+  const paymentSource = read('src/hooks/mutations/usePaymentMutations.js');
   const apiSource = read('src/lib/api.js');
 
-  it('checks walletRes?.already_paid explicitly before treating a response as a fresh payment', () => {
-    expect(source).toMatch(/walletRes\?\.already_paid/);
+  it('payWallet only throws on a genuine error, never on an already_paid success', () => {
+    // already_paid is bundled into PaymentAPI.payOrderFromWallet's success
+    // payload (see below), and this is the only line deciding whether a
+    // wallet result becomes a thrown error — so an already_paid response
+    // can never reach the catch/cancel branch in useCheckoutMutations.
+    expect(paymentSource).toMatch(/if \(result\?\.error\) throw result\.error;/);
   });
 
-  it('does not call cancelOrderWithRefund on an already_paid result', () => {
-    // The already_paid branch must not be inside (or lead into) the
-    // cancelOrderWithRefund call — verified by checking the cancel call
-    // is only reachable from the walletError branch, not the success branch.
-    const walletBlock = source.slice(source.indexOf("payMethod === 'wallet'"), source.indexOf('// COD:'));
-    const cancelCallIndex = walletBlock.indexOf('cancelOrderWithRefund');
-    const alreadyPaidIndex = walletBlock.indexOf('already_paid');
+  it('does not call cancelOrder on the wallet success path — only inside the catch', () => {
+    const walletBlock = checkoutSource.slice(
+      checkoutSource.indexOf("paymentMethod === 'wallet'"),
+      checkoutSource.indexOf('// COD has no payment provider mutation')
+    );
+    const catchIndex = walletBlock.indexOf('catch (walletError)');
+    const cancelCallIndex = walletBlock.indexOf('cancelOrder(');
+    const successReturnIndex = walletBlock.indexOf('return { data: order, payment:');
+    expect(catchIndex).toBeGreaterThan(-1);
     expect(cancelCallIndex).toBeGreaterThan(-1);
-    expect(alreadyPaidIndex).toBeGreaterThan(-1);
-    // cancelOrderWithRefund must appear inside the walletError branch,
-    // which textually precedes the already_paid check in this block.
-    expect(cancelCallIndex).toBeLessThan(alreadyPaidIndex);
+    expect(successReturnIndex).toBeGreaterThan(-1);
+    // cancelOrder must only be reachable from inside the catch block —
+    // i.e. it appears after `catch` and before the success return.
+    expect(cancelCallIndex).toBeGreaterThan(catchIndex);
+    expect(cancelCallIndex).toBeLessThan(successReturnIndex);
   });
 
   it('api.js passes already_paid through from the RPC response instead of discarding it', () => {
