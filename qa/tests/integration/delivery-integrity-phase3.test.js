@@ -40,7 +40,12 @@ describe('Phase 3 delivery-integrity static assertions', () => {
     assert.match(api, /complete_delivery/);
     assert.match(rider, /Customer OTP/);
     assert.match(rider, /Delivery proof photo/);
-    assert.match(rider, /RiderAPI\.markDelivered\(/);
+    // Delivery completion moved behind the useOrderMutations mutation
+    // boundary — RiderDashboard no longer calls RiderAPI.markDelivered
+    // directly, but the same underlying api.js completeDelivery() is
+    // still wired in and still called on submit.
+    assert.match(rider, /const \{ assignRider, completeDelivery, updateRiderLocation \} = useOrderMutations\(\);/);
+    assert.match(rider, /await completeDelivery\(/);
     assert.match(customer, /getDeliveryOTP/);
     assert.match(customer, /Delivery OTP/);
   });
