@@ -24,11 +24,12 @@ const messaging = firebase.messaging();
 messaging.onBackgroundMessage((payload) => {
   const { title, body, icon } = payload.notification ?? {};
   const data = payload.data ?? {};
+  const scope = self.registration.scope;
 
   self.registration.showNotification(title ?? 'SETU', {
     body:    body ?? '',
-    icon:    icon ?? '/icons/icon-192x192.png',
-    badge:   '/icons/badge-72x72.png',
+    icon:    icon ?? new URL('icons/icon-192x192.png', self.registration.scope).href,
+    badge:   new URL('icons/badge-72x72.png', self.registration.scope).href,
     tag:     data.type ?? 'setu-notification',
     data,
     actions: data.order_id
@@ -43,8 +44,8 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const data = event.notification.data ?? {};
 
-  let url = '/';
-  if (data.order_id) url = `/customer/orders/${data.order_id}`;
+  let url = self.registration.scope;
+  if (data.order_id) url = new URL(`customer/orders/${data.order_id}`, self.registration.scope).href;
   else if (data.url) url = data.url;
 
   event.waitUntil(

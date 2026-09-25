@@ -40,3 +40,22 @@
 # Never cache the service worker — must update promptly.
 /firebase-messaging-sw.js
   Cache-Control: no-cache
+
+# Public media assets: cache aggressively when immutable in a release.
+# Fingerprinted Vite assets are already covered above; these named media files
+# are stable release assets and can safely be refreshed by changing their name
+# when content changes.
+/splash-bg.jpg
+  Cache-Control: public, max-age=31536000, immutable
+/splash-logo.png
+  Cache-Control: public, max-age=31536000, immutable
+/splash-logo.webp
+  Cache-Control: public, max-age=31536000, immutable
+/splash-logo.avif
+  Cache-Control: public, max-age=31536000, immutable
+/satyam-signature.png
+  Cache-Control: public, max-age=31536000, immutable
+/*.webp
+  Cache-Control: public, max-age=31536000, immutable
+/*.avif
+  Cache-Control: public, max-age=31536000, immutable
