@@ -1,1 +1,0 @@
-import{r as e}from"./rolldown-runtime-hePW80VL.js";import{h as t}from"./chart-vendor-CS2M4hpt.js";import{z as n}from"./api-CkIcFfDK.js";import{C as r,E as i}from"./index-CDnyH5II.js";var a=e(t(),1);function o(e,t={}){let o=(0,a.useCallback)(()=>n(e,{limit:t.limit??30}),[e,t.limit]);return r(i.notifications.list(e),o,{...t,enabled:!!e&&t.enabled!==!1})}export{o as t};

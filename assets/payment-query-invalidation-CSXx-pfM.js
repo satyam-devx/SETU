@@ -1,0 +1,1 @@
+import{r as e}from"./query-client-lwMSa193.js";import{E as t}from"./index-D84BsGdh.js";function n({customerId:n,orderId:r}={}){let i=0;return n&&(i+=e.invalidateQueries(t.wallet.customer(n)),i+=e.invalidateQueries(t.wallet.transactions(n))),r&&(i+=e.invalidateQueries(t.payments.detail(r))),i}export{n as t};
