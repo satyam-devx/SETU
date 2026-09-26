@@ -38,6 +38,20 @@ spec:
                 name: setu-realtime-config
             - secretRef:
                 name: setu-realtime-secrets
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 5
           resources:
             requests:
               cpu: 100m

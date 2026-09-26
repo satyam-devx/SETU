@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: setu-otel-collector
+  namespace: setu
+spec:
+  template:
+    spec:
+      containers:
+        - name: collector
+          env:
+            # Point at your managed tracing backend (Grafana Tempo, Honeycomb,
+            # Datadog's OTLP endpoint, a self-hosted Jaeger, etc). k8s/overlays/local
+            # only ships Jaeger for cluster-level development — there is no
+            # production tracing backend included here.
+            - name: SETU_TRACE_BACKEND_ENDPOINT
+              value: "YOUR_MANAGED_TRACING_ENDPOINT:4317"
+            # Most managed backends terminate TLS; flip to "false" once you've
+            # set a real endpoint above.
+            - name: SETU_TRACE_BACKEND_INSECURE
+              value: "true"

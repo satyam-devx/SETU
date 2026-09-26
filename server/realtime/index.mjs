@@ -18,7 +18,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createClient as createRedisClient } from 'redis';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Kafka, logLevel } from 'kafkajs';
-import { incCounter, setGauge, metricsHandler } from './metrics.mjs';
+import { incCounter, setGauge, observeHistogram, metricsHandler } from './metrics.mjs';
 import { extractTraceparent, startSpan, traceparent } from './tracing.mjs';
 
 const PORT = Number(process.env.REALTIME_PORT || 8787);
@@ -677,10 +677,18 @@ async function start() {
     }
     if (requestUrl.pathname === '/metrics') { metricsHandler(() => ({ setu_realtime_connections: connectionCount, setu_realtime_rooms: rooms.size }))(req, res); return; }
     if (requestUrl.pathname.startsWith('/v1/')) {
-      const span = startSpan(`HTTP ${req.method} ${requestUrl.pathname}`, { parent: extractTraceparent(req.headers.traceparent), attributes: { 'http.request.method': req.method, 'url.path': requestUrl.pathname } });
+      const span = startSpan(`HTTP ${req.method} ${requestUrl.pathname}`, { kind: 2, parent: extractTraceparent(req.headers.traceparent), attributes: { 'http.request.method': req.method, 'url.path': requestUrl.pathname } });
       res.setHeader('traceparent', traceparent(span.ctx));
-      try { await handleHttpApi(req, res, requestUrl); span.end('OK', { 'http.response.status_code': res.statusCode }); }
-      catch (error) { span.end('ERROR', { 'http.response.status_code': 500, 'error.type': error?.name || 'Error' }); console.error('[SETU realtime] HTTP API error:', error); if (!res.headersSent) sendJson(res, 500, { error: 'Internal server error', code: 'INTERNAL_ERROR' }); }
+      const routeLabels = { method: req.method, route: requestUrl.pathname };
+      try {
+        await handleHttpApi(req, res, requestUrl);
+        span.end('OK', { 'http.response.status_code': res.statusCode });
+        observeHistogram('setu_http_request_duration_seconds', { ...routeLabels, status: String(res.statusCode) }, (Date.now() - span.start) / 1000, 'SETU realtime HTTP API request duration');
+      } catch (error) {
+        span.end('ERROR', { 'http.response.status_code': 500, 'error.type': error?.name || 'Error' });
+        observeHistogram('setu_http_request_duration_seconds', { ...routeLabels, status: '500' }, (Date.now() - span.start) / 1000, 'SETU realtime HTTP API request duration');
+        console.error('[SETU realtime] HTTP API error:', error); if (!res.headersSent) sendJson(res, 500, { error: 'Internal server error', code: 'INTERNAL_ERROR' });
+      }
       return;
     }
     if (req.url === '/health' || req.url === '/healthz') {

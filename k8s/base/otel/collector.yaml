@@ -19,16 +19,21 @@ data:
         send_batch_size: 512
     exporters:
       debug: {}
-      otlp/jaeger:
-        endpoint: setu-jaeger:4317
+      # Endpoint is env-substituted (collector's built-in ${env:...}
+      # expansion) so each overlay can point at its own backend: the local
+      # overlay's in-cluster Jaeger by default, or a managed tracing
+      # backend in production — see SETU_TRACE_BACKEND_ENDPOINT below and
+      # k8s/overlays/production/patch-production-config.yaml.
+      otlp/backend:
+        endpoint: ${env:SETU_TRACE_BACKEND_ENDPOINT}
         tls:
-          insecure: true
+          insecure: ${env:SETU_TRACE_BACKEND_INSECURE}
     service:
       pipelines:
         traces:
           receivers: [otlp]
           processors: [memory_limiter, batch]
-          exporters: [otlp/jaeger, debug]
+          exporters: [otlp/backend, debug]
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -45,6 +50,13 @@ spec:
         - name: collector
           image: otel/opentelemetry-collector-contrib:0.136.0
           args: ["--config=/etc/otel/otel-collector.yaml"]
+          env:
+            # Default matches k8s/overlays/local/jaeger.yaml. Production
+            # overrides both via patch-production-config.yaml.
+            - name: SETU_TRACE_BACKEND_ENDPOINT
+              value: "setu-jaeger:4317"
+            - name: SETU_TRACE_BACKEND_INSECURE
+              value: "true"
           ports:
             - {name: otlp-grpc, containerPort: 4317}
             - {name: otlp-http, containerPort: 4318}

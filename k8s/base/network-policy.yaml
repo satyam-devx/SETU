@@ -28,3 +28,12 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+        # OTLP HTTP: app pods -> setu-otel-collector. Without this, every
+        # trace export call silently fails even when OTEL_ENABLED=true.
+        - protocol: TCP
+          port: 4318
+        # OTLP gRPC: setu-otel-collector -> its configured tracing backend
+        # (Jaeger locally; a managed backend in production). The collector
+        # pod is itself subject to this same default-deny policy.
+        - protocol: TCP
+          port: 4317

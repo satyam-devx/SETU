@@ -1,0 +1,130 @@
+name: Realtime Gateway — Build, Push & K8s Validate
+
+# ─────────────────────────────────────────────────────────
+# Closes a gap found during infra audit: nothing built or pushed
+# server/realtime's image (ghcr.io/satyam-devx/setu-realtime, referenced by
+# k8s/base/realtime-deployment.yaml, kafka-worker-deployment.yaml and
+# domain-workers-deployment.yaml), and nothing validated the k8s/
+# kustomize overlays in CI — both were entirely manual per k8s/README.md.
+#
+# This workflow only builds+pushes the image and lints the manifests with
+# `kubectl kustomize`. It does NOT apply anything to a real cluster — this
+# repo has no KUBE_CONFIG secret, so an actual deploy step would either be
+# fake or require credentials we don't have. The gated `deploy` job below
+# is wired and ready: it activates itself the moment a
+# KUBE_CONFIG_PRODUCTION secret exists, with no other changes needed.
+# ─────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/realtime/**'
+      - 'k8s/**'
+      - '.github/workflows/realtime-deploy.yml'
+  pull_request:
+    branches: [main, staging]
+    paths:
+      - 'server/realtime/**'
+      - 'k8s/**'
+  workflow_dispatch:
+
+concurrency:
+  group: realtime-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/satyam-devx/setu-realtime
+
+jobs:
+  build-and-push:
+    name: Build & push realtime image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.tags.outputs.sha_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute tags
+        id: tags
+        run: echo "sha_tag=${{ env.IMAGE }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        # Skipped on PRs from forks (no package write access) — the build
+        # step below still runs with push:false so the image is still
+        # validated on every PR.
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build (and push on main)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./server/realtime
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ github.ref == 'refs/heads/main' && format('{0}:latest', env.IMAGE) || '' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  validate-manifests:
+    name: Validate k8s overlays
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl (bundles kustomize)
+        uses: azure/setup-kubectl@v4
+
+      - name: Render production overlay
+        run: kubectl kustomize k8s/overlays/production > /tmp/production.yaml
+
+      - name: Render local overlay
+        run: kubectl kustomize k8s/overlays/local > /tmp/local.yaml
+
+      - name: Confirm KEDA ScaledObjects survive the render
+        run: |
+          grep -q 'kind: ScaledObject' /tmp/production.yaml
+
+  deploy:
+    name: Deploy to production
+    needs: [build-and-push, validate-manifests]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for cluster credentials
+        id: check
+        run: |
+          if [ -n "${{ secrets.KUBE_CONFIG_PRODUCTION }}" ]; then
+            echo "has_kubeconfig=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_kubeconfig=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::KUBE_CONFIG_PRODUCTION is not set — skipping apply. Image ${{ needs.build-and-push.outputs.image_tag }} was still built and pushed. See k8s/README.md."
+          fi
+
+      - name: Set up kubectl
+        if: steps.check.outputs.has_kubeconfig == 'true'
+        uses: azure/setup-kubectl@v4
+
+      - name: Apply production overlay
+        if: steps.check.outputs.has_kubeconfig == 'true'
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > "$HOME/.kube/config"
+          kubectl kustomize k8s/overlays/production | kubectl apply -f -
+          kubectl -n setu rollout status deployment/setu-realtime --timeout=180s
+          kubectl -n setu rollout status deployment/setu-kafka-worker --timeout=180s
+          kubectl -n setu rollout status deployment/setu-domain-workers --timeout=180s

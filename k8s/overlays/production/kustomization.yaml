@@ -6,3 +6,4 @@ resources:
 patches:
   - path: patch-production-config.yaml
   - path: patch-production-resources.yaml
+  - path: patch-production-tracing.yaml

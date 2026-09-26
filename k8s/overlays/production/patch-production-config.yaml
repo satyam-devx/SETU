@@ -7,3 +7,8 @@ data:
   REDIS_URL: redis://YOUR_MANAGED_REDIS_HOST:6379
   KAFKA_BROKERS: YOUR_MANAGED_KAFKA_BOOTSTRAP:9092
   REALTIME_ALLOWED_ORIGINS: https://YOUR_SETU_DOMAIN
+  # Base defaults this to "false". It's safe to turn on now that the
+  # collector's export target is a real, configurable endpoint (see
+  # patch-production-tracing.yaml) instead of a hardcoded local-only
+  # Jaeger address — see k8s/README.md.
+  OTEL_ENABLED: "true"

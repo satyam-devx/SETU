@@ -9,5 +9,6 @@ resources:
   - ../../base
   - redis.yaml
   - kafka.yaml
+  - kafka-init-job.yaml
 patches:
   - path: patch-local-config.yaml

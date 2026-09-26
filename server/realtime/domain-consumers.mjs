@@ -9,7 +9,7 @@
 import { createClient as createRedisClient } from 'redis';
 import { Kafka, logLevel } from 'kafkajs';
 import http from 'node:http';
-import { incCounter, metricsHandler } from './metrics.mjs';
+import { incCounter, observeHistogram, metricsHandler } from './metrics.mjs';
 import { contextFromKafkaHeaders, startSpan } from './tracing.mjs';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
@@ -128,8 +128,9 @@ async function handle(domain, event) {
 
 async function processMessage(domain, message, isRetry = false) {
   const event = parseEvent(message);
-  const span = startSpan(`kafka.${domain}.${isRetry ? 'retry' : 'process'}`, { parent: contextFromKafkaHeaders(message.headers || {}), attributes: { 'messaging.system': 'kafka', 'messaging.destination.name': message.topic, 'setu.event.id': event.eventId, 'setu.event.type': event.eventType, 'setu.domain': domain } });
+  const span = startSpan(`kafka.${domain}.${isRetry ? 'retry' : 'process'}`, { kind: 5, parent: contextFromKafkaHeaders(message.headers || {}), attributes: { 'messaging.system': 'kafka', 'messaging.destination.name': message.topic, 'setu.event.id': event.eventId, 'setu.event.type': event.eventType, 'setu.domain': domain } });
   const attempt = Number(message.headers?.['x-setu-retry-attempt']?.toString() || 0);
+  const recordDuration = () => observeHistogram('setu_domain_event_duration_seconds', { domain, retry: String(isRetry) }, (Date.now() - span.start) / 1000, 'Domain event processing duration');
 
   if (isRetry) {
     const delay = Number(message.headers?.['x-setu-retry-after-ms']?.toString() || 0);
@@ -140,6 +141,7 @@ async function processMessage(domain, message, isRetry = false) {
   if (claimed !== 'OK') {
     await emitOperational(domain, 'duplicate', event);
     span.end('OK', { 'setu.duplicate': true });
+    recordDuration();
     return;
   }
 
@@ -147,6 +149,7 @@ async function processMessage(domain, message, isRetry = false) {
     await handle(domain, event);
     await emitOperational(domain, 'processed', event, { attempt });
     span.end('OK', { 'setu.attempt': attempt });
+    recordDuration();
   } catch (error) {
     // Release the dedupe key so a retry can execute the handler again.
     await redis.del(`setu:kafka:processed:${domain}:${event.eventId}`);
@@ -154,24 +157,39 @@ async function processMessage(domain, message, isRetry = false) {
       await publishDlq(domain, event, error, attempt, message);
       await emitOperational(domain, 'dlq', event, { attempt, error: error?.message || error });
       span.end('ERROR', { 'setu.dead_lettered': true });
+      recordDuration();
       return;
     }
     await publishRetry(domain, event, attempt, message);
     await emitOperational(domain, 'retry', event, { attempt: attempt + 1, error: error?.message || error });
     span.end('ERROR', { 'setu.retry_scheduled': true });
+    recordDuration();
   }
 }
+
+let stopping = false;
+const crashed = new Set();
 
 async function start() {
   await redis.connect();
   await producer.connect();
 
-  const metricsServer = http.createServer((req, res) => { if (req.url === '/metrics') return metricsHandler()(req, res); res.writeHead(404); res.end(); });
+  const metricsServer = http.createServer((req, res) => {
+    if (req.url === '/metrics') return metricsHandler()(req, res);
+    if (req.url === '/healthz') {
+      const ok = !stopping && crashed.size === 0;
+      res.writeHead(ok ? 200 : 503, { 'content-type': 'text/plain' });
+      return res.end(ok ? 'ok' : `not ready: ${[...crashed].join(',')}`);
+    }
+    res.writeHead(404); res.end();
+  });
   metricsServer.listen(METRICS_PORT, '0.0.0.0');
 
   for (const domain of domains) {
     const consumer = kafka.consumer({ groupId: domain.group, allowAutoTopicCreation: false });
     const retryConsumer = kafka.consumer({ groupId: `${domain.group}-retry`, allowAutoTopicCreation: false });
+    consumer.on(consumer.events.CRASH, () => crashed.add(domain.group));
+    retryConsumer.on(retryConsumer.events.CRASH, () => crashed.add(`${domain.group}-retry`));
     await consumer.connect();
     await retryConsumer.connect();
     await consumer.subscribe({ topic: domain.topic, fromBeginning: false });
@@ -187,6 +205,7 @@ async function start() {
 }
 
 async function shutdown(signal) {
+  stopping = true;
   console.log(`[SETU domain workers] ${signal}`);
   await Promise.allSettled([...consumers, ...retryConsumers].map(c => c.disconnect()));
   await producer.disconnect().catch(() => {});

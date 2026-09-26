@@ -8,6 +8,8 @@ data:
     global:
       scrape_interval: 15s
       evaluation_interval: 15s
+    rule_files:
+      - /etc/prometheus/rules.yml
     scrape_configs:
       - job_name: setu-kubernetes-pods
         kubernetes_sd_configs:
@@ -31,3 +33,67 @@ data:
             target_label: app
           - source_labels: [__meta_kubernetes_pod_node_name]
             target_label: node
+  # Evaluated by Prometheus itself (visible under its own /alerts UI) even
+  # with no Alertmanager wired up. Every series referenced here is one
+  # this repo's code actually emits — see server/realtime/*.mjs.
+  rules.yml: |
+    groups:
+      - name: setu-realtime.rules
+        rules:
+          - alert: SetuRealtimeGatewayDown
+            expr: up{app="setu-realtime"} == 0
+            for: 2m
+            labels: {severity: critical}
+            annotations:
+              summary: "setu-realtime has no scrape targets up"
+              description: "The WebSocket gateway has been unreachable by Prometheus for 2m."
+          - alert: SetuKafkaWorkerDown
+            expr: up{app="setu-kafka-worker"} == 0
+            for: 2m
+            labels: {severity: critical}
+            annotations:
+              summary: "setu-kafka-worker has no scrape targets up"
+              description: "The outbox publisher / realtime projector has been unreachable for 2m — events will stop flowing to Kafka and Redis."
+          - alert: SetuDomainWorkersDown
+            expr: up{app="setu-domain-workers"} == 0
+            for: 2m
+            labels: {severity: critical}
+            annotations:
+              summary: "setu-domain-workers has no scrape targets up"
+              description: "Payment/inventory/dispatch/financial Kafka consumers have been unreachable for 2m."
+          - alert: SetuOutboxBacklogGrowing
+            expr: setu_outbox_backlog > 500
+            for: 5m
+            labels: {severity: warning}
+            annotations:
+              summary: "SETU event outbox backlog is {{ $value }} rows"
+              description: "Unpublished outbox rows have stayed above 500 for 5m — kafka-worker isn't keeping up with writes. Check the kafka-worker-lag KEDA ScaledObject and Postgres/Kafka health before assuming it's purely a scale-up problem."
+          - alert: SetuKafkaEventsDeadLettered
+            expr: increase(setu_kafka_events_dlq_total[15m]) > 0
+            labels: {severity: warning}
+            annotations:
+              summary: "{{ $labels.domain }} events reached the DLQ"
+              description: "One or more {{ $labels.domain }} domain events were dead-lettered in the last 15m. Investigate, then replay via replay-dlq.mjs or the admin API."
+          - alert: SetuKafkaEventsRetryStorm
+            expr: increase(setu_kafka_events_retry_total[10m]) > 20
+            labels: {severity: warning}
+            annotations:
+              summary: "{{ $labels.domain }} events retrying heavily"
+              description: "More than 20 {{ $labels.domain }} events were retried in 10m — likely a sustained downstream failure, not isolated blips."
+          - alert: SetuHttpApiErrorRateHigh
+            expr: |
+              sum(rate(setu_http_request_duration_seconds_count{status=~"5.."}[5m]))
+              / sum(rate(setu_http_request_duration_seconds_count[5m])) > 0.05
+            for: 5m
+            labels: {severity: warning}
+            annotations:
+              summary: "SETU realtime HTTP API error rate above 5%"
+              description: "5xx responses have exceeded 5% of setu-realtime's /v1/ traffic for 5m."
+          - alert: SetuOutboxPublishLatencyHigh
+            expr: |
+              histogram_quantile(0.95, sum(rate(setu_outbox_publish_duration_seconds_bucket[10m])) by (le)) > 5
+            for: 10m
+            labels: {severity: warning}
+            annotations:
+              summary: "Outbox publish p95 latency is high"
+              description: "The 95th percentile outbox claim-to-published batch duration has exceeded 5s for 10m — check Postgres and Kafka broker health."
