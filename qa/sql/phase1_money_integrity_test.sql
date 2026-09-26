@@ -105,16 +105,10 @@ values ('11111111-1111-1111-1111-111111111111', 1000);
 -- Phase 6 fixture: create_order now requires a persisted customer address.
 insert into customer_addresses (
   id, user_id, label, address, landmark, is_default, village_id, zone_id
-) values (
-  'ffffffff-ffff-ffff-ffff-ffffffffffff',
-  '11111111-1111-1111-1111-111111111111',
-  'Home',
-  'House 1',
-  'Near Test Village',
-  true,
-  'vtest',
-  '88888888-8888-8888-8888-888888888888'
-);
+) values
+  ('ffffffff-ffff-ffff-ffff-ffffffffffff', '11111111-1111-1111-1111-111111111111', 'Home', 'House 1', 'Near Test Village', true, 'vtest', '88888888-8888-8888-8888-888888888888'),
+  ('ffffffff-ffff-ffff-ffff-666666666666', '66666666-6666-6666-6666-666666666666', 'Home', 'House 1', 'Near Test Village', true, 'vtest', '88888888-8888-8888-8888-888888888888'),
+  ('ffffffff-ffff-ffff-ffff-777777777777', '77777777-7777-7777-7777-777777777777', 'Home', 'House 1', 'Near Test Village', true, 'vtest', '88888888-8888-8888-8888-888888888888');
 
 insert into credit_accounts (user_id, credit_limit, outstanding, status, score)
 values
@@ -285,7 +279,7 @@ begin
   begin
     v := create_order('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
          '[{"product_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","qty":2}]'::jsonb,
-         'COD','House 1','vtest',null, true, null, null, 'ffffffff-ffff-ffff-ffff-ffffffffffff');
+         'COD','House 1','vtest',null, true, null, null, 'ffffffff-ffff-ffff-ffff-777777777777');
     raise exception 'FAIL C2: discount granted despite insufficient credit: %', v::text;
   exception
     when others then
@@ -304,7 +298,7 @@ declare v jsonb;
 begin
   v := create_order('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
        '[{"product_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","qty":2}]'::jsonb,
-       'COD','House 1','vtest',null, true, null, null, 'ffffffff-ffff-ffff-ffff-ffffffffffff');
+       'COD','House 1','vtest',null, true, null, null, 'ffffffff-ffff-ffff-ffff-666666666666');
   if not (v->>'success')::boolean then raise exception 'FAIL C3: create_order failed: %', v->>'error'; end if;
   if (v->>'credit_discount')::numeric <> 20  then raise exception 'FAIL C3: discount expected 20 got %', v->>'credit_discount'; end if;
   if (v->>'total')::numeric           <> 182 then raise exception 'FAIL C3: total expected 182 got %',   v->>'total'; end if;
