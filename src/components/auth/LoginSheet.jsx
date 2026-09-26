@@ -285,7 +285,7 @@ export default function LoginSheet({ open, onClose, role = 'customer' }) {
               {success ? 'You’re all set' : `${roleLabel} login`}
             </h2>
           </div>
-          <button onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full border border-border/60 bg-card/70 text-muted-foreground transition hover:text-foreground" aria-label="Close">
+          <button onClick={onClose} className="grid h-10 w-10 min-h-[40px] min-w-[40px] place-items-center rounded-full border border-border/60 bg-card/70 text-muted-foreground transition hover:text-foreground" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -302,7 +302,7 @@ export default function LoginSheet({ open, onClose, role = 'customer' }) {
             </div>
           ) : step === 'otp' ? (
             <>
-              <button onClick={() => { setStep('phone'); setError(''); }} className="mb-5 inline-flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground">
+              <button onClick={() => { setStep('phone'); setError(''); }} className="mb-5 inline-flex h-10 min-h-[40px] items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground">
                 <ArrowLeft className="h-3.5 w-3.5" /> Change number
               </button>
               <div className="mb-5 rounded-2xl border border-border/60 bg-card/60 p-4">
@@ -343,7 +343,7 @@ export default function LoginSheet({ open, onClose, role = 'customer' }) {
                 {resendCooldown > 0 ? (
                   <p className="text-xs text-muted-foreground">Resend available in <span className="font-bold tabular-nums text-foreground">{resendCooldown}s</span></p>
                 ) : (
-                  <button onClick={resend} disabled={loading} className="text-xs font-bold text-primary disabled:opacity-50">Resend OTP</button>
+                  <button onClick={resend} disabled={loading} className="inline-flex h-10 min-h-[40px] items-center justify-center text-xs font-bold text-primary disabled:opacity-50">Resend OTP</button>
                 )}
               </div>
             </>
