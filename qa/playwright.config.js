@@ -58,7 +58,7 @@ export default defineConfig({
         locale:   'hi-IN',
         timezone: 'Asia/Kolkata',
       },
-      testIgnore: ['**/crawler.spec.js', '**/interaction-crawler.spec.js', '**/visual/**', '**/a11y/**'],
+      testIgnore: ['**/crawler.spec.js', '**/interaction-crawler.spec.js', '**/visual/**', '**/a11y/**', '**/business-flow.spec.js'],
     },
 
     // ── Desktop Chrome (admin/vendor portals) ───────────────────
@@ -70,7 +70,7 @@ export default defineConfig({
         locale:   'hi-IN',
         timezone: 'Asia/Kolkata',
       },
-      testIgnore: ['**/crawler.spec.js', '**/interaction-crawler.spec.js', '**/visual/**', '**/a11y/**'],
+      testIgnore: ['**/crawler.spec.js', '**/interaction-crawler.spec.js', '**/visual/**', '**/a11y/**', '**/business-flow.spec.js'],
     },
 
     // ── Mobile Firefox (broader compatibility) ──────────────────
@@ -79,7 +79,23 @@ export default defineConfig({
       use: {
         ...devices['Galaxy S9+'],
       },
-      testIgnore: ['**/crawler.spec.js', '**/interaction-crawler.spec.js', '**/visual/**', '**/a11y/**'],
+      testIgnore: ['**/crawler.spec.js', '**/interaction-crawler.spec.js', '**/visual/**', '**/a11y/**', '**/business-flow.spec.js'],
+    },
+
+    // ── Business E2E Agent: one real commerce transaction end-to-end ──
+    // Runs against a real Supabase-backed environment only. It bootstraps
+    // isolated customer/vendor/rider accounts, drives the browser through
+    // checkout + COD, observes realtime dispatch, completes OTP delivery,
+    // writes diagnostics, and cleans its data in a finally-style runner.
+    {
+      name: 'business-flow',
+      use: {
+        ...devices['Pixel 7'],
+        locale: 'hi-IN',
+        timezone: 'Asia/Kolkata',
+      },
+      testMatch: '**/business-flow.spec.js',
+      workers: 1,
     },
 
     // ── Accessibility: screen reader simulation ──────────────────

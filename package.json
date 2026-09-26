@@ -26,7 +26,8 @@
     "k8s:render": "kubectl kustomize k8s/overlays/production",
     "k8s:render:local": "kubectl kustomize k8s/overlays/local",
     "k8s:validate": "kubectl kustomize k8s/overlays/production >/dev/null",
-    "k8s:keda:render": "kubectl kustomize k8s/overlays/production | grep -A3 -B2 'kind: ScaledObject'"
+    "k8s:keda:render": "kubectl kustomize k8s/overlays/production | grep -A3 -B2 'kind: ScaledObject'",
+    "qa:business": "npm run --prefix qa test:business"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",
