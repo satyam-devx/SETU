@@ -157,7 +157,7 @@ export default function SuperAdminHealth() {
           </h3>
           <p className="text-[10px] text-muted-foreground mb-3">
             Auth & Database reflect live connectivity. Edge Functions, Storage and
-            Realtime can't be probed from the browser SDK and are shown as n/a.
+            Realtime can&apos;t be probed from the browser SDK and are shown as n/a.
           </p>
           <div className="space-y-2">
             {SERVICES.map(svc => {
