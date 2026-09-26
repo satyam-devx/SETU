@@ -60,7 +60,7 @@ insert into villages (id, name, block, district, state, is_active)
 values ('vtest', 'Test Village', 'TestBlock', 'Madhubani', 'Bihar', true);
 
 insert into delivery_zones (id, name, village_id, center_lat, center_lng, radius_km, is_active)
-values ('ztest000-0000-0000-0000-000000000000', 'Test Zone', 'vtest', 26.35, 86.12, 10, true)
+values ('88888888-8888-8888-8888-888888888888', 'Test Zone', 'vtest', 26.35, 86.12, 10, true)
 on conflict do nothing;
 
 insert into auth.users (instance_id, id, aud, role, email, raw_user_meta_data, raw_app_meta_data, created_at, updated_at, email_confirmed_at)
@@ -87,7 +87,7 @@ values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','33333333-3333-3333-3333-33333333
         'Test Vendor','grocery','vtest','Test Village', true, true);
 
 insert into vendor_service_zones (vendor_id, zone_id, is_active)
-values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'ztest000-0000-0000-0000-000000000000', true)
+values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '88888888-8888-8888-8888-888888888888', true)
 on conflict do nothing;
 
 insert into products (id, vendor_id, name, price, mrp, unit, stock, is_available, category)
