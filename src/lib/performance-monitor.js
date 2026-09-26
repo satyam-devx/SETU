@@ -40,7 +40,7 @@ function activeRole() {
 
 function safeUrl(url) {
   try {
-    const parsed = new URL(url, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+    const parsed = new URL(url, typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1');
     return `${parsed.origin}${parsed.pathname}`;
   } catch {
     return String(url || 'unknown').split('?')[0];
