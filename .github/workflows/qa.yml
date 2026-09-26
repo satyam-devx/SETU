@@ -297,6 +297,44 @@ jobs:
           CI: 'true'
         run: npm run test:e2e -- --project=mobile-chrome --reporter=list,json,junit
 
+      # Full business transaction E2E against real local Supabase.
+      # Unlike the demo-mode crawler above, this creates isolated real
+      # users/data, exercises Auth + PostgREST + Realtime + Storage, and
+      # deletes the entire test run in a finally-style cleanup.
+      - name: Setup Supabase CLI for Business E2E
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.109.0
+
+      - name: Start Supabase services required by Business E2E
+        env:
+          TWILIO_ACCOUNT_SID: "dummy"
+          TWILIO_MESSAGE_SERVICE_SID: "dummy"
+          TWILIO_AUTH_TOKEN: "dummy"
+        run: |
+          supabase start -x kong,studio,mailpit,postgres-meta,edge-runtime,logflare,vector,supavisor
+          supabase status -o env >> "$GITHUB_ENV"
+          echo "VITE_SUPABASE_URL=$API_URL" >> "$GITHUB_ENV"
+          echo "VITE_SUPABASE_ANON_KEY=$ANON_KEY" >> "$GITHUB_ENV"
+          echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY" >> "$GITHUB_ENV"
+          echo "VITE_DEMO_MODE=false" >> "$GITHUB_ENV"
+
+      - name: Run full Business E2E Agent
+        working-directory: ${{ env.QA_DIR }}
+        env:
+          CI: 'true'
+        run: npm run test:business
+
+      - name: Upload Business E2E diagnostics
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: business-e2e-${{ github.sha }}
+          path: |
+            ${{ env.QA_DIR }}/reports/business-flow/
+            ${{ env.QA_DIR }}/reports/e2e-results/
+          retention-days: 14
+
       - name: Upload Playwright results
         uses: actions/upload-artifact@v4
         if: always()
