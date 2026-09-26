@@ -177,29 +177,29 @@ end $$;
 
 -- Derived analytics. These are views over immutable facts, so they can be rebuilt safely.
 create or replace view analytics_daily_order_metrics as
-select date_trunc('day',occurred_at)::date day,
-       count(*) filter(where event_type='status_changed' and to_status='delivered') delivered_orders,
-       count(*) filter(where event_type='status_changed' and to_status='cancelled') cancelled_orders,
-       count(*) filter(where event_type='status_changed' and to_status='ready') ready_orders
+select date_trunc('day',occurred_at)::date as day,
+       count(*) filter(where event_type='status_changed' and to_status='delivered') as delivered_orders,
+       count(*) filter(where event_type='status_changed' and to_status='cancelled') as cancelled_orders,
+       count(*) filter(where event_type='status_changed' and to_status='ready') as ready_orders
 from immutable_order_events group by 1 order by 1;
 
 create or replace view analytics_daily_payment_metrics as
-select date_trunc('day',occurred_at)::date day,
-       count(*) filter(where event_type='payment.captured') captured_count,
-       coalesce(sum(amount) filter(where event_type='payment.captured'),0) captured_amount,
-       count(*) filter(where event_type='payment.failed') failed_count,
-       count(*) filter(where event_type like 'refund.%') refund_event_count
+select date_trunc('day',occurred_at)::date as day,
+       count(*) filter(where event_type='payment.captured') as captured_count,
+       coalesce(sum(amount) filter(where event_type='payment.captured'),0) as captured_amount,
+       count(*) filter(where event_type='payment.failed') as failed_count,
+       count(*) filter(where event_type like 'refund.%') as refund_event_count
 from immutable_payment_events group by 1 order by 1;
 
 create or replace view analytics_daily_delivery_metrics as
-select date_trunc('day',occurred_at)::date day,
-       count(*) filter(where event_type='delivery_attempt') attempts
+select date_trunc('day',occurred_at)::date as day,
+       count(*) filter(where event_type='delivery_attempt') as attempts
 from immutable_delivery_events group by 1 order by 1;
 
 create or replace view analytics_daily_financial_metrics as
-select date_trunc('day',occurred_at)::date day,
-       count(*) journals,
-       coalesce(sum(case when event_type='order_capture' then amount else 0 end),0) capture_amount
+select date_trunc('day',occurred_at)::date as day,
+       count(*) as journals,
+       coalesce(sum(case when event_type='order_capture' then amount else 0 end),0) as capture_amount
 from immutable_financial_events group by 1 order by 1;
 
 create or replace view reconciliation_dashboard as
