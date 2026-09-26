@@ -195,7 +195,7 @@ function Step1({ onNext, user }) {
       {/* Allow skipping KYC in demo/dev mode */}
       {!user && (
         <p className="text-xs text-muted-foreground text-center">
-          You'll be asked to log in before continuing.
+          You&apos;ll be asked to log in before continuing.
         </p>
       )}
       <Button className="w-full" onClick={handleContinue}>
@@ -399,8 +399,8 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
 
       {/* Shop photos — file upload, or paste an image URL instead */}
       <div>
-        <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoAdd} />
-        <label className="text-xs font-medium mb-1 block">Shop Photos</label>
+        <input id="vendor-shop-photos-input" ref={photoRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoAdd} />
+        <label htmlFor="vendor-shop-photos-input" className="text-xs font-medium mb-1 block">Shop Photos</label>
         <div className="grid grid-cols-3 gap-2">
           {['Shop front', 'Inside', 'Products'].map((label, i) => (
             <div key={label} className="relative aspect-square">
@@ -451,7 +451,7 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
                 onChange={e => handlePhotoUrlChange(i, e.target.value)}
               />
               {brokenSlots[i] && shopPhotoUrls[i]?.trim() && (
-                <p className="text-[10px] text-destructive mt-0.5">Couldn't load that link — check the URL.</p>
+                <p className="text-[10px] text-destructive mt-0.5">Couldn&apos;t load that link — check the URL.</p>
               )}
             </div>
           ))}
@@ -482,7 +482,7 @@ function Step2({ onNext, onBack, onVendorSaved, user }) {
 
       {/* Delivery radius — numeric values (Phase 0) */}
       <div>
-        <label className="text-xs font-medium mb-1.5 block">Delivery Radius</label>
+        <p className="text-xs font-medium mb-1.5 block">Delivery Radius</p>
         <div className="flex gap-2">
           {DELIVERY_RADII.map(r => (
             <button
@@ -694,7 +694,7 @@ function Step3({ onNext, onBack, vendorId, onProductAdded, initialProducts = [] 
               onChange={e => handleImageUrlChange(e.target.value)}
             />
             {imgBroken && imgUrl.trim() && (
-              <p className="text-[10px] text-destructive">Couldn't load that link — check the URL.</p>
+              <p className="text-[10px] text-destructive">Couldn&apos;t load that link — check the URL.</p>
             )}
           </div>
         )}
@@ -949,7 +949,7 @@ function Step5({ vendorId, productsCount, user, onSubmitted }) {
         </div>
         <h2 className="text-2xl font-bold">Application Submitted!</h2>
         <p className="text-sm text-muted-foreground max-w-xs">
-          Your store will be reviewed within 24 hours. We'll notify you once approved.
+          Your store will be reviewed within 24 hours. We&apos;ll notify you once approved.
         </p>
         <p className="text-xs text-muted-foreground">Redirecting to dashboard...</p>
       </div>
