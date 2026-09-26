@@ -86,10 +86,14 @@ insert into products (id, vendor_id, name, price, mrp, unit, stock, is_available
 values ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
         'Test Rice', 100, 120, 'kg', 100, true, 'grocery');
 
-insert into riders (id, user_id, name, village_id, village, is_active, is_online, today_earnings, total_earnings, cod_balance)
+-- is_verified=true is required since migration 093: the dispatch matcher
+-- (_dispatch_offer_next_batch) only offers a ready order to riders who are
+-- is_active AND is_verified AND is_online. Without it these riders never
+-- receive a rider_offers row, and claim_order() has nothing to accept.
+insert into riders (id, user_id, name, village_id, village, is_active, is_online, is_verified, today_earnings, total_earnings, cod_balance)
 values
-  ('cccccccc-cccc-cccc-cccc-cccccccccccc','44444444-4444-4444-4444-444444444444','Rider One','vtest','Test Village', true, true, 0, 0, 0),
-  ('dddddddd-dddd-dddd-dddd-dddddddddddd','55555555-5555-5555-5555-555555555555','Rider Two','vtest','Test Village', true, true, 0, 0, 0);
+  ('cccccccc-cccc-cccc-cccc-cccccccccccc','44444444-4444-4444-4444-444444444444','Rider One','vtest','Test Village', true, true, true, 0, 0, 0),
+  ('dddddddd-dddd-dddd-dddd-dddddddddddd','55555555-5555-5555-5555-555555555555','Rider Two','vtest','Test Village', true, true, true, 0, 0, 0);
 
 insert into wallets (user_id, balance)
 values ('11111111-1111-1111-1111-111111111111', 1000);
@@ -409,11 +413,16 @@ end $$;
 reset role;
 
 -- ═══════════════════════════════════════════════════════════════
--- TEST G — order write-path lockdown (migration 050)
+-- TEST G — order write-path lockdown (migration 050 + dispatch integrity 093)
 -- ═══════════════════════════════════════════════════════════════
 -- Build a fresh order and drive it to 'ready' through the proper RPC
--- chain (customer create → vendor confirm/prepare/ready), then prove the
--- rider claim/assign RPCs work and that direct client UPDATE is blocked.
+-- chain (customer create → vendor confirm/prepare/ready). The UPDATE to
+-- 'ready' fires trg_orders_ready_dispatch, which creates a dispatch_events
+-- row and offers it to every eligible online/verified/active rider in the
+-- village (R1 and R2 both qualify). claim_order() now only *accepts an
+-- existing offer* — it no longer claims a bare unassigned 'ready' order —
+-- so we prove the rider claim/assign RPCs work and that direct client
+-- UPDATE is still blocked.
 
 -- Customer C1 places a COD order.
 set local role authenticated;
@@ -460,25 +469,40 @@ declare st text; rid uuid; oid uuid;
 begin
   select t.v::uuid into oid from _t t where t.k='G_order';
   select status, rider_id into st, rid from orders where id=oid;
-  if st <> 'picked_up' then raise exception 'FAIL G1b: status % expected picked_up', st; end if;
+  -- migration 093: accepting an offer only ASSIGNS the rider; status stays
+  -- 'ready' until the rider physically has it and calls update_order_status.
+  if st <> 'ready' then raise exception 'FAIL G1b: status % expected ready', st; end if;
   if rid <> 'cccccccc-cccc-cccc-cccc-cccccccccccc' then raise exception 'FAIL G1b: rider_id % expected R1', rid; end if;
-  raise notice 'PASS G1b: order picked_up and assigned to the claiming rider';
+  raise notice 'PASS G1b: order assigned to the claiming rider (still ready for pickup)';
 end $$;
 
+-- G1c: the assigned rider marks the order picked up via the state machine.
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"44444444-4444-4444-4444-444444444444","role":"authenticated"}';
+do $$
+declare oid uuid; v jsonb;
+begin
+  select t.v::uuid into oid from _t t where t.k='G_order';
+  v := update_order_status(oid,'picked_up',null,'{}'::jsonb);
+  if (v->>'error') is not null then raise exception 'FAIL G1c: picked_up: %', v->>'error'; end if;
+  raise notice 'PASS G1c: assigned rider marked order picked_up';
+end $$;
+reset role;
+
 -- G2: a second rider cannot claim an already-assigned order.
+-- migration 093: claim_order() no longer raises on a lost race. R2 also
+-- received an offer from the same dispatch batch, but respond_to_rider_offer
+-- cancelled it the instant R1 accepted (G1 above), so R2's lookup now finds
+-- no 'offered' row and returns {"success":false} instead of throwing.
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"55555555-5555-5555-5555-555555555555","role":"authenticated"}';
 do $$
-declare oid uuid;
+declare oid uuid; v jsonb;
 begin
   select t.v::uuid into oid from _t t where t.k='G_order';
-  begin
-    perform claim_order(oid);
-    raise exception 'FAIL G2: second rider claimed an assigned order';
-  exception when others then
-    if position('already assigned' in sqlerrm) > 0 then raise notice 'PASS G2: double-claim rejected';
-    else raise; end if;
-  end;
+  v := claim_order(oid);
+  if (v->>'success')::boolean then raise exception 'FAIL G2: second rider claimed an assigned order'; end if;
+  raise notice 'PASS G2: double-claim rejected (%)', v->>'error';
 end $$;
 reset role;
 
