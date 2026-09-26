@@ -414,7 +414,7 @@ export default function CustomerHome() {
                     role="tab"
                     aria-selected={bannerIdx === i}
                     onClick={() => setBannerIdx(i)}
-                    className="w-6 h-6 flex items-center justify-center"
+                    className="touch-target flex items-center justify-center"
                     aria-label={`Banner ${i + 1} of ${banners.length}`}
                   >
                     <div

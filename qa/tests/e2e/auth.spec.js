@@ -29,13 +29,32 @@ test.describe('Authentication pages', () => {
   });
 
   test('login page loads without errors', async ({ page }) => {
-    await page.goto('/login');
-
-    // No console errors on load
+    // Listeners must be attached BEFORE goto — anything console-logged or
+    // requested during the initial navigation itself was previously missed
+    // entirely, since the old version of this test only started listening
+    // after `await page.goto(...)` had already resolved.
     const errors = [];
     page.on('console', msg => {
       if (msg.type() === 'error') errors.push(msg.text());
     });
+
+    // Chromium's own synthetic "Failed to load resource" console message
+    // never includes the failing URL (the Network panel is meant to carry
+    // that), so a text-based `!e.includes('supabase')` filter on the
+    // console message can never actually match it — it only ever worked
+    // for JS-authored console.error() calls that happen to mention the
+    // word "supabase" themselves. Track real failed responses/requests by
+    // URL instead, so we can tell an expected Supabase 404 apart from an
+    // actual app bug, and report exactly what failed instead of nothing.
+    const failedResources = [];
+    page.on('response', res => {
+      if (res.status() >= 400) failedResources.push({ url: res.url(), status: res.status() });
+    });
+    page.on('requestfailed', req => {
+      failedResources.push({ url: req.url(), failure: req.failure()?.errorText });
+    });
+
+    await page.goto('/login');
 
     await expect(page).toHaveTitle(/SETU|setu/i);
     await expect(page.locator('body')).toBeVisible();
@@ -43,6 +62,22 @@ test.describe('Authentication pages', () => {
     // Core phone input must be present
     const phoneInput = page.locator('input[type="tel"], input[placeholder*="phone" i], input[placeholder*="मोबाइल"]');
     await expect(phoneInput.first()).toBeVisible({ timeout: 10000 });
+
+    // Known-safe noise to ignore:
+    //  - Supabase-hosted requests (storage/API 404s reflect missing data,
+    //    not a broken page)
+    //  - a bare-root /favicon.ico probe some browsers issue automatically
+    //    regardless of our own <link rel="icon">; against the production
+    //    GitHub Pages *project* URL (satyam-devx.github.io/SETU) that
+    //    request lands on the account's separate root site, which this
+    //    repo has no ability to serve a favicon for
+    const unexpected = failedResources.filter(({ url }) => {
+      if (/supabase/i.test(url)) return false;
+      const { pathname } = new URL(url);
+      if (pathname === '/favicon.ico') return false;
+      return true;
+    });
+    expect(unexpected, `Unexpected failed resource(s): ${JSON.stringify(unexpected)}`).toHaveLength(0);
 
     // No unhandled JS errors
     expect(errors.filter(e => !e.includes('placeholder') && !e.includes('supabase'))).toHaveLength(0);

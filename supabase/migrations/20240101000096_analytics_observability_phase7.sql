@@ -177,14 +177,14 @@ end $$;
 
 -- Derived analytics. These are views over immutable facts, so they can be rebuilt safely.
 create or replace view analytics_daily_order_metrics as
-select date_trunc('day',occurred_at)::date day,
+select date_trunc('day',occurred_at)::date as day,
        count(*) filter(where event_type='status_changed' and to_status='delivered') delivered_orders,
        count(*) filter(where event_type='status_changed' and to_status='cancelled') cancelled_orders,
        count(*) filter(where event_type='status_changed' and to_status='ready') ready_orders
 from immutable_order_events group by 1 order by 1;
 
 create or replace view analytics_daily_payment_metrics as
-select date_trunc('day',occurred_at)::date day,
+select date_trunc('day',occurred_at)::date as day,
        count(*) filter(where event_type='payment.captured') captured_count,
        coalesce(sum(amount) filter(where event_type='payment.captured'),0) captured_amount,
        count(*) filter(where event_type='payment.failed') failed_count,
@@ -192,12 +192,12 @@ select date_trunc('day',occurred_at)::date day,
 from immutable_payment_events group by 1 order by 1;
 
 create or replace view analytics_daily_delivery_metrics as
-select date_trunc('day',occurred_at)::date day,
+select date_trunc('day',occurred_at)::date as day,
        count(*) filter(where event_type='delivery_attempt') attempts
 from immutable_delivery_events group by 1 order by 1;
 
 create or replace view analytics_daily_financial_metrics as
-select date_trunc('day',occurred_at)::date day,
+select date_trunc('day',occurred_at)::date as day,
        count(*) journals,
        coalesce(sum(case when event_type='order_capture' then amount else 0 end),0) capture_amount
 from immutable_financial_events group by 1 order by 1;

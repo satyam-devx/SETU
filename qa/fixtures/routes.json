@@ -546,6 +546,12 @@
     "dynamic": false
   },
   {
+    "path": "/admin/kafka",
+    "crawlPath": "/admin/kafka",
+    "role": "admin",
+    "dynamic": false
+  },
+  {
     "path": "/admin/categories",
     "crawlPath": "/admin/categories",
     "role": "admin",

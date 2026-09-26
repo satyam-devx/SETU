@@ -187,6 +187,33 @@ jobs:
           # also does internally.
           NO_VERIFY_JWT_FUNCTIONS="razorpay-webhook"
 
+          # `supabase functions deploy` bundles each function in a local
+          # Docker container pulled from public.ecr.aws/supabase/edge-runtime.
+          # That pull is an anonymous, unauthenticated request against AWS
+          # Public ECR's shared per-IP rate limit — on a GitHub-hosted
+          # runner (a shared, high-churn IP pool) it can transiently 429/
+          # "toomanyrequests" on the very first pull of a run, then succeed
+          # moments later once the image is cached locally (every function
+          # after the first already hits a warm Docker cache and never
+          # re-pulls). Retry each deploy a few times with a short backoff so
+          # one cold, rate-limited pull doesn't fail the whole job.
+          deploy_with_retry() {
+            local fname=$1 flags=$2 attempt=1 max_attempts=4
+            local delay=5
+            while (( attempt <= max_attempts )); do
+              if supabase functions deploy "$fname" $flags 2>&1; then
+                return 0
+              fi
+              if (( attempt < max_attempts )); then
+                echo "  ⚠ $fname: attempt $attempt/$max_attempts failed, retrying in ${delay}s…"
+                sleep "$delay"
+                delay=$(( delay * 2 ))
+              fi
+              (( attempt++ ))
+            done
+            return 1
+          }
+
           for FNAME in ${{ steps.changed_functions.outputs.functions }}; do
             if [ "$FNAME" = "_shared" ]; then
               continue
@@ -198,7 +225,7 @@ jobs:
             else
               echo "Deploying: $FNAME (JWT verification enforced at gateway)"
             fi
-            if supabase functions deploy "$FNAME" $FLAGS 2>&1; then
+            if deploy_with_retry "$FNAME" "$FLAGS"; then
               echo "  ✓ $FNAME deployed"
             else
               echo "  ✗ $FNAME FAILED"

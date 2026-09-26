@@ -198,6 +198,13 @@ const SOURCE_CHECKS = [
     pattern: /['"`]https?:\/\/localhost/,
     files:   ['src/**/*.{js,jsx,ts,tsx}'],
     critical: false,
+    // Non-blocking hygiene check, same as the console.log check below —
+    // `critical: false` only controls this script's own exit code, it does
+    // NOT stop the finding being counted as a 'FAIL' in summary.failed,
+    // which is what the CI report's blanket Gate step checks. Without
+    // isWarning:true here, a merely-informational finding fails the whole
+    // pipeline the same as an actual critical one. See CHANGELOG.md.
+    isWarning: true,
   },
   {
     name:    'supabase.auth.admin not used in frontend',
@@ -218,6 +225,7 @@ const SOURCE_CHECKS = [
     pattern: /(?<!import[^\n]{0,200})(?<!<)\bSELECT\s+[^'"]{1,200}\s+FROM\b(?!['"`])/i,
     files:   ['src/pages/**/*.{js,jsx,tsx}', 'src/components/**/*.{js,jsx,tsx}'],
     critical: false,
+    isWarning: true, // same non-blocking-vs-FAIL-count issue as the check above
   },
   {
     name:    'console.log not in production paths (allow in lib)',
