@@ -15,6 +15,6 @@ resources:
   - domain-workers-pdb.yaml
   - network-policy.yaml
 
-  - keda/kustomization.yaml
+  - keda
 
-  - otel/kustomization.yaml
+  - otel
