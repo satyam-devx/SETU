@@ -4,9 +4,11 @@ import { test, expect } from '@playwright/test';
 import { BusinessFlowAgent } from '../../agents/business-flow-agent.js';
 import { BUSINESS_FLOW_CONFIG } from '../../agents/business-flow.config.js';
 
-const runtime = JSON.parse(fs.readFileSync('reports/business-flow/runtime.json', 'utf8'));
-const reportDir = path.resolve('reports/business-flow', runtime.runId);
-const agent = new BusinessFlowAgent({ runId: runtime.runId, reportDir, timeoutMs: BUSINESS_FLOW_CONFIG.timeoutMs });
+const runtimePath = 'reports/business-flow/runtime.json';
+const hasRuntime = fs.existsSync(runtimePath);
+const runtime = hasRuntime ? JSON.parse(fs.readFileSync(runtimePath, 'utf8')) : null;
+const reportDir = runtime ? path.resolve('reports/business-flow', runtime.runId) : null;
+const agent = runtime ? new BusinessFlowAgent({ runId: runtime.runId, reportDir, timeoutMs: BUSINESS_FLOW_CONFIG.timeoutMs }) : null;
 
 function storageKey() {
   const url = new URL(process.env.VITE_SUPABASE_URL);
@@ -21,6 +23,10 @@ async function seedSession(page, role, session) {
 }
 
 test('SETU full customer → vendor → dispatch → rider → delivery business flow', async ({ browser }) => {
+  if (!runtime || !agent) {
+    test.skip(true, 'reports/business-flow/runtime.json not found — run bootstrap first before executing business flow test.');
+    return;
+  }
   test.setTimeout(6 * 60 * 1000);
   const diagnostics = [];
   const pages = {};
