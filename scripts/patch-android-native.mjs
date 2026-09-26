@@ -63,15 +63,34 @@ if (!mainActivityPath) {
   if (src.includes('setBackgroundColor')) {
     console.log('[patch-android-native] MainActivity already patched, skipping.');
   } else {
-    src = src
-      .replace(
-        /import com\.getcapacitor\.BridgeActivity;/,
-        `import com.getcapacitor.BridgeActivity;\nimport android.graphics.Color;\nimport android.os.Bundle;\nimport android.content.res.Configuration;`
-      )
-      .replace(
-        /public class MainActivity extends BridgeActivity \{/,
-        `public class MainActivity extends BridgeActivity {\n  @Override\n  public void onCreate(Bundle savedInstanceState) {\n    super.onCreate(savedInstanceState);\n    boolean isNight = (getResources().getConfiguration().uiMode\n        & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;\n    int bg = Color.parseColor(isNight ? "${DARK_BG}" : "${LIGHT_BG}");\n    getWindow().getDecorView().setBackgroundColor(bg);\n    if (getBridge() != null && getBridge().getWebView() != null) {\n      android.webkit.WebView webView = getBridge().getWebView();\n      webView.setBackgroundColor(bg);\n      android.webkit.WebSettings settings = webView.getSettings();\n      settings.setDomStorageEnabled(true);\n      settings.setDatabaseEnabled(true);\n      settings.setCacheMode(android.webkit.WebSettings.LOAD_DEFAULT);\n      settings.setDisplayZoomControls(false);\n      settings.setBuiltInZoomControls(false);\n    }\n  }\n\n  @Override\n  public void onTrimMemory(int level) {\n    super.onTrimMemory(level);\n    // Do not clear WebView cache or reload the SPA under pressure; those\n    // actions cause jank and destroy navigation/state. Android/Chromium\n    // owns renderer memory reclamation.\n    if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW\n        && getBridge() != null && getBridge().getWebView() != null) {\n      getBridge().getWebView().clearFocus();\n    }\n  }\n}`
-      );
+    const beforeImport = src;
+    src = src.replace(
+      /import com\.getcapacitor\.BridgeActivity;/,
+      `import com.getcapacitor.BridgeActivity;\nimport android.graphics.Color;\nimport android.os.Bundle;\nimport android.content.res.Configuration;`
+    );
+    if (src === beforeImport) {
+      console.error(`[patch-android-native] Could not find the BridgeActivity import in ${mainActivityPath} -- Capacitor's generated file may have changed shape. Aborting so this doesn't silently ship a broken MainActivity.java.`);
+      process.exit(1);
+    }
+
+    // Capacitor scaffolds MainActivity as a body-less class -- e.g.
+    // `public class MainActivity extends BridgeActivity {}` (Capacitor 8) or
+    // the braces split across a line with only whitespace between them.
+    // The match MUST consume both braces together: matching only the
+    // opening brace (as this used to) leaves the scaffold's own closing
+    // `}` sitting right after our injected methods' closing `}`, producing
+    // a stray top-level `}}` that javac rejects with "class, interface,
+    // enum, or record expected".
+    const beforeClass = src;
+    src = src.replace(
+      /public class MainActivity extends BridgeActivity \{\s*\}/,
+      `public class MainActivity extends BridgeActivity {\n  @Override\n  public void onCreate(Bundle savedInstanceState) {\n    super.onCreate(savedInstanceState);\n    boolean isNight = (getResources().getConfiguration().uiMode\n        & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;\n    int bg = Color.parseColor(isNight ? "${DARK_BG}" : "${LIGHT_BG}");\n    getWindow().getDecorView().setBackgroundColor(bg);\n    if (getBridge() != null && getBridge().getWebView() != null) {\n      android.webkit.WebView webView = getBridge().getWebView();\n      webView.setBackgroundColor(bg);\n      android.webkit.WebSettings settings = webView.getSettings();\n      settings.setDomStorageEnabled(true);\n      settings.setDatabaseEnabled(true);\n      settings.setCacheMode(android.webkit.WebSettings.LOAD_DEFAULT);\n      settings.setDisplayZoomControls(false);\n      settings.setBuiltInZoomControls(false);\n    }\n  }\n\n  @Override\n  public void onTrimMemory(int level) {\n    super.onTrimMemory(level);\n    // Do not clear WebView cache or reload the SPA under pressure; those\n    // actions cause jank and destroy navigation/state. Android/Chromium\n    // owns renderer memory reclamation.\n    if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW\n        && getBridge() != null && getBridge().getWebView() != null) {\n      getBridge().getWebView().clearFocus();\n    }\n  }\n}`
+    );
+    if (src === beforeClass) {
+      console.error(`[patch-android-native] Could not find an empty "public class MainActivity extends BridgeActivity {}" body in ${mainActivityPath} -- Capacitor's generated file may have changed shape. Aborting so this doesn't silently ship a broken MainActivity.java.`);
+      process.exit(1);
+    }
+
     writeFileSync(mainActivityPath, src, 'utf8');
     console.log(`[patch-android-native] Patched ${mainActivityPath} -- WebView background fixed.`);
   }
