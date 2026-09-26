@@ -104,7 +104,7 @@ values ('11111111-1111-1111-1111-111111111111', 1000);
 
 -- Phase 6 fixture: create_order now requires a persisted customer address.
 insert into customer_addresses (
-  id, user_id, label, address, landmark, is_default, village_id
+  id, user_id, label, address, landmark, is_default, village_id, zone_id
 ) values (
   'ffffffff-ffff-ffff-ffff-ffffffffffff',
   '11111111-1111-1111-1111-111111111111',
@@ -112,7 +112,8 @@ insert into customer_addresses (
   'House 1',
   'Near Test Village',
   true,
-  'vtest'
+  'vtest',
+  '88888888-8888-8888-8888-888888888888'
 );
 
 insert into credit_accounts (user_id, credit_limit, outstanding, status, score)
