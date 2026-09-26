@@ -242,7 +242,7 @@ export default function OTPVerify() {
 
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-lg flex-col px-5 py-6 sm:px-6">
         <header className="flex items-center justify-between">
-          <button onClick={() => navigate('/login')} className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/70 px-3.5 py-2 text-[11px] font-bold text-muted-foreground shadow-sm backdrop-blur-xl transition-colors hover:text-foreground">
+          <button onClick={() => navigate('/login')} className="inline-flex h-10 min-h-[40px] items-center gap-1.5 rounded-full border border-border/60 bg-card/70 px-3.5 py-2 text-[11px] font-bold text-muted-foreground shadow-sm backdrop-blur-xl transition-colors hover:text-foreground">
             <ArrowLeft className="h-3.5 w-3.5" /> Back
           </button>
           <div className="inline-flex items-center gap-2.5 rounded-full border border-primary/20 bg-card/75 px-3.5 py-2 shadow-[0_8px_28px_hsl(var(--foreground)/0.06)] backdrop-blur-xl">
@@ -290,7 +290,7 @@ export default function OTPVerify() {
 
                     <div className="text-center">
                       {resendCooldown > 0 ? <p className="text-xs text-muted-foreground">Resend OTP in <span className="font-bold tabular-nums text-foreground">{resendCooldown}s</span></p> : (
-                        <button onClick={handleResend} disabled={resending} className="mx-auto inline-flex items-center gap-1.5 text-xs font-bold text-primary transition-opacity hover:opacity-80 disabled:opacity-50">
+                        <button onClick={handleResend} disabled={resending} className="mx-auto inline-flex h-10 min-h-[40px] items-center gap-1.5 text-xs font-bold text-primary transition-opacity hover:opacity-80 disabled:opacity-50">
                           {resending ? <><Loader2 className="h-3 w-3 animate-spin" /> Sending...</> : <><RefreshCw className="h-3 w-3" /> Resend OTP</>}
                         </button>
                       )}
