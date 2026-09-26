@@ -98,6 +98,17 @@ values
 insert into wallets (user_id, balance)
 values ('11111111-1111-1111-1111-111111111111', 1000);
 
+-- Phase 6 (migration 095) fixture: create_order now requires the address
+-- to resolve to an active delivery zone the vendor is linked to, or it
+-- returns "This delivery address is outside SETU service area" before
+-- doing anything else. Neither table is backfilled for a village created
+-- at test-run time, so both must be seeded explicitly.
+insert into delivery_zones (id, name, village_id, radius_km, is_active)
+values ('88888888-8888-8888-8888-888888888888', 'Test Zone', 'vtest', 5, true);
+
+insert into vendor_service_zones (vendor_id, zone_id)
+values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '88888888-8888-8888-8888-888888888888');
+
 -- Phase 6 fixture: create_order now requires a persisted customer address.
 insert into customer_addresses (
   id, user_id, label, address, landmark, is_default, village_id
@@ -110,6 +121,15 @@ insert into customer_addresses (
   true,
   'vtest'
 );
+
+-- create_order checks address ownership (id AND user_id must match the
+-- caller), so C3 and C2CR each need their own address row — they can't
+-- borrow C1's 'ffffffff…' the way the rest of the file's calls do.
+insert into customer_addresses (
+  id, user_id, label, address, landmark, is_default, village_id
+) values
+  ('66666666-aaaa-aaaa-aaaa-666666666666','66666666-6666-6666-6666-666666666666','Home','House 3','Near Test Village', true, 'vtest'),
+  ('77777777-aaaa-aaaa-aaaa-777777777777','77777777-7777-7777-7777-777777777777','Home','House 4','Near Test Village', true, 'vtest');
 
 insert into credit_accounts (user_id, credit_limit, outstanding, status, score)
 values
@@ -280,7 +300,7 @@ begin
   begin
     v := create_order('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
          '[{"product_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","qty":2}]'::jsonb,
-         'COD','House 1','vtest',null, true, null, null, 'ffffffff-ffff-ffff-ffff-ffffffffffff');
+         'COD','House 4','vtest',null, true, null, null, '77777777-aaaa-aaaa-aaaa-777777777777');
     raise exception 'FAIL C2: discount granted despite insufficient credit: %', v::text;
   exception
     when others then
@@ -299,7 +319,7 @@ declare v jsonb;
 begin
   v := create_order('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
        '[{"product_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","qty":2}]'::jsonb,
-       'COD','House 1','vtest',null, true, null, null, 'ffffffff-ffff-ffff-ffff-ffffffffffff');
+       'COD','House 3','vtest',null, true, null, null, '66666666-aaaa-aaaa-aaaa-666666666666');
   if not (v->>'success')::boolean then raise exception 'FAIL C3: create_order failed: %', v->>'error'; end if;
   if (v->>'credit_discount')::numeric <> 20  then raise exception 'FAIL C3: discount expected 20 got %', v->>'credit_discount'; end if;
   if (v->>'total')::numeric           <> 182 then raise exception 'FAIL C3: total expected 182 got %',   v->>'total'; end if;
