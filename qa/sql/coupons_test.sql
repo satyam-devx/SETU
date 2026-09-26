@@ -22,6 +22,18 @@ values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','33333333-3333-3333-3333-33333333
 insert into products (id, vendor_id, name, price, mrp, unit, stock, is_available, category)
 values ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','Rice', 100, 120, 'kg', 100, true, 'grocery');
 
+-- Phase 6 (migration 095) requires every order to bind to a customer-owned
+-- address that resolves to an active, vendor-serviced delivery zone.
+-- Set that up now, while still connected as the unrestricted service
+-- role (before any `set local role authenticated` below), so the
+-- create_order calls further down have a valid address_id to pass.
+insert into delivery_zones (id, name, is_active)
+values ('cccccccc-cccc-cccc-cccc-cccccccccccc','QA Test Zone', true);
+insert into vendor_service_zones (vendor_id, zone_id, is_active)
+values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','cccccccc-cccc-cccc-cccc-cccccccccccc', true);
+insert into customer_addresses (id, user_id, label, address, zone_id)
+values ('dddddddd-dddd-dddd-dddd-dddddddddddd','11111111-1111-1111-1111-111111111111','Home','123 Test Lane, Test Village','cccccccc-cccc-cccc-cccc-cccccccccccc');
+
 -- ── T1: a customer cannot create a coupon ──
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}';
@@ -66,7 +78,7 @@ declare v jsonb; n int; uc int;
 begin
   v := create_order('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
        '[{"product_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","qty":2}]'::jsonb,
-       'COD','addr', null, null, false, 'SETU50');
+       'COD','addr', null, null, false, 'SETU50', null, 'dddddddd-dddd-dddd-dddd-dddddddddddd');
   if not (v->>'success')::boolean then raise exception 'FAIL T4: order failed: %', v::text; end if;
   -- subtotal 200, coupon 100, delivery 0 (>=200), platform round(100*1%)=1, total 101
   if (v->>'coupon_discount')::numeric <> 100 then raise exception 'FAIL T4: coupon_discount expected 100, got %', v->>'coupon_discount'; end if;
@@ -87,7 +99,7 @@ begin
   begin
     perform create_order('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
        '[{"product_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","qty":2}]'::jsonb,
-       'COD','addr', null, null, false, 'SETU50');
+       'COD','addr', null, null, false, 'SETU50', null, 'dddddddd-dddd-dddd-dddd-dddddddddddd');
     raise exception 'FAIL T5: coupon reused beyond per-user limit';
   exception when others then
     if position('already used' in sqlerrm) > 0 then raise notice 'PASS T5: per-user limit enforced (%)', sqlerrm;
@@ -101,7 +113,7 @@ begin
   begin
     perform create_order('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
        '[{"product_id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","qty":1}]'::jsonb,
-       'COD','addr', null, null, false, 'NOPE');
+       'COD','addr', null, null, false, 'NOPE', null, 'dddddddd-dddd-dddd-dddd-dddddddddddd');
     raise exception 'FAIL T6: invalid coupon accepted';
   exception when others then
     if position('Invalid or inactive coupon' in sqlerrm) > 0 then raise notice 'PASS T6: invalid coupon rejected (%)', sqlerrm;
