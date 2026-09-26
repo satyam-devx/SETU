@@ -103,12 +103,23 @@ insert into wallets (user_id, balance)
 values ('11111111-1111-1111-1111-111111111111', 1000);
 
 -- Phase 6 fixture: create_order now requires a persisted customer address.
+-- Separate INSERT statements prevent trigger trg_customer_addresses_single_default
+-- from resetting is_default across different users during multi-row batch insert.
 insert into customer_addresses (
   id, user_id, label, address, landmark, is_default, village_id, zone_id
-) values
-  ('ffffffff-ffff-ffff-ffff-ffffffffffff', '11111111-1111-1111-1111-111111111111', 'Home', 'House 1', 'Near Test Village', true, 'vtest', '88888888-8888-8888-8888-888888888888'),
-  ('ffffffff-ffff-ffff-ffff-666666666666', '66666666-6666-6666-6666-666666666666', 'Home', 'House 1', 'Near Test Village', true, 'vtest', '88888888-8888-8888-8888-888888888888'),
-  ('ffffffff-ffff-ffff-ffff-777777777777', '77777777-7777-7777-7777-777777777777', 'Home', 'House 1', 'Near Test Village', true, 'vtest', '88888888-8888-8888-8888-888888888888');
+) values (
+  'ffffffff-ffff-ffff-ffff-ffffffffffff', '11111111-1111-1111-1111-111111111111', 'Home', 'House 1', 'Near Test Village', true, 'vtest', '88888888-8888-8888-8888-888888888888'
+);
+insert into customer_addresses (
+  id, user_id, label, address, landmark, is_default, village_id, zone_id
+) values (
+  'ffffffff-ffff-ffff-ffff-666666666666', '66666666-6666-6666-6666-666666666666', 'Home', 'House 1', 'Near Test Village', true, 'vtest', '88888888-8888-8888-8888-888888888888'
+);
+insert into customer_addresses (
+  id, user_id, label, address, landmark, is_default, village_id, zone_id
+) values (
+  'ffffffff-ffff-ffff-ffff-777777777777', '77777777-7777-7777-7777-777777777777', 'Home', 'House 1', 'Near Test Village', true, 'vtest', '88888888-8888-8888-8888-888888888888'
+);
 
 insert into credit_accounts (user_id, credit_limit, outstanding, status, score)
 values
