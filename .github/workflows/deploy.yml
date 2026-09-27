@@ -3,8 +3,9 @@ name: SETU Deploy — Migrate, Functions & Frontend
 # ─────────────────────────────────────────────────────────
 # Triggers only on pushes to `main`.
 # This is the production deployment pipeline.
-# Order: Migrations → Edge Functions → Frontend (GitHub Pages)
-# Each stage gates the next; any failure halts the pipeline.
+# Order: Migrations → Frontend (GitHub Pages)
+# Edge Functions deploy independently after migrations. A function deployment
+# failure must not block a frontend-only deployment.
 # ─────────────────────────────────────────────────────────
 
 on:
@@ -117,12 +118,15 @@ jobs:
           python3 scripts/post_migration_health.py
         continue-on-error: false   # Hard failure if schema is broken
 
-  # ── Stage 2: Deploy Edge Functions ───────────────────
+  # ── Stage 2: Deploy Edge Functions (independent) ──────
   deploy-functions:
-    name: Deploy Edge Functions
+    name: Deploy Changed Edge Functions
     runs-on: ubuntu-latest
     needs: migrate
     environment: production
+    outputs:
+      deployed: ${{ steps.changed_functions.outputs.deploy_required }}
+      functions: ${{ steps.changed_functions.outputs.functions }}
 
     steps:
       - uses: actions/checkout@v4
@@ -145,79 +149,160 @@ jobs:
 
       - name: Detect changed Edge Functions
         id: changed_functions
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA:  ${{ github.sha }}
         run: |
-          # On first deploy, deploy all functions.
-          # On subsequent deploys, only deploy functions that changed.
-          # _shared/ is a code-sharing folder, not a deployable function
-          # (it has no index.ts of its own) — always excluded.
-          CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'supabase/functions/' 2>/dev/null \
-                    | sed 's|supabase/functions/||' \
-                    | cut -d'/' -f1 \
-                    | grep -v '^_shared$' \
-                    | grep -v '\.json$' \
-                    | sort -u \
-                    | tr '\n' ' ' \
-                    | xargs)
-          if [ -z "$CHANGED" ]; then
-            echo "No function changes detected — deploying all."
-            # Use space-separated single line — newlines break GITHUB_OUTPUT
-            FUNCTIONS=$(ls -d supabase/functions/*/ | xargs -n1 basename | grep -v '^_shared$' | tr '\n' ' ' | xargs)
-            echo "functions=$FUNCTIONS" >> "$GITHUB_OUTPUT"
-            echo "deploy_all=true" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+
+          # A push with an all-zero `before` SHA is the initial branch push.
+          # In that case every function is deployed once to establish the
+          # production baseline.
+          FUNCTION_FILES=""
+
+          if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            DEPLOY_ALL=true
+            REASON="initial branch deployment"
           else
-            echo "Changed functions: $CHANGED"
-            echo "functions=$CHANGED" >> "$GITHUB_OUTPUT"
-            echo "deploy_all=false" >> "$GITHUB_OUTPUT"
+            CHANGED_FILES=$(git diff --name-only "$BEFORE_SHA" "$AFTER_SHA")
+            echo "=== Changed files ==="
+            echo "$CHANGED_FILES"
+
+            FUNCTION_FILES=$(printf '%s\n' "$CHANGED_FILES" | grep '^supabase/functions/' || true)
+            CONFIG_CHANGED=$(printf '%s\n' "$CHANGED_FILES" | grep -E '^supabase/config\.toml$' || true)
+            SHARED_CHANGED=$(printf '%s\n' "$FUNCTION_FILES" | grep '^supabase/functions/_shared/' || true)
+
+            if [ -n "$CONFIG_CHANGED" ]; then
+              DEPLOY_ALL=true
+              REASON="Supabase function config changed"
+            elif [ -n "$SHARED_CHANGED" ]; then
+              DEPLOY_ALL=true
+              REASON="shared Edge Function code changed"
+            else
+              DEPLOY_ALL=false
+              REASON="no deployable Edge Function changes"
+            fi
           fi
 
+          if [ "$DEPLOY_ALL" = true ]; then
+            FUNCTIONS=$(find supabase/functions -mindepth 1 -maxdepth 1 -type d \
+              -not -name '_shared' -printf '%f\n' | sort | tr '\n' ' ' | xargs)
+          else
+            FUNCTIONS=$(printf '%s\n' "$FUNCTION_FILES" \
+              | sed -n 's#^supabase/functions/\([^/]*\)/.*#\1#p' \
+              | grep -v '^_shared$' | sort -u | tr '\n' ' ' | xargs || true)
+          fi
+
+          if [ -n "$FUNCTIONS" ]; then
+            DEPLOY_REQUIRED=true
+          else
+            DEPLOY_REQUIRED=false
+            FUNCTIONS=""
+          fi
+
+          echo "deploy_required=$DEPLOY_REQUIRED" >> "$GITHUB_OUTPUT"
+          echo "functions=$FUNCTIONS" >> "$GITHUB_OUTPUT"
+          echo "reason=$REASON" >> "$GITHUB_OUTPUT"
+          echo "=== Edge Function deployment decision ==="
+          echo "Reason: $REASON"
+          echo "Deploy required: $DEPLOY_REQUIRED"
+          echo "Functions: ${FUNCTIONS:-none}"
+
+      - name: Restore cached Supabase Edge Runtime image (Docker fallback)
+        if: steps.changed_functions.outputs.deploy_required == 'true'
+        id: edge_runtime_cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/setu-edge-runtime.tar
+          key: supabase-edge-runtime-v1.73.13-${{ runner.os }}
+
+      - name: Prepare cached Docker fallback
+        if: steps.changed_functions.outputs.deploy_required == 'true'
+        id: edge_runtime_image
+        env:
+          CACHE_HIT: ${{ steps.edge_runtime_cache.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          IMAGE='public.ecr.aws/supabase/edge-runtime:v1.73.13'
+
+          if [ "$CACHE_HIT" = 'true' ] && [ -s /tmp/setu-edge-runtime.tar ]; then
+            echo "=== Cached Edge Runtime available ==="
+            docker load --input /tmp/setu-edge-runtime.tar
+            docker image inspect "$IMAGE" >/dev/null
+            echo "docker_ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "No cached Edge Runtime image found. Docker fallback will pull it only if API deployment fails."
+          echo "docker_ready=false" >> "$GITHUB_OUTPUT"
+
       - name: Deploy Edge Functions
+        if: steps.changed_functions.outputs.deploy_required == 'true'
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF:  ${{ secrets.SUPABASE_PROJECT_REF }}
+          FUNCTIONS: ${{ steps.changed_functions.outputs.functions }}
         run: |
-          echo "=== Deploying Edge Functions ==="
+          set -euo pipefail
+          echo "=== Deploying Changed Edge Functions ==="
+          echo "Functions: $FUNCTIONS"
           FAILED=()
-
-          # SECURITY (audit CRITICAL-2): --no-verify-jwt used to be applied
-          # to EVERY function, disabling Supabase's gateway-level JWT check
-          # platform-wide. razorpay-webhook genuinely needs it (Razorpay
-          # calls it server-to-server with an HMAC signature, not a
-          # Supabase JWT) — every other function now requires a verified
-          # JWT at the gateway, on top of the auth checks each function
-          # also does internally.
           NO_VERIFY_JWT_FUNCTIONS="razorpay-webhook"
+          IMAGE='public.ecr.aws/supabase/edge-runtime:v1.73.13'
+          DOCKER_READY='${{ steps.edge_runtime_image.outputs.docker_ready }}'
 
-          # `supabase functions deploy` bundles each function in a local
-          # Docker container pulled from public.ecr.aws/supabase/edge-runtime.
-          # That pull is an anonymous, unauthenticated request against AWS
-          # Public ECR's shared per-IP rate limit — on a GitHub-hosted
-          # runner (a shared, high-churn IP pool) it can transiently 429/
-          # "toomanyrequests" on the very first pull of a run, then succeed
-          # moments later once the image is cached locally (every function
-          # after the first already hits a warm Docker cache and never
-          # re-pulls). Retry each deploy a few times with a short backoff so
-          # one cold, rate-limited pull doesn't fail the whole job.
+          prepare_docker_fallback() {
+            if [ "$DOCKER_READY" = 'true' ]; then
+              return 0
+            fi
+
+            echo "=== Preparing Docker fallback ==="
+            # Only the fallback path contacts Public ECR. A successful pull is
+            # saved into the GitHub Actions cache for subsequent runs.
+            docker pull "$IMAGE"
+            docker save "$IMAGE" --output /tmp/setu-edge-runtime.tar
+            DOCKER_READY=true
+          }
+
           deploy_with_retry() {
-            local fname=$1 flags=$2 attempt=1 max_attempts=4
-            local delay=5
+            local fname="$1" flags="$2" attempt=1 max_attempts=3 delay=10
+
+            # CI uses server-side bundling first. Supabase documents --use-api
+            # specifically for CI because it does not require Docker.
             while (( attempt <= max_attempts )); do
-              if supabase functions deploy "$fname" $flags 2>&1; then
+              if supabase functions deploy "$fname" $flags --use-api 2>&1; then
+                echo "  ✓ $fname deployed via Supabase API bundling"
                 return 0
               fi
               if (( attempt < max_attempts )); then
-                echo "  ⚠ $fname: attempt $attempt/$max_attempts failed, retrying in ${delay}s…"
+                echo "⚠ $fname: API deploy attempt $attempt/$max_attempts failed; retrying in ${delay}s…"
                 sleep "$delay"
-                delay=$(( delay * 2 ))
+                delay=$((delay * 2))
               fi
-              (( attempt++ ))
+              attempt=$((attempt + 1))
+            done
+
+            echo "⚠ $fname: API bundling failed. Switching to Docker fallback."
+            prepare_docker_fallback
+
+            attempt=1
+            delay=10
+            while (( attempt <= max_attempts )); do
+              if supabase functions deploy "$fname" $flags --use-docker 2>&1; then
+                echo "  ✓ $fname deployed via Docker fallback"
+                return 0
+              fi
+              if (( attempt < max_attempts )); then
+                echo "⚠ $fname: Docker fallback attempt $attempt/$max_attempts failed; retrying in ${delay}s…"
+                sleep "$delay"
+                delay=$((delay * 2))
+              fi
+              attempt=$((attempt + 1))
             done
             return 1
           }
 
-          for FNAME in ${{ steps.changed_functions.outputs.functions }}; do
-            if [ "$FNAME" = "_shared" ]; then
-              continue
-            fi
+          for FNAME in $FUNCTIONS; do
             FLAGS=""
             if [[ " $NO_VERIFY_JWT_FUNCTIONS " == *" $FNAME "* ]]; then
               FLAGS="--no-verify-jwt"
@@ -225,33 +310,43 @@ jobs:
             else
               echo "Deploying: $FNAME (JWT verification enforced at gateway)"
             fi
+
             if deploy_with_retry "$FNAME" "$FLAGS"; then
-              echo "  ✓ $FNAME deployed"
+              echo "✓ $FNAME deployment complete"
             else
-              echo "  ✗ $FNAME FAILED"
+              echo "✗ $FNAME FAILED"
               FAILED+=("$FNAME")
             fi
           done
+
           if [ ${#FAILED[@]} -gt 0 ]; then
             echo "::error::Failed to deploy functions: ${FAILED[*]}"
             exit 1
           fi
-          echo "All Edge Functions deployed successfully."
 
       - name: Smoke-test deployed functions
+        if: steps.changed_functions.outputs.deploy_required == 'true'
         env:
-          SUPABASE_URL:           ${{ secrets.VITE_SUPABASE_URL }}
-          SUPABASE_ANON_KEY:      ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL:          ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY:     ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           echo "=== Edge Function smoke tests ==="
           python3 scripts/smoke_test_functions.py
+
+      - name: No Edge Function deployment needed
+        if: steps.changed_functions.outputs.deploy_required != 'true'
+        run: |
+          echo "✓ No Edge Function changes detected. Nothing to deploy."
 
   # ── Stage 3: Build and deploy frontend ───────────────
   deploy-frontend:
     name: Deploy Frontend → GitHub Pages
     runs-on: ubuntu-latest
-    needs: [migrate, deploy-functions]
+    # Frontend deployment is intentionally independent of Edge Functions.
+    # A registry outage or unrelated function failure must not prevent a
+    # successfully-built frontend from reaching GitHub Pages.
+    needs: migrate
     environment: production
 
     steps:
