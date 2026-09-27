@@ -162,32 +162,83 @@ export async function getCategoryPreviews(signal) {
 // could silently misbehave.
 export async function getProductsByCategory(categoryId, { page = 0, limit = 20 } = {}, signal) {
   return safeQuery(async () => {
+    // Primary source: migration 082's many-to-many junction.  The fallback
+    // below is intentional: older products or environments where the
+    // junction backfill has not happened must still be discoverable through
+    // the canonical legacy category/category_id fields.
+    const start = page * limit;
+    const end = start + limit;
     const { data: links, error: linkErr } = await supabaseRead
       .from('product_categories')
       .select('product_id')
       .eq('category_id', categoryId)
       .order('product_id')
-      .range(page * limit, (page + 1) * limit);
-    if (linkErr) return { data: null, error: linkErr };
+      .range(start, end);
 
-    const linkedIds = (links ?? []).map(l => l.product_id);
-    const hasMore = linkedIds.length > limit;
-    const ids = linkedIds.slice(0, limit);
-    if (ids.length === 0) { const empty = []; empty.hasMore = false; return { data: empty, error: null }; }
+    if (linkErr) {
+      // If migration 082 is unavailable, don't turn a valid category into a
+      // blank page. Fall through to the legacy product fields.
+      if (linkErr.code !== '42P01' && linkErr.code !== 'PGRST205') {
+        return { data: null, error: linkErr };
+      }
+    }
 
-    return supabaseRead
+    let linkedIds = (links ?? []).map(l => l.product_id);
+    let hasMore = linkedIds.length > limit;
+    let ids = linkedIds.slice(0, limit);
+
+    // Legacy-safe fallback: resolve the category name and query products that
+    // were created before/without the junction-row write. This is what keeps
+    // an existing product such as Salt visible after a category redesign.
+    if (ids.length === 0) {
+      const { data: categoryRow } = await supabaseRead
+        .from('categories')
+        .select('id, name')
+        .eq('id', categoryId)
+        .maybeSingle();
+
+      if (categoryRow?.name) {
+        const columns = 'id, vendor_id, name, name_hindi, description, price, mrp, unit, stock, image_url, is_available, category, category_id, is_seasonal';
+        let legacy = await supabaseRead
+          .from('products')
+          .select(columns)
+          .eq('category_id', categoryId)
+          .eq('is_available', true)
+          .order('name')
+          .range(start, end);
+
+        // Some older rows have only the legacy free-text category field.
+        if (!legacy.error && !(legacy.data ?? []).length) {
+          legacy = await supabaseRead
+            .from('products')
+            .select(columns)
+            .eq('category', categoryRow.name)
+            .eq('is_available', true)
+            .order('name')
+            .range(start, end);
+        }
+        if (legacy.error) return legacy;
+        const result = legacy.data ?? [];
+        result.hasMore = result.length > limit;
+        return { data: result.slice(0, limit), error: null };
+      }
+    }
+
+    if (ids.length === 0) {
+      const empty = [];
+      empty.hasMore = false;
+      return { data: empty, error: null };
+    }
+
+    const result = await supabaseRead
       .from('products')
-      .select(`
-        id, vendor_id, name, name_hindi, description, price, mrp,
-        unit, stock, image_url, is_available, category, category_id, is_seasonal
-      `)
+      .select('id, vendor_id, name, name_hindi, description, price, mrp, unit, stock, image_url, is_available, category, category_id, is_seasonal')
       .in('id', ids)
       .eq('is_available', true)
-      .order('name')
-      .then(result => {
-        if (result.data) result.data.hasMore = hasMore;
-        return result;
-      });
+      .order('name');
+
+    if (result.data) result.data.hasMore = hasMore;
+    return result;
   }, (() => {
     const catName = CATEGORIES.find(c => c.id === categoryId)?.name;
     const all = PRODUCTS.filter(p => p.category === catName && p.isAvailable !== false);

@@ -10,7 +10,7 @@ import {
   MapPin, Star, Gift, Settings, ChevronRight, Edit2,
   CheckCircle, LogOut, Shield, HeadphonesIcon,
   CreditCard, FileText, Loader2, AlertCircle,
-  Moon, Sun,
+  Moon, Sun, Mic2,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -35,7 +35,7 @@ const MENU_ITEMS = [
   { label: 'SETU Credit',        icon: Shield,         path: '/customer/credit',        desc: 'Buy now, pay later · Credit score' },
   { label: 'My Trust Score',     icon: Star,           path: '/customer/trust',         desc: 'SETU Score · Silver Tier' },
   { label: 'Government Schemes', icon: FileText,       path: '/customer/schemes',       desc: 'Eligible schemes near you' },
-  { label: 'Voice Assistant',    icon: Bell,           path: '/customer/voice',         desc: 'Bolkar kharido · बोलकर खरीदो' },
+  { label: 'Voice Assistant',    icon: Mic2,           path: '/customer/voice',         desc: 'Bolkar kharido · बोलकर खरीदो' },
   { label: 'Refer & Earn',       icon: Gift,           path: '/customer/referral',      desc: 'Invite friends — coming soon' },
   { label: 'Help & Support',     icon: HeadphonesIcon, path: '/customer/support',       desc: 'Get help with your orders' },
   { label: 'Settings',           icon: Settings,       path: '/customer/settings',      desc: 'Language, privacy, offline mode' },

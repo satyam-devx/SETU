@@ -99,7 +99,7 @@ export default function CustomerOrders() {
 
   return (
     <div className="pb-nav animate-fade-in" role="main">
-      <AppHeader title="My Orders" />
+      <AppHeader title="My Orders" subtitle="Track every SETU delivery in one place" showBack backTo="/customer" eyebrow="Your activity" />
 
       <div className="px-4 py-3 space-y-3">
         {/* Search */}
