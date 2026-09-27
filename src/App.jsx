@@ -379,6 +379,7 @@ function App() {
                 <Route path="settings"               element={<Suspense fallback={<PortalFallback />}><CustomerSettings /></Suspense>} />
                 <Route path="search"                 element={<Suspense fallback={<PortalFallback />}><CustomerSearch /></Suspense>} />
                 <Route path="categories"             element={<Suspense fallback={<PortalFallback />}><CustomerCategories /></Suspense>} />
+                <Route path="category/:categoryId"      element={<Suspense fallback={<PortalFallback />}><CustomerCategoryDetail /></Suspense>} />
                 <Route path="product/:productId"     element={<Suspense fallback={<PortalFallback />}><CustomerProductDetail /></Suspense>} />
                 <Route path="vendor/:vendorId"       element={<Suspense fallback={<PortalFallback />}><CustomerVendorProfile /></Suspense>} />
                 <Route path="vendors"                element={<Suspense fallback={<PortalFallback />}><CustomerVendors /></Suspense>} />

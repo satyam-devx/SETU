@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ExternalLink, CheckCircle, Search, ChevronDown, ChevronUp, Loader2, AlertCircle } from 'lucide-react';
+import { ExternalLink, CheckCircle, Search, ChevronDown, ChevronUp, Loader2, AlertCircle, FileText } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -96,7 +96,28 @@ export default function CustomerSchemes() {
         </div>
 
         {filtered.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-8">No schemes match your filter.</p>
+          <Card className="rounded-2xl border-border overflow-hidden">
+            <div className="p-6 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto mb-3">
+                <FileText className="w-7 h-7" aria-hidden="true" />
+              </div>
+              <h2 className="font-bold text-base">No schemes available right now</h2>
+              <p className="text-xs text-muted-foreground mt-2 max-w-sm mx-auto">
+                SETU will show active government schemes here when they are published in the platform. You can also use search or filters once schemes are available.
+              </p>
+              <Button variant="outline" size="sm" className="mt-4" onClick={refetch}>
+                Refresh schemes
+              </Button>
+            </div>
+            <div className="grid grid-cols-3 border-t border-border bg-muted/30">
+              {[['Eligibility', 'See if you qualify'], ['Benefits', 'Understand support'], ['Apply', 'Follow official links']].map(([title, desc]) => (
+                <div key={title} className="p-3 text-center border-r last:border-r-0 border-border">
+                  <p className="text-[11px] font-semibold">{title}</p>
+                  <p className="text-[9px] text-muted-foreground mt-0.5">{desc}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
         )}
 
         <div className="space-y-2">

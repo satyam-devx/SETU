@@ -8,8 +8,8 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   MapPin, Star, Gift, Settings, ChevronRight, Edit2,
-  CheckCircle, LogOut, Shield, HeadphonesIcon, Camera,
-  CreditCard, FileText, Bell, Loader2, AlertCircle,
+  CheckCircle, LogOut, Shield, HeadphonesIcon,
+  CreditCard, FileText, Loader2, AlertCircle,
   Moon, Sun,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -37,7 +37,6 @@ const MENU_ITEMS = [
   { label: 'Government Schemes', icon: FileText,       path: '/customer/schemes',       desc: 'Eligible schemes near you' },
   { label: 'Voice Assistant',    icon: Bell,           path: '/customer/voice',         desc: 'Bolkar kharido · बोलकर खरीदो' },
   { label: 'Refer & Earn',       icon: Gift,           path: '/customer/referral',      desc: 'Invite friends — coming soon' },
-  { label: 'Notifications',      icon: Bell,           path: '/customer/notifications', desc: 'Manage notification preferences' },
   { label: 'Help & Support',     icon: HeadphonesIcon, path: '/customer/support',       desc: 'Get help with your orders' },
   { label: 'Settings',           icon: Settings,       path: '/customer/settings',      desc: 'Language, privacy, offline mode' },
   { label: 'Account Management', icon: Shield,         path: '/customer/account',       desc: 'Privacy, terms, data & security' },
@@ -150,131 +149,156 @@ export default function CustomerProfile() {
         }
       />
 
-      {/* ── Profile card ── */}
-      <div className="px-4 py-4">
-        <Card className="p-4 border-border">
-          <div className="flex items-center gap-4">
-            {/* Avatar with camera button */}
-            <div className="relative shrink-0">
-              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary">
-                {displayInitials}
+      {/* ── Premium profile hero ── */}
+      <section className="px-4 pt-4 pb-3">
+        <div className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-primary via-primary to-orange-700 text-primary-foreground shadow-lg">
+          <div className="absolute -right-12 -top-12 h-36 w-36 rounded-full bg-white/10" aria-hidden="true" />
+          <div className="absolute -bottom-16 -left-8 h-32 w-32 rounded-full bg-black/10" aria-hidden="true" />
+
+          <div className="relative p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-4 min-w-0">
+                <div className="relative shrink-0">
+                  <div className="w-[72px] h-[72px] rounded-[22px] bg-white/15 border border-white/25 backdrop-blur flex items-center justify-center text-2xl font-bold shadow-inner">
+                    {displayInitials}
+                  </div>
+                  {profile?.is_verified && (
+                    <span className="absolute -right-1 -bottom-1 w-7 h-7 rounded-full bg-white text-primary flex items-center justify-center border-2 border-primary shadow-sm" aria-label="Verified SETU member">
+                      <Shield className="w-3.5 h-3.5" aria-hidden="true" />
+                    </span>
+                  )}
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/70">SETU Member</p>
+                  <h2 className="text-xl font-bold leading-tight truncate mt-0.5">{profile?.name || 'SETU User'}</h2>
+                  {phone && <p className="text-xs text-white/75 mt-1">{formatPhone(phone)}</p>}
+                </div>
               </div>
+
               <button
                 onClick={openEdit}
-                className="absolute -bottom-1 -right-1 w-6 h-6 bg-card rounded-full border-2 border-border flex items-center justify-center cursor-pointer hover:bg-muted"
+                className="w-10 h-10 shrink-0 rounded-xl bg-white/12 border border-white/20 flex items-center justify-center hover:bg-white/20 active:scale-95 transition-all"
                 aria-label="Edit profile"
                 type="button"
               >
-                <Camera className="w-3 h-3 text-muted-foreground" />
+                <Edit2 className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
 
-            {/* Name + details */}
-            <div className="flex-1 min-w-0">
-              <h2 className="font-bold text-lg leading-tight">{profile?.name || 'SETU User'}</h2>
-
-              {phone && (
-                <p className="text-sm text-muted-foreground mt-0.5">{formatPhone(phone)}</p>
-              )}
-
-              <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <span className="text-xs chip-primary px-2 py-0.5 rounded-full font-bold">
-                  SETU Score: {setuScore}
-                </span>
-                {selectedVillage && (
-                  <span className="text-xs text-muted-foreground">
-                    {selectedVillage.name}, {selectedVillage.district}
-                  </span>
-                )}
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <div className="rounded-2xl bg-white/10 border border-white/15 px-3 py-2.5 backdrop-blur-sm">
+                <div className="flex items-center gap-1.5 text-white/70">
+                  <MapPin className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span className="text-[10px] font-medium">Delivering to</span>
+                </div>
+                <p className="text-xs font-semibold mt-1 truncate">
+                  {selectedVillage?.name || 'Choose village'}
+                  {selectedVillage?.district ? `, ${selectedVillage.district}` : ''}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-white/10 border border-white/15 px-3 py-2.5 backdrop-blur-sm">
+                <div className="flex items-center gap-1.5 text-white/70">
+                  <Star className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span className="text-[10px] font-medium">SETU Score</span>
+                </div>
+                <p className="text-xs font-semibold mt-1">{setuScore} <span className="font-normal text-white/60">· Silver</span></p>
               </div>
             </div>
+
+            {saved && (
+              <div className="mt-3 flex items-center gap-2 rounded-xl bg-white/12 px-3 py-2 text-xs font-medium" role="status">
+                <CheckCircle className="w-3.5 h-3.5" /> Profile updated successfully
+              </div>
+            )}
           </div>
-
-          {saved && (
-            <div className="flex items-center gap-2 text-green-600 text-xs mt-3" role="status">
-              <CheckCircle className="w-3.5 h-3.5" /> Profile updated successfully
-            </div>
-          )}
-
-          {profile?.is_verified && (
-            <div className="flex items-center gap-1.5 mt-3 text-xs text-green-700 font-semibold">
-              <Shield className="w-3.5 h-3.5" /> Verified SETU Member
-            </div>
-          )}
-        </Card>
-      </div>
+        </div>
+      </section>
 
       {/* ── Quick stats ── */}
-      <div className="px-4 mb-4 grid grid-cols-3 gap-2">
-        <Card className="p-3 text-center border-border">
-          <p className="text-xl font-bold text-primary">{myOrders.length}</p>
-          <p className="text-[10px] text-muted-foreground">Orders</p>
-        </Card>
-        <Card className="p-3 text-center border-border">
-          <p className="text-xl font-bold text-accent">₹{walletBal}</p>
-          <p className="text-[10px] text-muted-foreground">Wallet</p>
-        </Card>
-        <Card className="p-3 text-center border-border">
-          <p className="text-xl font-bold text-foreground">{delivered}</p>
-          <p className="text-[10px] text-muted-foreground">Delivered</p>
-        </Card>
-      </div>
+      <section className="px-4 mb-5" aria-label="Account overview">
+        <div className="grid grid-cols-3 gap-2">
+          <Card className="p-3.5 border-border rounded-2xl shadow-sm">
+            <p className="text-xl font-bold text-primary">{myOrders.length}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Total orders</p>
+          </Card>
+          <Card className="p-3.5 border-border rounded-2xl shadow-sm">
+            <p className="text-xl font-bold text-secondary">₹{walletBal}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Wallet balance</p>
+          </Card>
+          <Card className="p-3.5 border-border rounded-2xl shadow-sm">
+            <p className="text-xl font-bold text-accent">{delivered}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Delivered</p>
+          </Card>
+        </div>
+      </section>
 
-      {/* ── Menu items ── */}
-      <div className="px-4">
-        <div className="space-y-1">
-          {MENU_ITEMS.map(item => (
-            <Link key={item.label} to={item.path}>
-              <div className="flex items-center gap-3 py-3 px-1 hover:bg-muted/50 rounded-lg transition-colors">
-                <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center shrink-0">
-                  <item.icon className="w-4 h-4 text-muted-foreground" />
+      {/* ── Account menu ── */}
+      <div className="px-4 space-y-5">
+        <section aria-labelledby="account-title">
+          <div className="flex items-center justify-between mb-2 px-1">
+            <h3 id="account-title" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Your account</h3>
+          </div>
+          <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm divide-y divide-border/70">
+            {MENU_ITEMS.map(item => (
+              <Link key={item.label} to={item.path} className="group flex items-center gap-3 p-3.5 hover:bg-muted/50 active:bg-muted transition-colors">
+                <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
+                  <item.icon className="w-[18px] h-[18px] text-muted-foreground group-hover:text-primary transition-colors" aria-hidden="true" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{item.label}</p>
-                  <p className="text-[10px] text-muted-foreground">{item.desc}</p>
+                  <p className="text-sm font-semibold">{item.label}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{item.desc}</p>
                 </div>
-                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-              </div>
-            </Link>
-          ))}
-        </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground/60 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" aria-hidden="true" />
+              </Link>
+            ))}
+          </div>
+        </section>
 
-        <Separator className="my-3" />
+        <section aria-labelledby="preferences-title">
+          <div className="flex items-center justify-between mb-2 px-1">
+            <h3 id="preferences-title" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Preferences</h3>
+          </div>
+          <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
+            <button onClick={toggleDarkMode} className="w-full flex items-center gap-3 p-3.5 hover:bg-muted/50 transition-colors text-left">
+              <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center shrink-0">
+                {darkMode ? <Sun className="w-[18px] h-[18px] text-primary" /> : <Moon className="w-[18px] h-[18px] text-muted-foreground" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold">Appearance</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">{darkMode ? 'Dark mode is on' : 'Use light mode'}</p>
+              </div>
+              <span className={`w-10 h-6 rounded-full p-0.5 transition-colors ${darkMode ? 'bg-primary' : 'bg-muted'}`} aria-hidden="true">
+                <span className={`block w-5 h-5 rounded-full bg-card shadow-sm transition-transform ${darkMode ? 'translate-x-4' : 'translate-x-0'}`} />
+              </span>
+            </button>
+          </div>
+        </section>
+
+        <Separator />
 
         {/* Sign out */}
         {!showSignout ? (
           <button
             onClick={() => setShowSignout(true)}
-            className="flex items-center gap-3 py-3 px-1 w-full text-destructive hover:bg-muted/50 rounded-lg transition-colors"
+            className="flex items-center gap-3 p-3 w-full text-destructive hover:bg-destructive/5 rounded-2xl transition-colors"
           >
-            <div className="w-9 h-9 rounded-xl bg-destructive/10 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-destructive/10 flex items-center justify-center">
               <LogOut className="w-4 h-4" />
             </div>
-            <span className="text-sm font-medium">Sign Out</span>
+            <span className="text-sm font-semibold">Sign Out</span>
           </button>
         ) : (
-          <div className="p-4 rounded-xl border border-destructive/30 text-center mb-2">
+          <div className="p-4 rounded-2xl border border-destructive/30 bg-destructive/5 text-center mb-2">
             <p className="text-sm font-medium mb-3">Are you sure you want to sign out?</p>
             <div className="flex gap-3">
-              <button
-                onClick={() => setShowSignout(false)}
-                className="flex-1 py-2.5 rounded-xl border border-border text-sm font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSignOut}
-                className="flex-1 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-medium"
-              >
-                Sign Out
-              </button>
+              <button onClick={() => setShowSignout(false)} className="flex-1 py-2.5 rounded-xl border border-border bg-card text-sm font-medium">Cancel</button>
+              <button onClick={handleSignOut} className="flex-1 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-medium">Sign Out</button>
             </div>
           </div>
         )}
 
-        <p className="text-center text-[10px] text-muted-foreground py-3">
-          SETU v1.0.0 · बिहार में बना
-        </p>
+        <p className="text-center text-[10px] text-muted-foreground py-1 pb-4">SETU v1.0.0 · बिहार में बना</p>
       </div>
 
       {/* ── Edit Profile modal ── */}

@@ -37,7 +37,7 @@ function CustomerContent() {
   ).length;
 
   const navItems = [
-    { path: '/customer',          label: 'Home',   icon: Home },
+    { path: '/customer',          label: 'Home',   icon: Home, exact: true },
     { path: '/customer/orders',   label: 'Orders', icon: ShoppingBag, badge: pendingOrders || null },
     { path: '/customer/wallet',   label: 'Wallet', icon: Wallet },
     { path: '/customer/profile',  label: 'Profile', icon: User },

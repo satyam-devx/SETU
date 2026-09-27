@@ -88,7 +88,7 @@ export default function CustomerWallet() {
 
   return (
     <div className="pb-6">
-      <AppHeader title="SETU Wallet" />
+      <AppHeader title="SETU Wallet" showBack />
       <div className="px-4 py-4 space-y-4">
 
         {/* Global error */}
