@@ -73,6 +73,7 @@ const CustomerSupport       = lazy(() => import('@/pages/customer/CustomerSuppor
 const CustomerSettings      = lazy(() => import('@/pages/customer/CustomerSettings'));
 const CustomerSearch        = lazy(() => import('@/pages/customer/CustomerSearch'));
 const CustomerCategories    = lazy(() => import('@/pages/customer/CustomerCategories'));
+const CustomerCategoryDetail = lazy(() => import('@/pages/customer/CustomerCategoryDetail'));
 const CustomerProductDetail = lazy(() => import('@/pages/customer/CustomerProductDetail'));
 const CustomerVendorProfile = lazy(() => import('@/pages/customer/CustomerVendorProfile'));
 const CustomerCart          = lazy(() => import('@/pages/customer/CustomerCart'));
