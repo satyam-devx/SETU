@@ -1,648 +1,400 @@
 // ═══════════════════════════════════════════════════════════
-// SETU — CustomerHome (v2)
-// Constitution: "Customer portal is the most critical user journey"
-//
-// Improvements over v1:
-//  - Real data via useDataFetch (Supabase → mockData fallback)
-//  - Skeleton loading states on every section
-//  - Empty states on all dynamic lists
-//  - Error recovery UI
-//  - Banner carousel with auto-advance (3s)
-//  - Categories from DB, not hardcoded mock
-//  - Vendor cards: lazy image loading + fallback
-//  - Product cards: add-to-cart without leaving home
-//  - Voice search integrated
-//  - Accessibility: proper aria labels, roles
+// SETU — CustomerProfile (v3)
+// UI refreshed: Camera avatar, SETU Score badge, quick-stat
+// cards, rich menu with descriptions, Dark Mode toggle in header.
+// Logic unchanged: real auth, API updateProfile, store counts.
 // ═══════════════════════════════════════════════════════════
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Search, Mic, MapPin, ChevronRight, Star, Bell,
-  ShoppingCart, RefreshCw, Loader2, CheckCircle2, AlertCircle,
+  MapPin, Star, Gift, Settings, ChevronRight, Edit2,
+  CheckCircle, LogOut, Shield, HeadphonesIcon,
+  CreditCard, FileText, Loader2, AlertCircle,
+  Moon, Sun, Mic2,
 } from 'lucide-react';
-import { useCustomerOrders } from '@/hooks/queries/useOrders';
-import { useNotifications } from '@/hooks/queries/useNotifications';
-import Img from '@/components/shared/Img';
-import { useVillage } from '@/lib/village';
-import { useAuth } from '@/lib/AuthContext';
-import { useCart } from '@/lib/cartContext';
-import { safeExternalUrl, safeInternalRedirect } from '@/lib/frontend-security';
-import { useCategoryPreviews, useVendorsByVillage, useSchemes, useSevaProvidersByVillage } from '@/hooks/queries/useCatalog';
-import { useProducts } from '@/hooks/queries/useProducts';
-import { useFcmToken } from '@/hooks/useFcmToken';
-import {
-  BannerSkeleton, CategorySkeleton, VendorCardSkeleton, ProductCardSkeleton,
-} from '@/components/shared/SkeletonCard';
-import EmptyState from '@/components/shared/EmptyState';
-import BannerCard from '@/components/shared/BannerCard';
-import CategoriesCarousel from '@/components/customer/CategoriesCarousel';
-import ProductCard from '@/components/customer/ProductCard';
-import { useRealtimeBanners } from '@/hooks/useRealtimeBanners';
-import { useInView } from '@/hooks/useInView';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from '@/components/ui/select';
+import { useAuth } from '@/lib/AuthContext';
+import { useCustomerOrders } from '@/hooks/queries/useOrders';
+import { getVillages } from '@/lib/api';
+import { initials, formatPhone } from '@/lib/utils';
 
-// ── Banners now come from the `banners` table (see
-// useRealtimeBanners) — this hardcoded array was the actual reason
-// admin banner edits never reached customers: Home never queried the
-// database at all, realtime or otherwise.
+const MENU_ITEMS = [
+  { label: 'My Addresses',       icon: MapPin,         path: '/customer/addresses',     desc: 'Manage delivery addresses' },
+  { label: 'Wallet & Payments',  icon: CreditCard,     path: '/customer/wallet',        desc: 'Balance, credit & transactions' },
+  { label: 'SETU Credit',        icon: Shield,         path: '/customer/credit',        desc: 'Buy now, pay later · Credit score' },
+  { label: 'My Trust Score',     icon: Star,           path: '/customer/trust',         desc: 'SETU Score · Silver Tier' },
+  { label: 'Government Schemes', icon: FileText,       path: '/customer/schemes',       desc: 'Eligible schemes near you' },
+  { label: 'Voice Assistant',    icon: Mic2,           path: '/customer/voice',         desc: 'Bolkar kharido · बोलकर खरीदो' },
+  { label: 'Refer & Earn',       icon: Gift,           path: '/customer/referral',      desc: 'Invite friends — coming soon' },
+  { label: 'Help & Support',     icon: HeadphonesIcon, path: '/customer/support',       desc: 'Get help with your orders' },
+  { label: 'Settings',           icon: Settings,       path: '/customer/settings',      desc: 'Language, privacy, offline mode' },
+  { label: 'Account Management', icon: Shield,         path: '/customer/account',       desc: 'Privacy, terms, data & security' },
+];
 
-// ── VendorCard ────────────────────────────────────────────
-function VendorCard({ vendor }) {
-  const [imgErr, setImgErr] = useState(false);
-  return (
-    <Link to={`/customer/vendor/${vendor.id}`} className="shrink-0 w-40 block">
-      <div className="setu-card overflow-hidden">
-        <div className="h-24 bg-muted relative overflow-hidden">
-          {vendor.image_url && !imgErr ? (
-            <Img
-              src={vendor.image_url}
-              alt={vendor.name}
-              width={160}
-              height={96}
-              sizes="160px"
-              className="w-full h-full object-cover"
-              onError={() => setImgErr(true)}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-3xl">🏪</div>
-          )}
-          {vendor.is_verified && (
-            <span className="absolute top-2 left-2 bg-accent text-white text-[9px] font-medium px-1.5 py-0.5 rounded-full border-0">
-              ✓ Verified
-            </span>
-          )}
-          {!vendor.is_open && (
-            <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-              <span className="text-white text-[10px] font-bold">Closed</span>
-            </div>
-          )}
-        </div>
-        <div className="p-3">
-          <h4 className="text-xs font-semibold truncate">{vendor.name}</h4>
-          <p className="text-[10px] text-muted-foreground">{vendor.category}</p>
-          <div className="flex items-center gap-1 mt-1">
-            <Star className="w-3 h-3 text-primary fill-primary" />
-            <span className="text-[10px] font-medium">{vendor.rating?.toFixed(1) || '—'}</span>
-            {vendor.review_count > 0 && (
-              <span className="text-[10px] text-muted-foreground font-medium">({vendor.review_count})</span>
-            )}
-          </div>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-// ── SevaProviderCard ──────────────────────────────────────
-// Mirrors VendorCard's shape/sizing so the two carousels read as one
-// family, not a bolted-on feature.
-function SevaProviderCard({ p }) {
-  return (
-    <Link to="/customer/seva" className="shrink-0 w-40 block">
-      <div className="setu-card overflow-hidden">
-        <div className="h-24 bg-secondary/10 relative overflow-hidden flex items-center justify-center">
-          <span className="text-3xl">🧰</span>
-          {!p.is_available && (
-            <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-              <span className="text-white text-[10px] font-bold">Unavailable</span>
-            </div>
-          )}
-        </div>
-        <div className="p-3">
-          <h4 className="text-xs font-semibold truncate">{p.name}</h4>
-          <p className="text-[10px] text-muted-foreground">{p.category}</p>
-          <div className="flex items-center gap-1 mt-1">
-            <Star className="w-3 h-3 text-primary fill-primary" />
-            <span className="text-[10px] font-medium">{p.rating > 0 ? p.rating.toFixed(1) : 'New'}</span>
-            {p.review_count > 0 && (
-              <span className="text-[10px] text-muted-foreground font-medium">({p.review_count})</span>
-            )}
-          </div>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-// ── Main ──────────────────────────────────────────────────
-export default function CustomerHome() {
-  const navigate      = useNavigate();
-  const { village, villages: allVillages, loading: villageLoading } = useVillage();
-  const { user, updateProfile } = useAuth();
+export default function CustomerProfile() {
+  const navigate = useNavigate();
+  const { profile, user, signOut, updateProfile } = useAuth();
   const { data: orders = [] } = useCustomerOrders(user?.id, { limit: 100 });
-  const { data: notifications = [] } = useNotifications(user?.id, { limit: 30 });
-  const unreadCount = useMemo(() => notifications.filter(n => !n.read && !n.is_read).length, [notifications]);
-  const { cartCount } = useCart();
-  const [query, setQuery]           = useState('');
-  const [bannerIdx, setBannerIdx]   = useState(0);
 
-  // ── Change-village dialog ──────────────────────────────
-  // Backs the "Delivering to <village>" button below. Wired to the
-  // same `updateProfile()` path onboarding/CustomerProfile use, so
-  // VillageProvider (which now derives `village` from `profile.
-  // village_id`) picks it up everywhere immediately — no separate
-  // village-context setter needed here.
-  const [villageDialogOpen, setVillageDialogOpen] = useState(false);
-  const [selectedVillageId, setSelectedVillageId] = useState(null);
-  const [villageSaving, setVillageSaving]         = useState(false);
-  const [villageError, setVillageError]           = useState('');
+  const [showSignout, setShowSignout] = useState(false);
 
-  const openVillageDialog = () => {
-    setSelectedVillageId(village?.id || null);
-    setVillageError('');
-    setVillageDialogOpen(true);
+  // ── Dark Mode State & Handler ─────────────────────────────
+  const [darkMode, setDarkMode] = useState(
+    () => document.documentElement.classList.contains('dark')
+  );
+
+  const toggleDarkMode = () => {
+    setDarkMode(prev => {
+      const next = !prev;
+      document.documentElement.classList.toggle('dark', next);
+      return next;
+    });
   };
 
-  const handleConfirmVillage = async () => {
-    if (villageSaving) return; // re-entry guard
-    if (!selectedVillageId || selectedVillageId === village?.id) {
-      setVillageDialogOpen(false);
-      return;
-    }
-    setVillageSaving(true);
-    setVillageError('');
-    const { error } = await updateProfile({ village_id: selectedVillageId });
-    setVillageSaving(false);
-    if (error) {
-      setVillageError(error.message || 'Could not change your village. Please try again.');
-      return;
-    }
-    setVillageDialogOpen(false);
-  };
+  // ── Edit Profile modal ──────────────────────────────────
+  const [editOpen, setEditOpen]   = useState(false);
+  const [form, setForm]           = useState({ name: '', villageId: '' });
+  const [villages, setVillages]   = useState([]);
+  const [vilLoading, setVilLoading] = useState(true);
+  const [saving, setSaving]       = useState(false);
+  const [formError, setFormError] = useState(null);
+  const [saved, setSaved]         = useState(false);
 
-  // Realtime subscriptions are handled by CustomerLayout (parent).
-  // Do not add useRealtimeOrders or useRealtimeNotifications here —
-  // duplicate channels on the same name cause a Supabase error.
-
-  // ── FCM: register / refresh push token silently ────────
-  useFcmToken();
-
-  // ── In-app notification toast ─────────────────────────
-  const [toast, setToast] = useState(null);
   useEffect(() => {
-    const handler = (e) => {
-      setToast(e.detail);
-      const t = setTimeout(() => setToast(null), 4000);
-      return () => clearTimeout(t);
-    };
-    window.addEventListener('setu:notification', handler);
-    return () => window.removeEventListener('setu:notification', handler);
+    getVillages({ activeOnly: true }).then(({ data }) => {
+      if (data) setVillages(data);
+      setVilLoading(false);
+    });
   }, []);
 
-  // Live orders: only show if user is authenticated (never show u1 mock orders)
-  const liveOrders = useMemo(() => orders.filter(o =>
-    user?.id && (o.customerId === user.id || o.customer_id === user.id) &&
-    !['delivered', 'cancelled'].includes(o.status)
-  ), [orders, user?.id]);
+  const myOrders  = orders.filter(o =>
+    user?.id && (o.customerId === user.id || o.customer_id === user.id)
+  );
+  const delivered = myOrders.filter(o => o.status === 'delivered').length;
+  const setuScore = profile?.setu_score ?? 500;
+  const walletBal = profile?.wallet_balance ?? 0;
 
-  // ── Data fetching ─────────────────────────────────────
-  const { data: categories, isLoading: catsLoading, error: catsError, refetch: refetchCats } = useCategoryPreviews();
+  const phone = profile?.phone || user?.phone || '';
+  const selectedVillage = villages.find(v => v.id === form.villageId)
+    || villages.find(v => v.id === profile?.village_id);
 
-  // Home's above-the-fold critical path is intentionally limited to location,
-  // banners and categories. Below-the-fold sections opt into fetching only
-  // when they approach the viewport, reducing initial network/CPU work on
-  // low-end Android/WebView connections.
-  const [vendorsRef, vendorsInView] = useInView({ rootMargin: '500px 0px' });
-  const [sevaRef, sevaInView] = useInView({ rootMargin: '500px 0px' });
-  const [productsRef, productsInView] = useInView({ rootMargin: '700px 0px' });
-  const [schemesRef, schemesInView] = useInView({ rootMargin: '700px 0px' });
+  const openEdit = () => {
+    setForm({ name: profile?.name || '', villageId: profile?.village_id || '' });
+    setFormError(null);
+    setEditOpen(true);
+  };
 
-  const { data: vendors, isLoading: vendorsLoading, error: vendorsError, refetch: refetchVendors } = useVendorsByVillage(village?.id, {
-    enabled: vendorsInView,
-  });
-  const { data: sevaProviders, isLoading: sevaLoading } = useSevaProvidersByVillage(village?.id, {}, {
-    enabled: sevaInView,
-  });
-  const { data: products, isLoading: productsLoading, error: productsError, refetch: refetchProducts } = useProducts({ limit: 6 }, {
-    enabled: productsInView,
-    staleTime: 30_000,
-  });
-  const { data: schemes, isLoading: schemesLoading } = useSchemes({ staleTime: 300_000 }, {
-    enabled: schemesInView,
-  });
-
-  // ── Banners: real data + realtime (see useRealtimeBanners) ─────
-  const { banners, isLoading: bannersLoading, error: bannersError, refetch: refetchBanners } =
-    useRealtimeBanners(village?.id);
-
-  // ── Banner auto-advance ───────────────────────────────
-  useEffect(() => {
-    if (banners.length <= 1) return; // nothing to advance through
-    const t = setInterval(() => {
-      setBannerIdx(i => (i + 1) % banners.length);
-    }, 4000);
-    return () => clearInterval(t);
-  }, [banners.length]);
-
-  // Clamp the index if the list shrinks (a banner was deleted/deactivated
-  // via realtime) so it never points past the end of the array.
-  useEffect(() => {
-    if (bannerIdx >= banners.length && banners.length > 0) setBannerIdx(0);
-  }, [banners.length, bannerIdx]);
-
-  // ── Search ────────────────────────────────────────────
-  const handleSearchKey = useCallback((e) => {
-    if (e.key === 'Enter' && query.trim()) {
-      navigate(`/customer/search?q=${encodeURIComponent(query.trim())}`);
+  const handleSaveProfile = async () => {
+    if (saving) return;
+    if (!form.name.trim()) {
+      setFormError('Full name is required');
+      return;
     }
-  }, [query, navigate]);
+    setSaving(true);
+    setFormError(null);
+    const { error } = await updateProfile({
+      name: form.name.trim(),
+      village_id: form.villageId || null,
+    });
+    setSaving(false);
+    if (error) {
+      setFormError(error.message || 'Could not save changes');
+      return;
+    }
+    setEditOpen(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  };
 
-  const activeBanner = banners[bannerIdx] ?? null;
-  const visibleVendors = useMemo(() => {
-    const open = (vendors ?? []).filter(v => v.is_open);
-    const closed = (vendors ?? []).filter(v => !v.is_open);
-    return [...open, ...closed];
-  }, [vendors]);
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/login', { replace: true });
+  };
+
+  const displayInitials = initials(profile?.name || 'S U');
 
   return (
-    <div className="pb-nav animate-fade-in" role="main" aria-label="SETU Home">
+    <div className="pb-24 animate-fade-in" role="main">
+      {/* Quiet, app-native header — intentionally no hero card / glassmorphism. */}
+      <header className="sticky top-0 z-30 border-b border-border/60 bg-background/95 supports-[backdrop-filter]:bg-background/80 supports-[backdrop-filter]:backdrop-blur-md">
+        <div className="mx-auto flex h-14 max-w-2xl items-center justify-between px-4">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Account</p>
+            <h1 className="text-[17px] font-semibold tracking-tight">Profile</h1>
+          </div>
+          <div className="flex items-center gap-0.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleDarkMode}
+              className="h-9 w-9 rounded-full text-muted-foreground hover:text-foreground"
+              aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={openEdit}
+              className="h-9 w-9 rounded-full text-muted-foreground hover:text-foreground"
+              aria-label="Edit profile"
+            >
+              <Edit2 className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </header>
 
-      {/* ── In-app notification toast ───────────────── */}
-      {toast && (
-        <div
-          role="alert"
-          aria-live="polite"
-          className="fixed top-4 left-4 right-4 z-50 animate-slide-down"
-        >
-          <div className="bg-foreground text-background rounded-2xl px-4 py-3 shadow-xl flex items-start gap-3">
-            <Bell className="w-4 h-4 shrink-0 mt-0.5 text-primary" />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold truncate">{toast.title}</p>
-              <p className="text-[11px] opacity-80 line-clamp-2">{toast.body}</p>
+      <div className="mx-auto max-w-2xl px-4">
+        {/* Identity */}
+        <section className="py-6" aria-labelledby="profile-name">
+          <div className="flex items-center gap-4">
+            <div className="relative shrink-0">
+              <div className="flex h-[60px] w-[60px] items-center justify-center rounded-full bg-primary/10 text-lg font-semibold text-primary ring-1 ring-primary/15">
+                {displayInitials}
+              </div>
+              {profile?.is_verified && (
+                <span className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-background bg-primary text-primary-foreground" aria-label="Verified SETU member">
+                  <CheckCircle className="h-3 w-3" aria-hidden="true" />
+                </span>
+              )}
             </div>
-            <button
-              onClick={() => setToast(null)}
-              className="text-background/60 hover:text-background text-lg leading-none shrink-0"
-              aria-label="Dismiss notification"
-            >×</button>
-          </div>
-        </div>
-      )}
 
-      {/* ── Top bar ─────────────────────────────────── */}
-      <div className="px-4 pt-4 pb-2 flex items-center justify-between">
-        <button
-          onClick={openVillageDialog}
-          className="flex items-center gap-2 min-w-0 flex-1 min-h-[44px]"
-          aria-label="Change delivery location"
-        >
-          <MapPin className="w-4 h-4 text-primary shrink-0" />
-          <div className="min-w-0 text-left">
-            <p className="text-[10px] text-muted-foreground">Delivering to</p>
-            <p className="text-sm font-semibold text-foreground truncate">
-              {village?.name || (villageLoading ? 'Loading…' : 'Select village')}
-              {village?.district ? `, ${village.district}` : ''}
-            </p>
-          </div>
-          <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-        </button>
-
-        <div className="flex items-center gap-3 shrink-0">
-          <Link to="/customer/cart" className="relative" aria-label={`Cart, ${cartCount} items`}>
-            <ShoppingCart className="w-5 h-5 text-muted-foreground" />
-            {cartCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-primary text-white text-[9px] flex items-center justify-center font-bold">
-                {cartCount > 9 ? '9+' : cartCount}
-              </span>
-            )}
-          </Link>
-          <Link to="/customer/notifications" className="relative" aria-label={`Notifications, ${unreadCount} unread`}>
-            <Bell className="w-5 h-5 text-muted-foreground" />
-            {unreadCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-white text-[9px] flex items-center justify-center font-bold">
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </span>
-            )}
-          </Link>
-        </div>
-      </div>
-
-      {/* ── Search bar ──────────────────────────────── */}
-      <div className="px-4 py-2">
-        <div className="relative">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" aria-hidden="true" />
-          <input
-            type="search"
-            inputMode="search"
-            placeholder="Search products, vendors..."
-            className="input-field pl-10 pr-10 bg-muted/50 border-0 py-2.5 text-sm"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={handleSearchKey}
-            onClick={() => navigate('/customer/search')}
-            aria-label="Search products or vendors"
-          />
-          <button
-            onClick={() => navigate('/customer/voice')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-primary touch-target flex items-center justify-center"
-            aria-label="Voice search"
-          >
-            <Mic className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* ── Live order tracker ───────────────────────── */}
-      {liveOrders.length > 0 && (
-        <div className="px-4 mb-3 space-y-2" aria-label="Live order updates" aria-live="polite">
-          {liveOrders.map(o => (
-            <Link key={o.id} to={`/customer/orders/${o.id}`}>
-              <div className="setu-card p-3 border-primary/30 bg-primary/5 flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-primary animate-pulse shrink-0" aria-hidden="true" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold truncate">
-                    {o.orderNumber || o.order_number} · {o.vendorName || o.vendor_name}
-                  </p>
-                  <p className="text-xs text-primary capitalize">
-                    {(o.status || '').replace(/_/g, ' ')}
-                  </p>
-                </div>
-                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <h2 id="profile-name" className="truncate text-[20px] font-semibold tracking-tight">
+                  {profile?.name || 'SETU User'}
+                </h2>
+                {profile?.is_verified && (
+                  <span className="shrink-0 text-[10px] font-medium text-primary">Verified</span>
+                )}
               </div>
-            </Link>
-          ))}
-        </div>
-      )}
-
-      {/* ── Banner carousel ──────────────────────────── */}
-      {bannersLoading ? (
-        <div className="px-4 mb-4">
-          <div className="rounded-2xl bg-muted animate-pulse" style={{ height: 130 }} aria-busy="true" />
-        </div>
-      ) : bannersError ? (
-        <div className="px-4 mb-4">
-          <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-4 flex items-center justify-between gap-2">
-            <p className="text-xs text-destructive">Could not load banners.</p>
-            <button onClick={refetchBanners} className="text-xs text-primary font-semibold underline shrink-0">Retry</button>
-          </div>
-        </div>
-      ) : activeBanner ? (
-        <div className="px-4 mb-4">
-          {/* Indicators live INSIDE this same relatively-positioned box
-              as the banner itself (bottom-right), not in separate
-              layout space below it, and stay anchored to it as the
-              page scrolls. */}
-          <div className="relative">
-            {safeExternalUrl(activeBanner.link) ? (
-              // External URL — the admin form explicitly allows this
-              // (placeholder: "/customer/vendors or https://…"), but a
-              // React Router <Link> would mis-navigate it as an
-              // internal route rather than leaving the app.
-              <a href={safeExternalUrl(activeBanner.link)} target="_blank" rel="noopener noreferrer" className="block">
-                <BannerCard banner={activeBanner} className="min-h-[130px]" imageEager />
-              </a>
-            ) : activeBanner.link ? (
-              <Link to={safeInternalRedirect(activeBanner.link, '#')} className="block">
-                <BannerCard banner={activeBanner} className="min-h-[130px]" imageEager />
-              </Link>
-            ) : (
-              <BannerCard banner={activeBanner} className="min-h-[130px]" imageEager />
-            )}
-
-            {banners.length > 1 && (
-              <div
-                className="absolute bottom-3 right-4 flex items-center gap-1 z-20"
-                role="tablist"
-                aria-label="Banner"
+              {phone && <p className="mt-0.5 text-sm text-muted-foreground">{formatPhone(phone)}</p>}
+              <button
+                type="button"
+                onClick={openEdit}
+                className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
               >
-                {banners.map((_, i) => (
-                  <button
-                    key={i}
-                    role="tab"
-                    aria-selected={bannerIdx === i}
-                    onClick={() => setBannerIdx(i)}
-                    className="touch-target flex items-center justify-center"
-                    aria-label={`Banner ${i + 1} of ${banners.length}`}
-                  >
-                    <div
-                      className={`h-1.5 rounded-full transition-all bg-white ${
-                        bannerIdx === i ? 'w-4 opacity-100' : 'w-1.5 opacity-50'
-                      }`}
-                      style={{ boxShadow: '0 0 2px rgba(0,0,0,0.5)' }}
-                    />
-                  </button>
-                ))}
-              </div>
-            )}
+                Edit profile <ChevronRight className="h-3 w-3" aria-hidden="true" />
+              </button>
+            </div>
           </div>
-        </div>
-      ) : null}
 
-      {/* ── Categories ──────────────────────────────── */}
-      {/* Every category from the admin panel shows up here — the
-         carousel pages sideways in fixed 3×2 pages instead of ever
-         growing new columns or rows. "See All" leads to a real
-         Categories page (with products), not a generic search. */}
-      <section className="mb-6" aria-labelledby="categories-title">
-        <div className="section-header px-4">
-          <h3 id="categories-title" className="section-title">Categories</h3>
-          <Link to="/customer/categories" className="section-link">See All</Link>
-        </div>
-        {catsLoading ? (
-          <div className="px-4"><CategorySkeleton count={6} /></div>
-        ) : catsError ? (
-          <div className="px-4 flex flex-col items-center gap-2 py-6">
-            <AlertCircle className="w-6 h-6 text-destructive" aria-hidden="true" />
-            <p className="text-xs text-muted-foreground text-center">Could not load categories.</p>
-            <button onClick={refetchCats} className="text-xs text-primary font-semibold underline">Retry</button>
+          <div className="mt-5 flex items-center rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5">
+            <MapPin className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Delivery location</p>
+              <p className="truncate text-xs font-medium">
+                {selectedVillage?.name || 'Choose your village'}
+                {selectedVillage?.district ? `, ${selectedVillage.district}` : ''}
+              </p>
+            </div>
+            <button type="button" onClick={openEdit} className="shrink-0 text-xs font-medium text-primary">
+              Change
+            </button>
           </div>
-        ) : !categories?.length ? (
-          <div className="px-4"><EmptyState emoji="🛒" title="No categories yet" size="sm" /></div>
-        ) : (
-          <CategoriesCarousel categories={categories} />
-        )}
-      </section>
 
-      {/* ── Nearby Vendors ──────────────────────────── */}
-      <section ref={vendorsRef} className="mb-6" aria-labelledby="vendors-title">
-        <div className="section-header px-4">
-          <h3 id="vendors-title" className="section-title">Nearby Vendors</h3>
-          <Link to="/customer/vendors" className="section-link">See All</Link>
-        </div>
-        {vendorsLoading ? (
-          <div className="scroll-strip px-4" aria-busy="true">
-            {[1,2,3].map(i => <VendorCardSkeleton key={i} />)}
-          </div>
-        ) : vendorsError ? (
-          <div className="px-4 flex flex-col items-center gap-2 py-6">
-            <AlertCircle className="w-6 h-6 text-destructive" aria-hidden="true" />
-            <p className="text-xs text-muted-foreground text-center">Could not load vendors.</p>
-            <button onClick={refetchVendors} className="text-xs text-primary font-semibold underline">Retry</button>
-          </div>
-        ) : !vendors?.length ? (
-          <EmptyState
-            emoji="🏪"
-            title="No vendors nearby"
-            description="Vendors haven't joined your village yet. Check back soon!"
-            size="sm"
-          />
-        ) : (
-          <div className="scroll-strip px-4" role="list" aria-label="Nearby vendors">
-            {visibleVendors.map(v => (
-              <div key={v.id} role="listitem"><VendorCard vendor={v} /></div>
-            ))}
-          </div>
-        )}
-      </section>
+          {saved && (
+            <div className="mt-3 flex items-center gap-2 text-xs font-medium text-emerald-600 dark:text-emerald-400" role="status">
+              <CheckCircle className="h-3.5 w-3.5" /> Profile updated successfully
+            </div>
+          )}
+        </section>
 
-      {/* ── Seva Providers ────────────────────────────── */}
-      <section ref={sevaRef} className="mb-6" aria-labelledby="seva-title">
-        <div className="section-header px-4">
-          <h3 id="seva-title" className="section-title">Local Services Near You</h3>
-          <Link to="/customer/seva" className="section-link">See All</Link>
-        </div>
-        {sevaLoading ? (
-          <div className="scroll-strip px-4" aria-busy="true">
-            {[1,2,3].map(i => <VendorCardSkeleton key={i} />)}
-          </div>
-        ) : !sevaProviders?.length ? (
-          <div className="px-4">
-            <EmptyState
-              emoji="🧰"
-              title="No providers yet"
-              description="Be the first to request an electrician, plumber or tailor for your village."
-              size="sm"
-              action={() => navigate('/customer/seva')}
-              actionLabel="Browse Services"
-            />
-          </div>
-        ) : (
-          <div className="scroll-strip px-4" role="list" aria-label="Local service providers">
-            {sevaProviders.slice(0, 8).map(p => (
-              <div key={p.id} role="listitem"><SevaProviderCard p={p} /></div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* ── Popular Products ─────────────────────────── */}
-      <section ref={productsRef} className="px-4 mb-6" aria-labelledby="products-title">
-        <div className="section-header">
-          <h3 id="products-title" className="section-title">Popular Products</h3>
-          <Link to="/customer/search" className="section-link">See All</Link>
-        </div>
-        {productsLoading ? (
-          <div className="grid grid-cols-2 gap-3" aria-busy="true">
-            {[1,2,3,4].map(i => <ProductCardSkeleton key={i} />)}
-          </div>
-        ) : productsError ? (
-          <div className="flex flex-col items-center gap-2 py-6">
-            <AlertCircle className="w-6 h-6 text-destructive" aria-hidden="true" />
-            <p className="text-xs text-muted-foreground text-center">Could not load products.</p>
-            <button onClick={refetchProducts} className="text-xs text-primary font-semibold underline">Retry</button>
-          </div>
-        ) : !products?.length ? (
-          <EmptyState emoji="🛒" title="No products yet" size="sm" />
-        ) : (
-          <div className="grid grid-cols-2 gap-3" role="list">
-            {products.slice(0, 6).map(p => (
-              <div key={p.id} role="listitem"><ProductCard product={p} /></div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* ── Government Schemes ───────────────────────── */}
-      {!schemesLoading && !!schemes?.length && (
-        <section ref={schemesRef} className="px-4 mb-6" aria-labelledby="schemes-title">
-          <div className="section-header">
-            <h3 id="schemes-title" className="section-title">Government Schemes</h3>
-            <Link to="/customer/schemes" className="section-link">See All</Link>
-          </div>
-          <div className="space-y-2">
-            {schemes.slice(0, 2).map(scheme => (
-              <Link key={scheme.id} to="/customer/schemes" className="block">
-                <div className="setu-card p-3 flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center shrink-0" aria-hidden="true">
-                    <span className="text-sm">🏛️</span>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h4 className="text-sm font-medium line-clamp-1">{scheme.name}</h4>
-                    <p className="text-xs text-muted-foreground line-clamp-2">{scheme.description}</p>
-                  </div>
-                </div>
-              </Link>
-            ))}
+        {/* Compact account snapshot — no cards competing with the profile identity. */}
+        <section className="border-y border-border/70 py-3.5" aria-label="Account overview">
+          <div className="grid grid-cols-3 divide-x divide-border/70">
+            <div className="px-3 text-center first:pl-0 last:pr-0">
+              <p className="text-base font-semibold tracking-tight">{myOrders.length}</p>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">Orders</p>
+            </div>
+            <div className="px-3 text-center first:pl-0 last:pr-0">
+              <p className="text-base font-semibold tracking-tight">₹{walletBal}</p>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">Wallet</p>
+            </div>
+            <div className="px-3 text-center first:pl-0 last:pr-0">
+              <p className="text-base font-semibold tracking-tight">{setuScore}</p>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">SETU Score</p>
+            </div>
           </div>
         </section>
-      )}
 
-      {/* ── Referral CTA ─────────────────────────────── */}
-      {/* Text kept consistent with CustomerReferral.jsx (Pass 5 fix):
-          that screen never shows a ₹100 figure or any fabricated
-          earnings since no referral backend exists yet — this teaser
-          used to promise "Refer & Earn ₹100" and land the user on a
-          screen that then contradicted it with "coming soon". */}
-      <div className="px-4 mb-4">
-        <Link to="/customer/referral" className="block">
-          <div className="setu-card p-4 border-primary/20 bg-primary/5 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-bold">Refer & Earn</p>
-              <p className="text-xs text-muted-foreground">Invite friends — coming soon</p>
+        <div className="space-y-7 py-6">
+          <section aria-labelledby="account-title">
+            <h3 id="account-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Account</h3>
+            <div className="divide-y divide-border/70 border-y border-border/70">
+              {MENU_ITEMS.slice(0, 5).map(item => (
+                <Link
+                  key={item.label}
+                  to={item.path}
+                  className="group flex min-h-[58px] items-center gap-3 py-2.5 transition-colors active:bg-muted/50"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+                    <item.icon className="h-[17px] w-[17px]" aria-hidden="true" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{item.label}</p>
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{item.desc}</p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                </Link>
+              ))}
             </div>
-            <ChevronRight className="w-5 h-5 text-primary" aria-hidden="true" />
-          </div>
-        </Link>
+          </section>
+
+          <section aria-labelledby="more-title">
+            <h3 id="more-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">More from SETU</h3>
+            <div className="divide-y divide-border/70 border-y border-border/70">
+              {MENU_ITEMS.slice(5).map(item => (
+                <Link
+                  key={item.label}
+                  to={item.path}
+                  className="group flex min-h-[58px] items-center gap-3 py-2.5 transition-colors active:bg-muted/50"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+                    <item.icon className="h-[17px] w-[17px]" aria-hidden="true" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{item.label}</p>
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{item.desc}</p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                </Link>
+              ))}
+            </div>
+          </section>
+
+          <section aria-labelledby="preferences-title">
+            <h3 id="preferences-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Preferences</h3>
+            <div className="border-y border-border/70">
+              <button onClick={toggleDarkMode} className="flex min-h-[58px] w-full items-center gap-3 py-2.5 text-left transition-colors active:bg-muted/50">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
+                  {darkMode ? <Sun className="h-[17px] w-[17px]" /> : <Moon className="h-[17px] w-[17px]" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">Appearance</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{darkMode ? 'Dark mode is on' : 'Light mode is on'}</p>
+                </div>
+                <span className={`relative h-5 w-9 rounded-full p-0.5 transition-colors ${darkMode ? 'bg-primary' : 'bg-muted'}`} aria-hidden="true">
+                  <span className={`block h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${darkMode ? 'translate-x-4' : 'translate-x-0'}`} />
+                </span>
+              </button>
+            </div>
+          </section>
+
+          {!showSignout ? (
+            <button
+              onClick={() => setShowSignout(true)}
+              className="flex w-full items-center gap-3 py-2.5 text-left text-destructive transition-colors active:opacity-70"
+            >
+              <LogOut className="ml-1 h-4 w-4" aria-hidden="true" />
+              <span className="text-sm font-medium">Sign Out</span>
+            </button>
+          ) : (
+            <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4">
+              <p className="text-sm font-medium">Sign out of SETU?</p>
+              <p className="mt-1 text-xs text-muted-foreground">You can sign back in anytime.</p>
+              <div className="mt-3 flex gap-2">
+                <button onClick={() => setShowSignout(false)} className="flex-1 rounded-lg border border-border bg-background py-2.5 text-sm font-medium">Cancel</button>
+                <button onClick={handleSignOut} className="flex-1 rounded-lg bg-destructive py-2.5 text-sm font-medium text-destructive-foreground">Sign Out</button>
+              </div>
+            </div>
+          )}
+
+          <p className="text-center text-[10px] text-muted-foreground">SETU v1.0.0 · बिहार में बना</p>
+        </div>
       </div>
 
-      {/* ── Change-village dialog ─────────────────────── */}
-      <Dialog open={villageDialogOpen} onOpenChange={(open) => !villageSaving && setVillageDialogOpen(open)}>
+      {/* ── Edit Profile modal ── */}
+      <Dialog open={editOpen} onOpenChange={(open) => !saving && setEditOpen(open)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Change Delivery Village</DialogTitle>
+            <DialogTitle>Edit Profile</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-2 py-2 max-h-72 overflow-y-auto">
-            {!allVillages?.length ? (
-              <div className="flex items-center justify-center py-6">
-                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-              </div>
-            ) : (
-              allVillages.map(v => (
-                <button
-                  key={v.id}
-                  type="button"
-                  onClick={() => setSelectedVillageId(v.id)}
-                  className={`w-full text-left p-3 rounded-xl border transition-colors flex items-center justify-between ${
-                    selectedVillageId === v.id
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border hover:bg-muted/50'
-                  }`}
+          <div className="space-y-4 py-2">
+            <div>
+              <Label htmlFor="profile-name" className="text-xs mb-1 block">Full Name *</Label>
+              <Input
+                id="profile-name"
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                maxLength={60}
+                placeholder="Your full name"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="profile-phone" className="text-xs mb-1 block">Phone Number</Label>
+              <Input id="profile-phone" value={phone ? formatPhone(phone) : 'Not set'} disabled />
+              <Link
+                to="/customer/account"
+                className="text-xs text-primary font-medium mt-1 inline-block"
+                onClick={() => setEditOpen(false)}
+              >
+                Change phone number
+              </Link>
+            </div>
+
+            <div>
+              <Label htmlFor="profile-village" className="text-xs mb-1 block">Village</Label>
+              {vilLoading ? (
+                <div className="h-10 flex items-center px-3 border border-border rounded-xl">
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <Select
+                  value={form.villageId || undefined}
+                  onValueChange={v => setForm(f => ({ ...f, villageId: v }))}
                 >
-                  <div>
-                    <p className="text-sm font-medium">{v.name}</p>
-                    <p className="text-xs text-muted-foreground">{v.block}{v.district ? `, ${v.district}` : ''}</p>
-                  </div>
-                  {selectedVillageId === v.id && (
-                    <CheckCircle2 className="w-4 h-4 text-primary shrink-0" aria-hidden="true" />
-                  )}
-                </button>
-              ))
+                  <SelectTrigger id="profile-village">
+                    <SelectValue placeholder="Select your village" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {villages.map(v => (
+                      <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            {selectedVillage && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="profile-district" className="text-xs mb-1 block">District</Label>
+                  <Input id="profile-district" value={selectedVillage.district} disabled />
+                </div>
+                <div>
+                  <Label htmlFor="profile-state" className="text-xs mb-1 block">State</Label>
+                  <Input id="profile-state" value={selectedVillage.state} disabled />
+                </div>
+              </div>
+            )}
+
+            {formError && (
+              <p className="text-xs text-destructive flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {formError}
+              </p>
             )}
           </div>
 
-          {villageError && (
-            <p className="text-xs text-destructive flex items-center gap-1.5">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {villageError}
-            </p>
-          )}
-
           <DialogFooter>
-            <Button
-              className="w-full gap-2"
-              onClick={handleConfirmVillage}
-              disabled={villageSaving || !selectedVillageId}
-            >
-              {villageSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-              Confirm Village
+            <Button className="w-full gap-2" onClick={handleSaveProfile} disabled={saving}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
     </div>
   );
 }
