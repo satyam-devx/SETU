@@ -12,8 +12,6 @@ import {
   CreditCard, FileText, Loader2, AlertCircle,
   Moon, Sun, Mic2,
 } from 'lucide-react';
-import { Card } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,7 +21,6 @@ import {
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select';
-import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
 import { useCustomerOrders } from '@/hooks/queries/useOrders';
 import { getVillages } from '@/lib/api';
@@ -125,180 +122,195 @@ export default function CustomerProfile() {
   const displayInitials = initials(profile?.name || 'S U');
 
   return (
-    <div className="pb-20 animate-fade-in" role="main">
-      <AppHeader
-        title="Profile"
-        rightAction={
-          <div className="flex items-center gap-1">
+    <div className="pb-24 animate-fade-in" role="main">
+      {/* Quiet, app-native header — intentionally no hero card / glassmorphism. */}
+      <header className="sticky top-0 z-30 border-b border-border/60 bg-background/95 supports-[backdrop-filter]:bg-background/80 supports-[backdrop-filter]:backdrop-blur-md">
+        <div className="mx-auto flex h-14 max-w-2xl items-center justify-between px-4">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Account</p>
+            <h1 className="text-[17px] font-semibold tracking-tight">Profile</h1>
+          </div>
+          <div className="flex items-center gap-0.5">
             <Button
               variant="ghost"
               size="icon"
               onClick={toggleDarkMode}
+              className="h-9 w-9 rounded-full text-muted-foreground hover:text-foreground"
               aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
             >
-              {darkMode ? (
-                <Sun className="w-4 h-4 text-amber-500 transition-transform hover:rotate-45" />
-              ) : (
-                <Moon className="w-4 h-4 text-muted-foreground transition-transform hover:-rotate-12" />
-              )}
+              {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
-            <Button variant="ghost" size="icon" onClick={openEdit} aria-label="Edit profile">
-              <Edit2 className="w-4 h-4" />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={openEdit}
+              className="h-9 w-9 rounded-full text-muted-foreground hover:text-foreground"
+              aria-label="Edit profile"
+            >
+              <Edit2 className="h-4 w-4" />
             </Button>
           </div>
-        }
-      />
+        </div>
+      </header>
 
-      {/* ── Premium profile hero ── */}
-      <section className="px-4 pt-4 pb-3">
-        <div className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-primary via-primary to-orange-700 text-primary-foreground shadow-lg">
-          <div className="absolute -right-12 -top-12 h-36 w-36 rounded-full bg-white/10" aria-hidden="true" />
-          <div className="absolute -bottom-16 -left-8 h-32 w-32 rounded-full bg-black/10" aria-hidden="true" />
-
-          <div className="relative p-5">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-center gap-4 min-w-0">
-                <div className="relative shrink-0">
-                  <div className="w-[72px] h-[72px] rounded-[22px] bg-white/15 border border-white/25 backdrop-blur flex items-center justify-center text-2xl font-bold shadow-inner">
-                    {displayInitials}
-                  </div>
-                  {profile?.is_verified && (
-                    <span className="absolute -right-1 -bottom-1 w-7 h-7 rounded-full bg-white text-primary flex items-center justify-center border-2 border-primary shadow-sm" aria-label="Verified SETU member">
-                      <Shield className="w-3.5 h-3.5" aria-hidden="true" />
-                    </span>
-                  )}
-                </div>
-
-                <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/70">SETU Member</p>
-                  <h2 className="text-xl font-bold leading-tight truncate mt-0.5">{profile?.name || 'SETU User'}</h2>
-                  {phone && <p className="text-xs text-white/75 mt-1">{formatPhone(phone)}</p>}
-                </div>
+      <div className="mx-auto max-w-2xl px-4">
+        {/* Identity */}
+        <section className="py-6" aria-labelledby="profile-name">
+          <div className="flex items-center gap-4">
+            <div className="relative shrink-0">
+              <div className="flex h-[60px] w-[60px] items-center justify-center rounded-full bg-primary/10 text-lg font-semibold text-primary ring-1 ring-primary/15">
+                {displayInitials}
               </div>
+              {profile?.is_verified && (
+                <span className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-background bg-primary text-primary-foreground" aria-label="Verified SETU member">
+                  <CheckCircle className="h-3 w-3" aria-hidden="true" />
+                </span>
+              )}
+            </div>
 
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <h2 id="profile-name" className="truncate text-[20px] font-semibold tracking-tight">
+                  {profile?.name || 'SETU User'}
+                </h2>
+                {profile?.is_verified && (
+                  <span className="shrink-0 text-[10px] font-medium text-primary">Verified</span>
+                )}
+              </div>
+              {phone && <p className="mt-0.5 text-sm text-muted-foreground">{formatPhone(phone)}</p>}
               <button
-                onClick={openEdit}
-                className="w-10 h-10 shrink-0 rounded-xl bg-white/12 border border-white/20 flex items-center justify-center hover:bg-white/20 active:scale-95 transition-all"
-                aria-label="Edit profile"
                 type="button"
+                onClick={openEdit}
+                className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
               >
-                <Edit2 className="w-4 h-4" aria-hidden="true" />
+                Edit profile <ChevronRight className="h-3 w-3" aria-hidden="true" />
               </button>
             </div>
+          </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-2">
-              <div className="rounded-2xl bg-white/10 border border-white/15 px-3 py-2.5 backdrop-blur-sm">
-                <div className="flex items-center gap-1.5 text-white/70">
-                  <MapPin className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span className="text-[10px] font-medium">Delivering to</span>
-                </div>
-                <p className="text-xs font-semibold mt-1 truncate">
-                  {selectedVillage?.name || 'Choose village'}
-                  {selectedVillage?.district ? `, ${selectedVillage.district}` : ''}
-                </p>
-              </div>
-              <div className="rounded-2xl bg-white/10 border border-white/15 px-3 py-2.5 backdrop-blur-sm">
-                <div className="flex items-center gap-1.5 text-white/70">
-                  <Star className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span className="text-[10px] font-medium">SETU Score</span>
-                </div>
-                <p className="text-xs font-semibold mt-1">{setuScore} <span className="font-normal text-white/60">· Silver</span></p>
-              </div>
+          <div className="mt-5 flex items-center rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5">
+            <MapPin className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Delivery location</p>
+              <p className="truncate text-xs font-medium">
+                {selectedVillage?.name || 'Choose your village'}
+                {selectedVillage?.district ? `, ${selectedVillage.district}` : ''}
+              </p>
             </div>
-
-            {saved && (
-              <div className="mt-3 flex items-center gap-2 rounded-xl bg-white/12 px-3 py-2 text-xs font-medium" role="status">
-                <CheckCircle className="w-3.5 h-3.5" /> Profile updated successfully
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Quick stats ── */}
-      <section className="px-4 mb-5" aria-label="Account overview">
-        <div className="grid grid-cols-3 gap-2">
-          <Card className="p-3.5 border-border rounded-2xl shadow-sm">
-            <p className="text-xl font-bold text-primary">{myOrders.length}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Total orders</p>
-          </Card>
-          <Card className="p-3.5 border-border rounded-2xl shadow-sm">
-            <p className="text-xl font-bold text-secondary">₹{walletBal}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Wallet balance</p>
-          </Card>
-          <Card className="p-3.5 border-border rounded-2xl shadow-sm">
-            <p className="text-xl font-bold text-accent">{delivered}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Delivered</p>
-          </Card>
-        </div>
-      </section>
-
-      {/* ── Account menu ── */}
-      <div className="px-4 space-y-5">
-        <section aria-labelledby="account-title">
-          <div className="flex items-center justify-between mb-2 px-1">
-            <h3 id="account-title" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Your account</h3>
-          </div>
-          <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm divide-y divide-border/70">
-            {MENU_ITEMS.map(item => (
-              <Link key={item.label} to={item.path} className="group flex items-center gap-3 p-3.5 hover:bg-muted/50 active:bg-muted transition-colors">
-                <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
-                  <item.icon className="w-[18px] h-[18px] text-muted-foreground group-hover:text-primary transition-colors" aria-hidden="true" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold">{item.label}</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{item.desc}</p>
-                </div>
-                <ChevronRight className="w-4 h-4 text-muted-foreground/60 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" aria-hidden="true" />
-              </Link>
-            ))}
-          </div>
-        </section>
-
-        <section aria-labelledby="preferences-title">
-          <div className="flex items-center justify-between mb-2 px-1">
-            <h3 id="preferences-title" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Preferences</h3>
-          </div>
-          <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
-            <button onClick={toggleDarkMode} className="w-full flex items-center gap-3 p-3.5 hover:bg-muted/50 transition-colors text-left">
-              <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center shrink-0">
-                {darkMode ? <Sun className="w-[18px] h-[18px] text-primary" /> : <Moon className="w-[18px] h-[18px] text-muted-foreground" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold">Appearance</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">{darkMode ? 'Dark mode is on' : 'Use light mode'}</p>
-              </div>
-              <span className={`w-10 h-6 rounded-full p-0.5 transition-colors ${darkMode ? 'bg-primary' : 'bg-muted'}`} aria-hidden="true">
-                <span className={`block w-5 h-5 rounded-full bg-card shadow-sm transition-transform ${darkMode ? 'translate-x-4' : 'translate-x-0'}`} />
-              </span>
+            <button type="button" onClick={openEdit} className="shrink-0 text-xs font-medium text-primary">
+              Change
             </button>
           </div>
+
+          {saved && (
+            <div className="mt-3 flex items-center gap-2 text-xs font-medium text-emerald-600 dark:text-emerald-400" role="status">
+              <CheckCircle className="h-3.5 w-3.5" /> Profile updated successfully
+            </div>
+          )}
         </section>
 
-        <Separator />
-
-        {/* Sign out */}
-        {!showSignout ? (
-          <button
-            onClick={() => setShowSignout(true)}
-            className="flex items-center gap-3 p-3 w-full text-destructive hover:bg-destructive/5 rounded-2xl transition-colors"
-          >
-            <div className="w-10 h-10 rounded-xl bg-destructive/10 flex items-center justify-center">
-              <LogOut className="w-4 h-4" />
+        {/* Compact account snapshot — no cards competing with the profile identity. */}
+        <section className="border-y border-border/70 py-3.5" aria-label="Account overview">
+          <div className="grid grid-cols-3 divide-x divide-border/70">
+            <div className="px-3 text-center first:pl-0 last:pr-0">
+              <p className="text-base font-semibold tracking-tight">{myOrders.length}</p>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">Orders</p>
             </div>
-            <span className="text-sm font-semibold">Sign Out</span>
-          </button>
-        ) : (
-          <div className="p-4 rounded-2xl border border-destructive/30 bg-destructive/5 text-center mb-2">
-            <p className="text-sm font-medium mb-3">Are you sure you want to sign out?</p>
-            <div className="flex gap-3">
-              <button onClick={() => setShowSignout(false)} className="flex-1 py-2.5 rounded-xl border border-border bg-card text-sm font-medium">Cancel</button>
-              <button onClick={handleSignOut} className="flex-1 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-medium">Sign Out</button>
+            <div className="px-3 text-center first:pl-0 last:pr-0">
+              <p className="text-base font-semibold tracking-tight">₹{walletBal}</p>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">Wallet</p>
+            </div>
+            <div className="px-3 text-center first:pl-0 last:pr-0">
+              <p className="text-base font-semibold tracking-tight">{setuScore}</p>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">SETU Score</p>
             </div>
           </div>
-        )}
+        </section>
 
-        <p className="text-center text-[10px] text-muted-foreground py-1 pb-4">SETU v1.0.0 · बिहार में बना</p>
+        <div className="space-y-7 py-6">
+          <section aria-labelledby="account-title">
+            <h3 id="account-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Account</h3>
+            <div className="divide-y divide-border/70 border-y border-border/70">
+              {MENU_ITEMS.slice(0, 5).map(item => (
+                <Link
+                  key={item.label}
+                  to={item.path}
+                  className="group flex min-h-[58px] items-center gap-3 py-2.5 transition-colors active:bg-muted/50"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+                    <item.icon className="h-[17px] w-[17px]" aria-hidden="true" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{item.label}</p>
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{item.desc}</p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                </Link>
+              ))}
+            </div>
+          </section>
+
+          <section aria-labelledby="more-title">
+            <h3 id="more-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">More from SETU</h3>
+            <div className="divide-y divide-border/70 border-y border-border/70">
+              {MENU_ITEMS.slice(5).map(item => (
+                <Link
+                  key={item.label}
+                  to={item.path}
+                  className="group flex min-h-[58px] items-center gap-3 py-2.5 transition-colors active:bg-muted/50"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+                    <item.icon className="h-[17px] w-[17px]" aria-hidden="true" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{item.label}</p>
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{item.desc}</p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                </Link>
+              ))}
+            </div>
+          </section>
+
+          <section aria-labelledby="preferences-title">
+            <h3 id="preferences-title" className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Preferences</h3>
+            <div className="border-y border-border/70">
+              <button onClick={toggleDarkMode} className="flex min-h-[58px] w-full items-center gap-3 py-2.5 text-left transition-colors active:bg-muted/50">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
+                  {darkMode ? <Sun className="h-[17px] w-[17px]" /> : <Moon className="h-[17px] w-[17px]" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">Appearance</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{darkMode ? 'Dark mode is on' : 'Light mode is on'}</p>
+                </div>
+                <span className={`relative h-5 w-9 rounded-full p-0.5 transition-colors ${darkMode ? 'bg-primary' : 'bg-muted'}`} aria-hidden="true">
+                  <span className={`block h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${darkMode ? 'translate-x-4' : 'translate-x-0'}`} />
+                </span>
+              </button>
+            </div>
+          </section>
+
+          {!showSignout ? (
+            <button
+              onClick={() => setShowSignout(true)}
+              className="flex w-full items-center gap-3 py-2.5 text-left text-destructive transition-colors active:opacity-70"
+            >
+              <LogOut className="ml-1 h-4 w-4" aria-hidden="true" />
+              <span className="text-sm font-medium">Sign Out</span>
+            </button>
+          ) : (
+            <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4">
+              <p className="text-sm font-medium">Sign out of SETU?</p>
+              <p className="mt-1 text-xs text-muted-foreground">You can sign back in anytime.</p>
+              <div className="mt-3 flex gap-2">
+                <button onClick={() => setShowSignout(false)} className="flex-1 rounded-lg border border-border bg-background py-2.5 text-sm font-medium">Cancel</button>
+                <button onClick={handleSignOut} className="flex-1 rounded-lg bg-destructive py-2.5 text-sm font-medium text-destructive-foreground">Sign Out</button>
+              </div>
+            </div>
+          )}
+
+          <p className="text-center text-[10px] text-muted-foreground">SETU v1.0.0 · बिहार में बना</p>
+        </div>
       </div>
 
       {/* ── Edit Profile modal ── */}
