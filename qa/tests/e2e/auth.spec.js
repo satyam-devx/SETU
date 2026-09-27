@@ -48,7 +48,20 @@ test.describe('Authentication pages', () => {
     // actual app bug, and report exactly what failed instead of nothing.
     const failedResources = [];
     page.on('response', res => {
-      if (res.status() >= 400) failedResources.push({ url: res.url(), status: res.status() });
+      if (res.status() < 400) return;
+      // GitHub Pages has no server-side SPA rewrite, so a direct
+      // navigation to a client-routed path -- like this test's own
+      // `page.goto('/login')` below -- gets a genuine HTTP 404 from
+      // GitHub's origin. deploy.yml copies dist/index.html ->
+      // dist/404.html precisely so that 404 response body still boots
+      // the SPA and renders this same route correctly (see the
+      // toHaveTitle/phoneInput assertions further down, which still
+      // have to pass either way) -- see the comment in public/_redirects.
+      // That's expected and by design, so only the top-level navigation
+      // request gets a pass on 404 here; a failing status on any *other*
+      // resource (image, script, API call) is still a real bug.
+      if (res.request().isNavigationRequest() && res.status() === 404) return;
+      failedResources.push({ url: res.url(), status: res.status() });
     });
     page.on('requestfailed', req => {
       failedResources.push({ url: req.url(), failure: req.failure()?.errorText });
