@@ -1,13 +1,13 @@
 // ═══════════════════════════════════════════════════════════
 // SETU — CustomerProfile (v3)
-// UI refreshed: Camera avatar, SETU Score badge, quick-stat
-// cards, rich menu with descriptions, Dark Mode toggle in header.
-// Logic unchanged: real auth, API updateProfile, store counts.
+// UI: minimal premium profile header, SETU-tinted identity card,
+// compact account navigation, and bottom-sheet profile editing.
+// Logic preserved: real auth, API updateProfile, village selection, sign-out.
 // ═══════════════════════════════════════════════════════════
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  MapPin, Star, Gift, Settings, ChevronRight, Edit2,
+  MapPin, Star, Gift, Settings, ChevronRight, Edit2, ArrowLeft,
   CheckCircle, LogOut, Shield, HeadphonesIcon,
   CreditCard, FileText, Loader2, AlertCircle,
   Moon, Sun, Mic2,
@@ -16,13 +16,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from '@/components/ui/dialog';
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from '@/components/ui/sheet';
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from '@/components/ui/select';
 import { useAuth } from '@/lib/AuthContext';
-import { useCustomerOrders } from '@/hooks/queries/useOrders';
 import { getVillages } from '@/lib/api';
 import { initials, formatPhone } from '@/lib/utils';
 
@@ -42,8 +41,6 @@ const MENU_ITEMS = [
 export default function CustomerProfile() {
   const navigate = useNavigate();
   const { profile, user, signOut, updateProfile } = useAuth();
-  const { data: orders = [] } = useCustomerOrders(user?.id, { limit: 100 });
-
   const [showSignout, setShowSignout] = useState(false);
 
   // ── Dark Mode State & Handler ─────────────────────────────
@@ -59,7 +56,7 @@ export default function CustomerProfile() {
     });
   };
 
-  // ── Edit Profile modal ──────────────────────────────────
+  // ── Edit Profile bottom sheet ───────────────────────────
   const [editOpen, setEditOpen]   = useState(false);
   const [form, setForm]           = useState({ name: '', villageId: '' });
   const [villages, setVillages]   = useState([]);
@@ -74,13 +71,6 @@ export default function CustomerProfile() {
       setVilLoading(false);
     });
   }, []);
-
-  const myOrders  = orders.filter(o =>
-    user?.id && (o.customerId === user.id || o.customer_id === user.id)
-  );
-  const delivered = myOrders.filter(o => o.status === 'delivered').length;
-  const setuScore = profile?.setu_score ?? 500;
-  const walletBal = profile?.wallet_balance ?? 0;
 
   const phone = profile?.phone || user?.phone || '';
   const selectedVillage = villages.find(v => v.id === form.villageId)
@@ -123,109 +113,86 @@ export default function CustomerProfile() {
 
   return (
     <div className="pb-24 animate-fade-in" role="main">
-      {/* Quiet, app-native header — intentionally no hero card / glassmorphism. */}
-      <header className="sticky top-0 z-30 border-b border-border/60 bg-background/95 supports-[backdrop-filter]:bg-background/80 supports-[backdrop-filter]:backdrop-blur-md">
-        <div className="mx-auto flex h-14 max-w-2xl items-center justify-between px-4">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Account</p>
-            <h1 className="text-[17px] font-semibold tracking-tight">Profile</h1>
-          </div>
-          <div className="flex items-center gap-0.5">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleDarkMode}
-              className="h-9 w-9 rounded-full text-muted-foreground hover:text-foreground"
-              aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-            >
-              {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={openEdit}
-              className="h-9 w-9 rounded-full text-muted-foreground hover:text-foreground"
-              aria-label="Edit profile"
-            >
-              <Edit2 className="h-4 w-4" />
-            </Button>
-          </div>
+      {/* Minimal native-app header: no border, card, or secondary eyebrow. */}
+      <header className="sticky top-0 z-30 bg-background/95 supports-[backdrop-filter]:bg-background/80 supports-[backdrop-filter]:backdrop-blur-md">
+        <div className="relative mx-auto flex h-14 max-w-2xl items-center justify-center px-4">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="absolute left-3 inline-flex h-10 w-10 items-center justify-center rounded-full text-foreground/80 transition-colors hover:bg-muted active:scale-95"
+            aria-label="Go back"
+          >
+            <ArrowLeft className="h-[20px] w-[20px]" aria-hidden="true" />
+          </button>
+          <h1 className="text-[18px] font-semibold tracking-[-0.02em]">Profile</h1>
+          <div className="absolute right-3 h-10 w-10" aria-hidden="true" />
         </div>
       </header>
 
       <div className="mx-auto max-w-2xl px-4">
-        {/* Identity */}
-        <section className="py-6" aria-labelledby="profile-name">
-          <div className="flex items-center gap-4">
-            <div className="relative shrink-0">
-              <div className="flex h-[60px] w-[60px] items-center justify-center rounded-full bg-primary/10 text-lg font-semibold text-primary ring-1 ring-primary/15">
-                {displayInitials}
-              </div>
-              {profile?.is_verified && (
-                <span className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-background bg-primary text-primary-foreground" aria-label="Verified SETU member">
-                  <CheckCircle className="h-3 w-3" aria-hidden="true" />
-                </span>
-              )}
-            </div>
-
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <h2 id="profile-name" className="truncate text-[20px] font-semibold tracking-tight">
-                  {profile?.name || 'SETU User'}
-                </h2>
-                {profile?.is_verified && (
-                  <span className="shrink-0 text-[10px] font-medium text-primary">Verified</span>
-                )}
-              </div>
-              {phone && <p className="mt-0.5 text-sm text-muted-foreground">{formatPhone(phone)}</p>}
+        {/* Identity card — restrained SETU color, no glassmorphism or oversized hero. */}
+        <section className="pt-4" aria-labelledby="profile-name-heading">
+          <div className="overflow-hidden rounded-[26px] bg-primary/[0.075] px-5 py-5 dark:bg-primary/[0.11]">
+            <div className="flex items-center gap-4">
               <button
                 type="button"
                 onClick={openEdit}
-                className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                className="group relative flex h-[68px] w-[68px] shrink-0 items-center justify-center rounded-full bg-primary/10 text-xl font-semibold text-primary ring-1 ring-primary/15 transition-transform active:scale-[0.97]"
+                aria-label="Edit profile"
               >
-                Edit profile <ChevronRight className="h-3 w-3" aria-hidden="true" />
+                {displayInitials}
+                <span className="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm ring-2 ring-background">
+                  <Edit2 className="h-3 w-3" aria-hidden="true" />
+                </span>
               </button>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <h2 id="profile-name-heading" className="truncate text-[21px] font-semibold tracking-[-0.025em]">
+                    {profile?.name || 'SETU User'}
+                  </h2>
+                  {profile?.is_verified && (
+                    <span className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-primary">
+                      <CheckCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                      Verified
+                    </span>
+                  )}
+                </div>
+                {phone && <p className="mt-1 text-sm text-muted-foreground">{formatPhone(phone)}</p>}
+                <button
+                  type="button"
+                  onClick={openEdit}
+                  className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-primary"
+                >
+                  Edit profile <ChevronRight className="h-3 w-3" aria-hidden="true" />
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="mt-5 flex items-center rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5">
-            <MapPin className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <div className="mt-4 flex items-center gap-3 px-1 py-1">
+            <MapPin className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
             <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Delivery location</p>
-              <p className="truncate text-xs font-medium">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Delivery location</p>
+              <p className="truncate text-sm font-medium">
                 {selectedVillage?.name || 'Choose your village'}
                 {selectedVillage?.district ? `, ${selectedVillage.district}` : ''}
               </p>
             </div>
-            <button type="button" onClick={openEdit} className="shrink-0 text-xs font-medium text-primary">
+            <button type="button" onClick={openEdit} className="shrink-0 text-xs font-semibold text-primary">
               Change
             </button>
           </div>
 
           {saved && (
-            <div className="mt-3 flex items-center gap-2 text-xs font-medium text-emerald-600 dark:text-emerald-400" role="status">
+            <div className="mt-3 flex items-center gap-2 px-1 text-xs font-medium text-emerald-600 dark:text-emerald-400" role="status">
               <CheckCircle className="h-3.5 w-3.5" /> Profile updated successfully
             </div>
           )}
         </section>
 
-        {/* Compact account snapshot — no cards competing with the profile identity. */}
-        <section className="border-y border-border/70 py-3.5" aria-label="Account overview">
-          <div className="grid grid-cols-3 divide-x divide-border/70">
-            <div className="px-3 text-center first:pl-0 last:pr-0">
-              <p className="text-base font-semibold tracking-tight">{myOrders.length}</p>
-              <p className="mt-0.5 text-[10px] text-muted-foreground">Orders</p>
-            </div>
-            <div className="px-3 text-center first:pl-0 last:pr-0">
-              <p className="text-base font-semibold tracking-tight">₹{walletBal}</p>
-              <p className="mt-0.5 text-[10px] text-muted-foreground">Wallet</p>
-            </div>
-            <div className="px-3 text-center first:pl-0 last:pr-0">
-              <p className="text-base font-semibold tracking-tight">{setuScore}</p>
-              <p className="mt-0.5 text-[10px] text-muted-foreground">SETU Score</p>
-            </div>
-          </div>
-        </section>
+        {/* Account navigation begins directly after identity; no stat strip. */}
+
 
         <div className="space-y-7 py-6">
           <section aria-labelledby="account-title">
@@ -313,49 +280,65 @@ export default function CustomerProfile() {
         </div>
       </div>
 
-      {/* ── Edit Profile modal ── */}
-      <Dialog open={editOpen} onOpenChange={(open) => !saving && setEditOpen(open)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Edit Profile</DialogTitle>
-          </DialogHeader>
+      {/* ── Edit Profile bottom sheet ── */}
+      <Sheet open={editOpen} onOpenChange={(open) => !saving && setEditOpen(open)}>
+        <SheetContent
+          side="bottom"
+          className="max-h-[88vh] rounded-t-[28px] border-0 px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 shadow-[0_-12px_40px_rgba(0,0,0,0.12)]"
+        >
+          <div className="mx-auto mb-5 h-1 w-10 rounded-full bg-muted-foreground/20" aria-hidden="true" />
+          <SheetHeader className="pr-8 text-left">
+            <SheetTitle className="text-[22px] tracking-[-0.025em]">Edit profile</SheetTitle>
+            <SheetDescription>Keep your SETU account details up to date.</SheetDescription>
+          </SheetHeader>
 
-          <div className="space-y-4 py-2">
-            <div>
-              <Label htmlFor="profile-name" className="text-xs mb-1 block">Full Name *</Label>
+          <div className="mt-6 space-y-5 overflow-y-auto pb-1">
+            <div className="flex items-center gap-3">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary/10 text-lg font-semibold text-primary ring-1 ring-primary/15">
+                {displayInitials}
+              </div>
+              <div>
+                <p className="text-sm font-semibold">Profile identity</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">Your initials are generated from your name.</p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="profile-name-input" className="text-xs font-semibold">Full name</Label>
               <Input
-                id="profile-name"
+                id="profile-name-input"
                 value={form.name}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                 maxLength={60}
                 placeholder="Your full name"
+                className="h-12 rounded-xl bg-muted/30"
               />
             </div>
 
-            <div>
-              <Label htmlFor="profile-phone" className="text-xs mb-1 block">Phone Number</Label>
-              <Input id="profile-phone" value={phone ? formatPhone(phone) : 'Not set'} disabled />
+            <div className="space-y-2">
+              <Label htmlFor="profile-phone" className="text-xs font-semibold">Phone number</Label>
+              <Input id="profile-phone" value={phone ? formatPhone(phone) : 'Not set'} disabled className="h-12 rounded-xl bg-muted/30" />
               <Link
                 to="/customer/account"
-                className="text-xs text-primary font-medium mt-1 inline-block"
+                className="inline-block text-xs font-semibold text-primary"
                 onClick={() => setEditOpen(false)}
               >
                 Change phone number
               </Link>
             </div>
 
-            <div>
-              <Label htmlFor="profile-village" className="text-xs mb-1 block">Village</Label>
+            <div className="space-y-2">
+              <Label htmlFor="profile-village" className="text-xs font-semibold">Village</Label>
               {vilLoading ? (
-                <div className="h-10 flex items-center px-3 border border-border rounded-xl">
-                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                <div className="flex h-12 items-center rounded-xl bg-muted/30 px-3">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 </div>
               ) : (
                 <Select
                   value={form.villageId || undefined}
                   onValueChange={v => setForm(f => ({ ...f, villageId: v }))}
                 >
-                  <SelectTrigger id="profile-village">
+                  <SelectTrigger id="profile-village" className="h-12 rounded-xl bg-muted/30">
                     <SelectValue placeholder="Select your village" />
                   </SelectTrigger>
                   <SelectContent>
@@ -369,32 +352,31 @@ export default function CustomerProfile() {
 
             {selectedVillage && (
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label htmlFor="profile-district" className="text-xs mb-1 block">District</Label>
-                  <Input id="profile-district" value={selectedVillage.district} disabled />
+                <div className="space-y-2">
+                  <Label htmlFor="profile-district" className="text-xs font-semibold">District</Label>
+                  <Input id="profile-district" value={selectedVillage.district} disabled className="h-11 rounded-xl bg-muted/30" />
                 </div>
-                <div>
-                  <Label htmlFor="profile-state" className="text-xs mb-1 block">State</Label>
-                  <Input id="profile-state" value={selectedVillage.state} disabled />
+                <div className="space-y-2">
+                  <Label htmlFor="profile-state" className="text-xs font-semibold">State</Label>
+                  <Input id="profile-state" value={selectedVillage.state} disabled className="h-11 rounded-xl bg-muted/30" />
                 </div>
               </div>
             )}
 
             {formError && (
-              <p className="text-xs text-destructive flex items-center gap-1.5">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {formError}
+              <p className="flex items-center gap-1.5 text-xs text-destructive" role="alert">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" /> {formError}
               </p>
             )}
-          </div>
 
-          <DialogFooter>
-            <Button className="w-full gap-2" onClick={handleSaveProfile} disabled={saving}>
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-              Save Changes
+            <Button className="h-12 w-full rounded-xl gap-2 text-sm font-semibold" onClick={handleSaveProfile} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+              Save changes
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
+
     </div>
   );
 }
