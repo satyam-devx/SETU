@@ -25,3 +25,5 @@ Thumbs.db
 
 # npm audit snapshots — regenerate via qa's audit:deps script, don't commit
 audit.json
+.ideavo/project
+*.log
