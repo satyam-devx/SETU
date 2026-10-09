@@ -336,7 +336,16 @@ serve(async (req) => {
     notes: { type },
   })
 
-  if (dbErr) console.error('[create-razorpay-order] DB insert failed:', dbErr)
+  // AUDIT F-02: the webhook credits wallet top-ups / credit repayments by looking up this
+  // payment_orders row (user, type, expected amount). If we cannot persist it, do NOT hand the
+  // gateway order to the client — a captured payment could not be attributed to anyone.
+  if (dbErr) {
+    console.error('[create-razorpay-order] DB insert failed:', dbErr)
+    return new Response(
+      JSON.stringify({ error: 'Could not record payment. Please try again.' }),
+      { status: 503, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+    )
+  }
 
   return new Response(JSON.stringify(razorpayOrder), {
     headers: { ...CORS_HEADERS, "Content-Type": "application/json" },

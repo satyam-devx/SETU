@@ -29,6 +29,26 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ALLOWED_ORIGINS = (process.env.REALTIME_ALLOWED_ORIGINS || '*')
   .split(',').map(s => s.trim()).filter(Boolean);
+// AUDIT R-03: never run a production gateway that accepts WebSocket/HTTP upgrades from any origin.
+if (process.env.NODE_ENV === 'production' && ALLOWED_ORIGINS.includes('*')) {
+  console.error('[SETU realtime] FATAL: REALTIME_ALLOWED_ORIGINS must list explicit origins in production (got "*").');
+  process.exit(1);
+}
+if (ALLOWED_ORIGINS.some(o => o.includes('YOUR_'))) {
+  console.warn('[SETU realtime] WARNING: REALTIME_ALLOWED_ORIGINS still contains a placeholder value; browsers/WebViews will be rejected.');
+}
+// AUDIT R-01: sockets are closed once the access token they authenticated with has expired
+// (clients re-send a refreshed token ~60s before expiry, see src/lib/setu-realtime.js).
+const TOKEN_EXPIRY_GRACE_MS = 30_000;
+function jwtExpiryMs(token) {
+  try {
+    const payload = JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString('utf8'));
+    return Number.isFinite(payload?.exp) ? payload.exp * 1000 : null;
+  } catch { return null; }
+}
+function isTokenExpired(state) {
+  return Boolean(state?.expiresAt) && Date.now() > state.expiresAt + TOKEN_EXPIRY_GRACE_MS;
+}
 const LOCATION_RATE_LIMIT_SECONDS = Math.max(3, Number(process.env.RIDER_LOCATION_MIN_INTERVAL_SECONDS || 5));
 const MAX_CONNECTIONS = Math.max(50, Number(process.env.REALTIME_MAX_CONNECTIONS || 5000));
 const API_RATE_LIMIT = Math.max(10, Number(process.env.API_RATE_LIMIT_PER_MINUTE || 120));
@@ -363,9 +383,21 @@ async function getBearerUser(req) {
   return { user: data.user, token };
 }
 
+// AUDIT G-01: the left-most X-Forwarded-For entry is whatever the client typed, so keying the IP
+// rate limiter on it lets anyone mint unlimited buckets. Set REALTIME_TRUSTED_PROXY_HOPS to the number
+// of trusted reverse proxies in front of the gateway (0 = none, trust only the socket address;
+// 1 = one proxy/LB, use the entry it appended, ...). When unset we keep the legacy behaviour so an
+// existing deployment's limiter doesn't suddenly collapse into one shared bucket, but warn loudly.
+const TRUSTED_PROXY_HOPS = process.env.REALTIME_TRUSTED_PROXY_HOPS === undefined
+  ? null : Math.max(0, Number(process.env.REALTIME_TRUSTED_PROXY_HOPS) || 0);
+if (TRUSTED_PROXY_HOPS === null && process.env.NODE_ENV === 'production') {
+  console.warn('[SETU realtime] WARNING: REALTIME_TRUSTED_PROXY_HOPS is not set; per-IP rate limiting trusts a client-controlled X-Forwarded-For.');
+}
 function clientIp(req) {
-  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-  return forwarded || req.socket.remoteAddress || 'unknown';
+  const parts = String(req.headers['x-forwarded-for'] || '').split(',').map(x => x.trim()).filter(Boolean);
+  if (TRUSTED_PROXY_HOPS === null) return parts[0] || req.socket.remoteAddress || 'unknown';
+  if (TRUSTED_PROXY_HOPS === 0 || parts.length < TRUSTED_PROXY_HOPS) return req.socket.remoteAddress || 'unknown';
+  return parts[parts.length - TRUSTED_PROXY_HOPS];
 }
 
 async function rateLimit(key, limit, windowSeconds) {
@@ -397,7 +429,8 @@ async function cacheAside(key, ttlSeconds, loader) {
   }
 
   const value = await loader();
-  await redis.set(key, JSON.stringify(value), { EX: ttlSeconds });
+  // AUDIT G-02: cache misses (null) only briefly so random ids cannot park keys for the full TTL.
+  await redis.set(key, JSON.stringify(value), { EX: value === null ? Math.min(ttlSeconds, 10) : ttlSeconds });
   if (lock === 'OK') await redis.del(lockKey);
   return { value, hit: false };
 }
@@ -426,6 +459,13 @@ function sendJson(res, status, body, headers = {}) {
   res.end(payload);
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function safeUuid(raw) {
+  let decoded;
+  try { decoded = decodeURIComponent(String(raw)); } catch { return null; }
+  return UUID_RE.test(decoded) ? decoded.toLowerCase() : null;
+}
+
 async function cachedPublicData(pathname, url) {
   if (pathname === '/v1/cache/categories') {
     return cacheAside('setu:cache:v1:categories', CACHE_TTL_SECONDS, async () => {
@@ -445,22 +485,27 @@ async function cachedPublicData(pathname, url) {
   }
   const productMatch = pathname.match(/^\/v1\/cache\/products\/([^/]+)$/);
   if (productMatch) {
-    const id = decodeURIComponent(productMatch[1]);
+    const id = safeUuid(productMatch[1]);
+    if (!id) return null;
     return cacheAside(`setu:cache:v1:product:${id}`, CACHE_TTL_SECONDS, async () => {
       const { data, error } = await admin.from('products')
         .select('id,vendor_id,name,name_hindi,description,price,mrp,unit,stock,image_url,is_available,category,category_id,is_seasonal,vendors(id,name,rating,village)')
-        .eq('id', id).maybeSingle();
+        // AUDIT G-02: this endpoint is unauthenticated but runs on the service-role client, so it must
+        // apply the same visibility RLS gives the public (products_public_read: is_available = true).
+        .eq('id', id).eq('is_available', true).maybeSingle();
       if (error) throw error;
       return data || null;
     });
   }
   const vendorMatch = pathname.match(/^\/v1\/cache\/vendors\/([^/]+)$/);
   if (vendorMatch) {
-    const id = decodeURIComponent(vendorMatch[1]);
+    const id = safeUuid(vendorMatch[1]);
+    if (!id) return null;
     return cacheAside(`setu:cache:v1:vendor:${id}`, CACHE_TTL_SECONDS, async () => {
       const { data, error } = await admin.from('vendors')
         .select('id,name,category,village_id,village,image_url,rating,review_count,is_open,delivery_radius,trust_score,subscription_tier,lat,lng,is_active')
-        .eq('id', id).maybeSingle();
+        // vendors_public_read: is_active = true (suspended / not-yet-approved vendors stay private)
+        .eq('id', id).eq('is_active', true).maybeSingle();
       if (error) throw error;
       return data || null;
     });
@@ -628,7 +673,7 @@ async function handleHttpApi(req, res, url) {
       await redis.set(resultKey, JSON.stringify({ state: 'completed', fingerprint, status: 200, body: responseBody }), { EX: IDEMPOTENCY_TTL_SECONDS });
       // Order creation changes product stock and order data; invalidate the
       // affected cache entries rather than serving stale inventory forever.
-      if (body.items?.length) for (const item of body.items) await redis.del(`setu:cache:v1:product:${item.product_id}`);
+      if (Array.isArray(body.items)) for (const item of body.items) { const pid = safeUuid(item?.product_id); if (pid) await redis.del(`setu:cache:v1:product:${pid}`); }
       sendJson(res, 200, responseBody, { 'x-setu-idempotency': 'stored' });
       return true;
     } catch (error) {
@@ -715,6 +760,7 @@ async function start() {
     for (const ws of wss.clients) {
       const state = clientState.get(ws);
       if (state?.isAlive === false) { ws.terminate(); continue; }
+      if (isTokenExpired(state)) { try { send(ws, { type: 'auth.error', code: 'TOKEN_EXPIRED' }); ws.close(4002, 'Token expired'); } catch { ws.terminate(); } continue; }
       if (state) state.isAlive = false;
       try { ws.ping(); } catch { ws.terminate(); }
     }
@@ -741,7 +787,7 @@ async function start() {
 
   wss.on('connection', ws => {
     connectionCount += 1; setGauge('setu_realtime_connections', {}, connectionCount, 'Active WebSocket connections'); incCounter('setu_realtime_connections_total', {}, 1, 'Accepted WebSocket connections');
-    clientState.set(ws, { authenticated: false, userId: null, role: null, rooms: new Set(), authenticatedAt: null, lastPongAt: Date.now(), isAlive: true });
+    clientState.set(ws, { authenticated: false, userId: null, role: null, rooms: new Set(), authenticatedAt: null, expiresAt: null, lastPongAt: Date.now(), isAlive: true });
     ws.on('pong', () => { const state = clientState.get(ws); if (state) { state.isAlive = true; state.lastPongAt = Date.now(); } });
     send(ws, { type: 'hello', service: 'setu-realtime', version: 1 });
 
@@ -765,9 +811,15 @@ async function start() {
           ws.close(4003, 'Invalid token');
           return;
         }
+        // AUDIT R-01: a (re-)authentication replaces the identity. Drop every room the socket joined
+        // under the previous identity/role (user:<old>, admin:events, order:*, rider:*); the client
+        // re-subscribes on auth.ok, so legitimate sessions are unaffected.
+        const nextRole = await getRole(data.user.id);
+        leaveAllRooms(ws);
         state.authenticated = true;
         state.userId = data.user.id;
-        state.role = await getRole(data.user.id);
+        state.role = nextRole;
+        state.expiresAt = jwtExpiryMs(token);
         state.authenticatedAt = Date.now();
         clearTimeout(authTimeout);
         joinRoom(ws, `user:${state.userId}`);
@@ -776,6 +828,7 @@ async function start() {
       }
 
       if (!state.authenticated) { send(ws, { type: 'error', code: 'NOT_AUTHENTICATED' }); return; }
+      if (isTokenExpired(state)) { send(ws, { type: 'auth.error', code: 'TOKEN_EXPIRED' }); ws.close(4002, 'Token expired'); return; }
 
       if (message.type === 'subscribe') {
         const room = String(message.room || '');

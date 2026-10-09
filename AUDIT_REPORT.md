@@ -1,0 +1,95 @@
+# SETU — Production Audit Report (static pass, October 2026)
+
+**Certification: 🔴 NOT PRODUCTION READY (provisional)**
+
+This is a *static* audit of the `SETU-main` snapshot. The audit sandbox had no network, no
+Postgres, and no `node_modules`, so **nothing below was executed against a database, a browser or
+a cluster.** Every "fixed" item means "code changed and statically checked", not "verified live".
+Items I could not verify are marked **NOT VERIFIED**. No numeric readiness scores are given: most
+areas were not inspected deeply enough to score honestly.
+
+## 1. What was and was not checked
+
+| Check | Result |
+|---|---|
+| `scripts/validate_migrations.py`, `lint_sql.py`, `check_idempotent.py` | pass (structure only) |
+| `node --check` on `server/realtime/index.mjs` and the 3 edited edge functions (type-stripped) | pass |
+| New test `qa/tests/integration/audit-remediation-103.test.js` (static assertions + a behavioural test of the sanitizer module), run through a plain-node shim because vitest isn't installed here | 21/21 pass |
+| YAML parse of edited workflows / kustomize files | pass |
+| Crude bracket balance of the 3 edited JSX files | pass (**not** a real JSX/ESLint run) |
+| Migrations applied to Postgres, `qa/sql/*.sql`, vitest, Playwright, build, lint, `kubectl kustomize` | **NOT VERIFIED — not run** |
+
+## 2. Findings
+
+Severity: C = critical, H = high, M = medium, L = low. "Fixed" = changed in this patch, unexecuted.
+
+| ID | Sev | Component | Finding | Fix | Status |
+|---|---|---|---|---|---|
+| F-01 | C | `finalize_order_financial_capture` (mig. 094) | Reads `credit_transactions.reference`, which no migration creates; handler only catches `undefined_table`, so it raises on every call. Called by the webhook after every captured order payment and by the wallet-payment trigger. | mig. 103: add column; match disbursements on `purpose` (what `create_order` writes) | Fixed, NOT VERIFIED |
+| F-02 | H | webhook wallet top-up / credit repayment | Not idempotent (retry double-credits wallet; repayment re-reduces `outstanding` per retry and its insert hit the missing column, so it retried 5×). Beneficiary and type taken from payment notes. `wallet_topups` never written. | mig. 103 RPCs `apply_wallet_topup_payment` / `apply_credit_repayment_payment` (lock `payment_orders`, verify type+amount, exactly-once); webhook rewired; `create-razorpay-order` fails closed if `payment_orders` insert fails | Fixed, NOT VERIFIED |
+| F-03 | H | RPC grants | "Service-only" RPCs revoked from `authenticated, anon` only (no-op while PUBLIC has EXECUTE — see mig. 035). `check_rate_limit` was explicitly granted to `anon` with caller-chosen key/limit → anyone could exhaust another user's or the global (`ai-assistant:global:<day>`) bucket. `dispatch_ready_order` / `process_dispatch_timeouts` open to anyone (notification + offer spam). `prune_*`, `refresh_admin_dashboard_stats` never revoked. | mig. 103 revokes PUBLIC/anon/authenticated, grants `service_role` | Fixed, NOT VERIFIED |
+| F-04 | M | `get_live_admin_analytics()` | SECURITY DEFINER, no admin check, PUBLIC-executable. Currently errors (missing columns) so no live leak. | locked to service_role; client already falls back to the gated wrapper | Fixed |
+| K-01 | H | `kyc_records` RLS | Owner insert/update only checked `user_id = auth.uid()` → a user could set their own record `verified`. | mig. 104 | Fixed, NOT VERIFIED |
+| K-02 | H | KYC review wiring | No policy ever let anchors/admins UPDATE `kyc_records`; `approveKycRecord` / `rejectKycRecord` / `reviewKYC` are plain client UPDATEs → review could not work. | mig. 104 reviewer policy (admin, or same-village anchor; never own record) | Fixed, NOT VERIFIED |
+| K-03 | M | `verify-aadhaar` verify-otp | `requestId` not bound to the caller → OTP session could be lent to another account. | requires `kyc_records.meta.request_id` match for the caller | Fixed |
+| R-01 | M | realtime WS | Re-auth kept rooms of the previous identity/role; no JWT-expiry enforcement on live sockets. | leave all rooms on (re)auth; close at `exp`+30s | Fixed |
+| R-03 | M | realtime config | Wildcard origins allowed by default; production overlay still has `YOUR_SETU_DOMAIN`; Android WebView origin `https://localhost` not allow-listed. | exits in production on `*`; warns on placeholders; documented | Partially fixed — **you must set the origin list** |
+| G-01 | M | realtime HTTP rate limit | Per-IP limiter keyed on client-controlled left-most `X-Forwarded-For`. | `REALTIME_TRUSTED_PROXY_HOPS` (opt-in so existing deployments don't collapse into one bucket) | Fixed, **needs config** |
+| G-02 | M | `/v1/cache/products|vendors/:id` | Unauthenticated, runs on the service-role client with no visibility filter → returned inactive vendors / unavailable products that RLS hides; unvalidated ids; negative results cached 60s per arbitrary key. | UUID validation, `is_active` / `is_available` filters, 10s negative TTL | Fixed |
+| D-01 | H | `realtime-deploy.yml` | Applied manifests pinned to `:latest` (+ `IfNotPresent`) and never used the SHA tag it had just built → unchanged manifest = no rollout. | render, pin to SHA, fail if `:latest` remains; kubeconfig via env | Fixed, NOT VERIFIED |
+| D-02 | M | k8s NetworkPolicy | Egress rules use `namespaceSelector: {}` (in-cluster pods only) → on an enforcing CNI production pods cannot reach Supabase or managed Redis/Kafka. | production kustomize patch adds public-IP egress on 443/6379/6380/9092/9093 | Fixed, NOT VERIFIED — adjust ports |
+| D-03 | L | `ci.yml` | No `permissions:` block. | `contents: read` | Fixed |
+| N-01 | M | `profiles.fcm_token` | Not unique and never cleared on logout: after user A logs out and B logs in on the same device, A's order/wallet/credit pushes keep arriving on B's device. | mig. 105: single-owner BEFORE trigger + one-time dedupe; `signOut` detaches the token (time-boxed, never blocks logout) | Fixed, NOT VERIFIED |
+| O-01 | M | `setu_event_outbox` | No retention anywhere: full-row JSON snapshots of every business event (incl. every `rider_locations` write) accumulate forever → table/index bloat, slower claim queries, eventual disk exhaustion. | mig. 106: hourly `prune_setu_event_outbox()` (published rows > 3 days, bounded batches, `SKIP LOCKED`, service-only); never deletes unpublished rows | Fixed, NOT VERIFIED |
+| KC-01 | H | `kafka-worker.mjs`, `domain-consumers.mjs` | Outbox events carry full rows and were projected verbatim into `order:<id>` rooms, which the customer, vendor owner, rider and anchor can all join. That included `payment_transactions.gateway_payload` (payer contact/email/VPA/card last4), provider ids, `dispatch_events.payload` and every offered rider's `rider_offers` row. | new `event-sanitizer.mjs` allowlist per aggregate; financial rows never go to order rooms; Dockerfile now ships the module | Fixed, NOT VERIFIED (no live broker) |
+| KC-02 | L | same | Financial events were published to room `admin`, which `authorizeRoom()` never lets anyone join (`admin:events` is the only admin room), and no UI code subscribes to it. The admin live-financial feed never worked. | publish to `admin:events` | Fixed server-side; **no UI consumer exists** |
+| UX-01 | M | support screens | Customer support, fraud report and vendor support hardcoded the placeholder number `8001234567` (call + WhatsApp) — a safety/fraud channel pointing at a dummy number. | read `support_phone` / `support_whatsapp` / `support_email` from `app_settings`; hide buttons when unset | Fixed. NOTE: seed default `support_phone` is the placeholder `1800-000-0000` — set real values in admin settings |
+
+### Found, not fixed
+
+| ID | Sev | Finding | Recommendation |
+|---|---|---|---|
+| P-01 | M | `vendor-payout` takes the Razorpay `accountId` from the admin request body; it is not bound to the vendor. A compromised admin can pay a vendor's balance to any fund account. Vendors can also edit `vendor_payment_info` at will. | Store a verified `fund_account_id` per vendor (new column + onboarding step), ignore the body value, require a cooling-off period after bank-detail changes. |
+| P-02 | L | Webhook sets `payment_orders.status='paid'` before amount reconciliation. | Move after a successful reconcile. |
+| P-03 | L | `check_rate_limit` consumers treat only `=== false` as blocked, so an RPC error fails open. | Decide per endpoint (fail closed for KYC/payments). |
+| P-04 | L | Delivery OTP uses Postgres `random()`. Bounded by `max_attempts`. | Use `gen_random_bytes`. |
+| P-05 | L | `kyc-verify` is a deployed stub that always returns 503 (GST/PAN verification does not exist). | Implement or remove the function and its UI entry points. |
+| P-06 | L | No cross-account de-duplication of Aadhaar (only a masked value is stored). | Store a salted hash of the full number server-side and add a unique index. |
+| P-07 | L | `qa/sql/seva_credit_test.sql` is in `qa/package.json` but not in `ci.yml`; `ci.yml` lists SQL tests by hand, so new tests are easy to forget. | Glob `qa/sql/*_test.sql`. |
+| P-08 | L | `build-android.yml`, `qa.yml`, `realtime-deploy.yml` have broad/implicit token permissions (realtime needs `packages: write`). | Add job-level `permissions`. |
+| P-09 | L | Gateway returns raw DB error messages on order-create failure (502). | Map to stable error codes. |
+| P-11 | L | Kafka domain consumer claims a Redis dedupe key *before* running the handler; a pod killed mid-handler leaves the key set, so the redelivered event is skipped as a duplicate. Handlers are projection-only (no business state), so impact is a missed realtime hint. | Use a short "processing" lease that is promoted to the long TTL on success. |
+| P-12 | L | `payment.*`, `dispatch.*`, `inventory.*` realtime event types have no frontend consumer (grep of `src/`); the Kafka domain workers' output currently reaches no UI. | Wire a consumer or scale the workers down. |
+| P-13 | L | `rider_locations` writes go through Postgres → outbox → Kafka as well as WebSocket/Redis; high-volume telemetry through a transactional outbox is costly. | Keep location pings out of the outbox. |
+| P-10 | I | Production overlay still contains `YOUR_*` placeholders (Redis, Kafka, origins). | Fill in before first deploy. |
+
+## 3. What looked sound (static, approximate)
+
+- All 92 tables have RLS enabled; no write policy uses a literal `true`; public SELECT-true policies exist only on catalog tables (`villages`, `vendor_hours`, `vendor_locations`, `*_categories`, `app_updates`).
+- Every SECURITY DEFINER function's latest definition pins `search_path`.
+- Razorpay webhook: constant-time HMAC, durable idempotency (`claim_payment_event`), dead-letter after 5 failures; `create-razorpay-order` ignores client amounts for order payments; only the webhook is `--no-verify-jwt`; all other edge functions authenticate and derive identity from the JWT.
+- No service-role/secret material in the client bundle sources; `VITE_DEMO_MODE` is `false` in production build paths and demo data is only served when Supabase is unconfigured.
+- Delivery OTP stored salted+hashed with attempt limits; transactional Kafka outbox is a real design; `ai-assistant` fixes model, system prompt and token cap server-side with per-user and global caps; `send-fcm-notification` is admin/service only with a recipient cap; `dispatch-notifications` is service-only and records provider failures honestly; Kafka consumers use retry topics + DLQ with release-on-failure dedupe.
+- Open-redirect protection exists (`safeInternalRedirect`).
+
+## 4. Not reviewed (or only skimmed)
+
+126 frontend pages (only grep-level sweeps), Kafka worker and domain consumers, the Redis idempotency
+path under failure injection, outbox pruning/growth (`rider_locations` writes every few seconds),
+most migration
+function bodies beyond grant/guard analysis, accessibility, performance measurement, dependency audit,
+load behaviour, migration ordering on a fresh database.
+
+## 5. Rollout order
+
+1. Apply migrations `103`–`106` (before deploying functions — the webhook now calls the new RPCs).
+2. Deploy `razorpay-webhook`, `create-razorpay-order`, `verify-aadhaar`; rebuild the realtime image (new `event-sanitizer.mjs`).
+3. Run `qa/sql/audit_remediation_test.sql` against a local Supabase first; fix any schema detail I could not see.
+4. Set `REALTIME_ALLOWED_ORIGINS` (+ `https://localhost` if the Android app uses the gateway) and `REALTIME_TRUSTED_PROXY_HOPS`.
+5. Set real `support_phone` / `support_whatsapp` in admin settings.
+
+## 6. Decisions for the owner
+
+- Credit repayment larger than the outstanding balance: the surplus is credited to the wallet (never silently kept). Confirm.
+- A user whose KYC record is already `verified` can no longer re-upload over it; a reviewer must reset it first.
+- NetworkPolicy egress to public IPs on the listed ports is the minimum for managed Redis/Kafka/Supabase; tighten to your provider's CIDRs if known.

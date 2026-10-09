@@ -166,6 +166,19 @@ export function AuthProvider({ children }) {
   // ── signOut ───────────────────────────────────────────
   const signOut = useCallback(async () => {
     if (isSupabaseConfigured) {
+      // AUDIT N-01: detach this device's push token from the account before the session ends so the
+      // next person to use the device never receives this user's notifications. Best-effort and
+      // time-boxed — logging out must still work offline / on a slow network.
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        const uid = sess?.session?.user?.id;
+        if (uid) {
+          await Promise.race([
+            supabase.from('profiles').update({ fcm_token: null }).eq('id', uid),
+            new Promise(resolve => setTimeout(resolve, 2000)),
+          ]);
+        }
+      } catch { /* never block sign-out */ }
       await supabase.auth.signOut();
     } else {
       setUser(null); setSession(null); setProfile(null);

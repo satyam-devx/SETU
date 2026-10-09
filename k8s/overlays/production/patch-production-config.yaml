@@ -6,7 +6,13 @@ metadata:
 data:
   REDIS_URL: redis://YOUR_MANAGED_REDIS_HOST:6379
   KAFKA_BROKERS: YOUR_MANAGED_KAFKA_BOOTSTRAP:9092
+  # Comma-separated. The Android (Capacitor, androidScheme=https) WebView sends
+  # Origin: https://localhost — add it if the mobile app uses this gateway, e.g.
+  #   https://YOUR_SETU_DOMAIN,https://localhost
   REALTIME_ALLOWED_ORIGINS: https://YOUR_SETU_DOMAIN
+  # Number of trusted reverse proxies in front of the gateway (ingress-nginx = 1; cloud LB +
+  # ingress-nginx = 2). Required for correct per-IP rate limiting; see server/realtime/index.mjs.
+  # REALTIME_TRUSTED_PROXY_HOPS: "1"
   # Base defaults this to "false". It's safe to turn on now that the
   # collector's export target is a real, configurable endpoint (see
   # patch-production-tracing.yaml) instead of a hardcoded local-only

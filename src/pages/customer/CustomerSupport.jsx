@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { getSupportTickets, createSupportTicket } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
+import { usePublicSettings } from '@/lib/settings';
 
 // ── Helpers ────────────────────────────────────────────────────
 function StatusBadge({ status }) {
@@ -236,6 +237,10 @@ function NewTicketModal({ onClose, onSubmit, submitting, error, initialSubject =
 // ── Main page ──────────────────────────────────────────────────
 export default function CustomerSupport() {
   const { user } = useAuth();
+  // AUDIT UX-01: contact details come from admin-managed app_settings, never hardcoded.
+  const { get: getSetting } = usePublicSettings();
+  const supportPhone = String(getSetting('support_phone', '') || '').trim();
+  const supportWhatsapp = String(getSetting('support_whatsapp', '') || '').replace(/\D/g, '');
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -346,12 +351,12 @@ export default function CustomerSupport() {
 
   // Call support — tel: link
   const handleCall = () => {
-    window.location.href = 'tel:+918001234567';
+    if (supportPhone) window.location.href = `tel:${supportPhone}`;
   };
 
   // WhatsApp deep link
   const handleWhatsApp = () => {
-    window.open('https://wa.me/918001234567?text=Hi%2C%20I%20need%20help%20with%20my%20SETU%20order.', '_blank');
+    if (supportWhatsapp) window.open(`https://wa.me/${supportWhatsapp}?text=Hi%2C%20I%20need%20help%20with%20my%20SETU%20order.`, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -384,6 +389,7 @@ export default function CustomerSupport() {
 
           {/* Quick contact cards */}
           <div className="grid grid-cols-2 gap-3">
+            {supportPhone && (
             <button
               onClick={handleCall}
               className="bg-card rounded-2xl border border-border shadow-sm py-5 flex flex-col items-center gap-2 active:scale-95 transition-all"
@@ -394,7 +400,9 @@ export default function CustomerSupport() {
                 <p className="text-xs text-muted-foreground mt-0.5">9am - 6pm</p>
               </div>
             </button>
+            )}
 
+            {supportWhatsapp && (
             <button
               onClick={handleWhatsApp}
               className="bg-card rounded-2xl border border-border shadow-sm py-5 flex flex-col items-center gap-2 active:scale-95 transition-all"
@@ -405,6 +413,7 @@ export default function CustomerSupport() {
                 <p className="text-xs text-muted-foreground mt-0.5">24/7 support</p>
               </div>
             </button>
+            )}
           </div>
 
           {/* Tickets section */}

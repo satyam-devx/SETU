@@ -11,6 +11,7 @@ import { Kafka, logLevel } from 'kafkajs';
 import http from 'node:http';
 import { incCounter, observeHistogram, metricsHandler } from './metrics.mjs';
 import { contextFromKafkaHeaders, startSpan } from './tracing.mjs';
+import { sanitizeForOrderRoom, ADMIN_EVENTS_ROOM } from './event-sanitizer.mjs';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
 const BROKERS = String(process.env.KAFKA_BROKERS || '127.0.0.1:9092').split(',').map(s => s.trim()).filter(Boolean);
@@ -61,23 +62,31 @@ async function emitOperational(domain, status, event, extra = {}) {
 async function projectDomainEvent(domain, event) {
   const row = event.payload?.new || event.payload?.old || event.payload;
   const orderId = row?.order_id;
-  const eventMessage = JSON.stringify({
-    room: orderId ? `order:${orderId}` : 'admin',
+  const base = {
     type: `${domain}.event`,
     eventType: event.eventType,
-    entity: row,
     eventId: event.eventId,
     source: 'kafka-domain-worker',
     at: new Date().toISOString(),
-  });
+  };
 
   // Domain-specific projection. No handler writes authoritative business state.
-  if (orderId) await redis.publish(`setu:events:order:${orderId}`, eventMessage);
+  // AUDIT KC-01: order rooms are joined by customer, vendor, rider and anchor, so only an allowlisted,
+  // non-sensitive projection of the row may go there (never gateway payloads / provider ids / ledger rows).
+  if (orderId) {
+    const safe = sanitizeForOrderRoom(domain, row);
+    if (safe) {
+      await redis.publish(`setu:events:order:${orderId}`, JSON.stringify({ ...base, room: `order:${orderId}`, entity: safe }));
+    }
+  }
   if (domain === 'dispatch' && row?.rider_id) {
-    await redis.publish(`setu:events:rider:${row.rider_id}`, JSON.stringify({ ...JSON.parse(eventMessage), room: `rider:${row.rider_id}` }));
+    // The rider's own room: they may see their own offer / assignment row.
+    await redis.publish(`setu:events:rider:${row.rider_id}`, JSON.stringify({ ...base, room: `rider:${row.rider_id}`, entity: row }));
   }
   if (domain === 'financial') {
-    await redis.publish('setu:events:admin', JSON.stringify({ ...JSON.parse(eventMessage), room: 'admin', type: 'financial.changed' }));
+    // AUDIT KC-02: the admin room is `admin:events` (what authorizeRoom() lets admins join). It was
+    // published to plain `admin`, a room nobody can join, so this feed never reached anyone.
+    await redis.publish(`setu:events:${ADMIN_EVENTS_ROOM}`, JSON.stringify({ ...base, room: ADMIN_EVENTS_ROOM, type: 'financial.changed', entity: row }));
   }
 }
 

@@ -12,6 +12,7 @@ import http from 'node:http';
 import os from 'node:os';
 import { incCounter, setGauge, observeHistogram, metricsHandler } from './metrics.mjs';
 import { contextFromKafkaHeaders, startSpan, traceparent } from './tracing.mjs';
+import { sanitizeForOrderRoom, ADMIN_EVENTS_ROOM } from './event-sanitizer.mjs';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -173,7 +174,8 @@ async function projectToRedis(event) {
     const orderId = row?.order_id;
     if (orderId) {
       await redis.publish(`setu:events:order:${orderId}`, JSON.stringify({
-        room: `order:${orderId}`, type: 'payment.changed', entity: row,
+        // AUDIT KC-01: allowlisted projection only — the raw row carries gateway_payload / provider ids.
+        room: `order:${orderId}`, type: 'payment.changed', entity: sanitizeForOrderRoom('payment', row),
         operation: payload?.operation, eventType: event.eventType, eventId, source: 'kafka', at: new Date().toISOString(),
       }));
     }
@@ -184,7 +186,7 @@ async function projectToRedis(event) {
     const orderId = row?.order_id;
     if (orderId) {
       await redis.publish(`setu:events:order:${orderId}`, JSON.stringify({
-        room: `order:${orderId}`, type: 'inventory.changed', entity: row,
+        room: `order:${orderId}`, type: 'inventory.changed', entity: sanitizeForOrderRoom('inventory', row),
         operation: payload?.operation, eventType: event.eventType, eventId, source: 'kafka', at: new Date().toISOString(),
       }));
     }
@@ -195,7 +197,7 @@ async function projectToRedis(event) {
     const orderId = row?.order_id;
     if (orderId) {
       await redis.publish(`setu:events:order:${orderId}`, JSON.stringify({
-        room: `order:${orderId}`, type: 'dispatch.changed', entity: row,
+        room: `order:${orderId}`, type: 'dispatch.changed', entity: sanitizeForOrderRoom('dispatch', row),
         operation: payload?.operation, eventType: event.eventType, eventId, source: 'kafka', at: new Date().toISOString(),
       }));
     }
@@ -211,8 +213,9 @@ async function projectToRedis(event) {
   if (aggregateType === 'financial_ledger') {
     // Financial events are intentionally admin-scoped. The WebSocket layer
     // performs its own authorization before a client can join admin rooms.
-    await redis.publish('setu:events:admin', JSON.stringify({
-      room: 'admin', type: 'financial.changed', entity: row,
+    // AUDIT KC-02: publish to the room admins can actually join (`admin:events`); plain `admin` is unjoinable.
+    await redis.publish(`setu:events:${ADMIN_EVENTS_ROOM}`, JSON.stringify({
+      room: ADMIN_EVENTS_ROOM, type: 'financial.changed', entity: row,
       operation: payload?.operation, eventType: event.eventType, eventId, source: 'kafka', at: new Date().toISOString(),
     }));
   }

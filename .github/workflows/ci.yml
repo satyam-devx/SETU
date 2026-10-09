@@ -12,6 +12,10 @@ on:
   pull_request:
     branches: [main, staging]
 
+# AUDIT D-03: least privilege — this gate only reads the repo (it never pushes, comments or releases).
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -365,6 +369,12 @@ jobs:
           psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
             -v ON_ERROR_STOP=1 \
             -f qa/sql/notification_delivery_test.sql
+
+      - name: Run audit-remediation proof (wallet/credit idempotency + RPC grants)
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f qa/sql/audit_remediation_test.sql
 
       - name: Stop local Supabase
         if: always()

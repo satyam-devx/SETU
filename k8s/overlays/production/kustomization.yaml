@@ -7,3 +7,36 @@ patches:
   - path: patch-production-config.yaml
   - path: patch-production-resources.yaml
   - path: patch-production-tracing.yaml
+  # AUDIT D-02: base network-policy egress rules use `namespaceSelector: {}`, which only matches
+  # in-cluster pods. Production talks to Supabase (public HTTPS) and managed Redis/Kafka, which
+  # are NOT cluster pods, so with an enforcing CNI every outbound call was dropped. Allow those
+  # ports to public addresses only (RFC1918/link-local excluded). Adjust the ports to your
+  # managed Redis/Kafka (e.g. 6380 for TLS Redis, 9093/9094 for SASL_SSL Kafka).
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: NetworkPolicy
+      name: setu-default-deny
+    patch: |-
+      - op: add
+        path: /spec/egress/-
+        value:
+          to:
+            - ipBlock:
+                cidr: 0.0.0.0/0
+                except:
+                  - 10.0.0.0/8
+                  - 172.16.0.0/12
+                  - 192.168.0.0/16
+                  - 169.254.0.0/16
+          ports:
+            - protocol: TCP
+              port: 443
+            - protocol: TCP
+              port: 6379
+            - protocol: TCP
+              port: 6380
+            - protocol: TCP
+              port: 9092
+            - protocol: TCP
+              port: 9093

@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import AppHeader from '@/components/shared/AppHeader';
 import { useAuth } from '@/lib/AuthContext';
 import { FraudAPI } from '@/lib/api';
+import { usePublicSettings } from '@/lib/settings';
 
 const FRAUD_TYPES = [
   'Fake product delivered',
@@ -21,6 +22,10 @@ const FRAUD_TYPES = [
 
 export default function CustomerFraudReport() {
   const { user } = useAuth();
+  // AUDIT UX-01: contact details come from admin-managed app_settings, never hardcoded.
+  const { get: getSetting } = usePublicSettings();
+  const supportPhone = String(getSetting('support_phone', '') || '').trim();
+  const supportWhatsapp = String(getSetting('support_whatsapp', '') || '').replace(/\D/g, '');
   const [fraudType, setFraudType] = useState('');
   const [description, setDescription] = useState('');
   const [orderId, setOrderId]     = useState('');
@@ -56,9 +61,9 @@ export default function CustomerFraudReport() {
     });
   };
 
-  const handleCall = () => { window.location.href = 'tel:+918001234567'; };
+  const handleCall = () => { if (supportPhone) window.location.href = `tel:${supportPhone}`; };
   const handleWhatsApp = () => {
-    window.open('https://wa.me/918001234567?text=Hi%2C%20I%20need%20to%20report%20a%20fraud%2Fsafety%20issue%20on%20SETU.', '_blank');
+    if (supportWhatsapp) window.open(`https://wa.me/${supportWhatsapp}?text=Hi%2C%20I%20need%20to%20report%20a%20fraud%2Fsafety%20issue%20on%20SETU.`, '_blank', 'noopener,noreferrer');
   };
 
   if (submitted) {
@@ -148,8 +153,11 @@ export default function CustomerFraudReport() {
             If you feel unsafe or need immediate help, contact us directly.
           </p>
           <div className="flex gap-2">
-            <Button variant="outline" className="flex-1 text-xs" onClick={handleCall}>Call SETU Helpline</Button>
-            <Button variant="outline" className="flex-1 text-xs" onClick={handleWhatsApp}>WhatsApp Support</Button>
+            {supportPhone && <Button variant="outline" className="flex-1 text-xs" onClick={handleCall}>Call SETU Helpline</Button>}
+            {supportWhatsapp && <Button variant="outline" className="flex-1 text-xs" onClick={handleWhatsApp}>WhatsApp Support</Button>}
+            {!supportPhone && !supportWhatsapp && (
+              <p className="text-xs text-muted-foreground">Direct contact details are not configured yet. Please submit the report above — it is reviewed by the SETU team.</p>
+            )}
           </div>
         </Card>
       </div>

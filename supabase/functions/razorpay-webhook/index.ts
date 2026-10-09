@@ -250,7 +250,12 @@ serve(async (req) => {
         const payment = (payload.payload as any)?.payment?.entity;
         if (!payment?.id || !payment?.order_id || typeof payment.amount !== "number") throw new Error("Malformed payment.captured payload");
         const razorpayOrderId: string = payment.order_id; const paymentId: string = payment.id; const amount: number = payment.amount / 100;
-        const notes: Record<string, string> = payment.notes ?? {}; const paymentType = notes.type ?? "order_payment";
+        const notes: Record<string, string> = payment.notes ?? {};
+        // AUDIT F-02: the payment type must come from the payment_orders row our own
+        // create-razorpay-order function wrote, not from payment notes (defence in depth
+        // against client-influenced gateway notes). Notes remain a fallback for legacy rows.
+        const { data: paymentOrderRow } = await supabase.from("payment_orders").select("notes").eq("razorpay_order_id", razorpayOrderId).maybeSingle();
+        const paymentType: string = (paymentOrderRow as any)?.notes?.type ?? notes.type ?? "order_payment";
         await supabase.from("payment_orders").update({ status: "paid", updated_at: new Date().toISOString() }).eq("razorpay_order_id", razorpayOrderId);
         await supabase.from("payment_events").update({ order_id: notes.orderId ?? null, payment_id: paymentId }).eq("event_id", eventId);
         if (paymentType === "order_payment") {
@@ -268,19 +273,14 @@ serve(async (req) => {
             const refundResult = await processRazorpayRefund(supabase, reconciliation.order_id, paymentId, Number(reconciliation.refund_amount));
             if (!refundResult.success) handlerOk = false;
           }
-        } else if (paymentType === "wallet_topup" && notes.customerId) {
-          const { error: creditErr } = await rpc(supabase, "topup_wallet", { p_user_id: notes.customerId, p_amount: amount, p_reference: paymentId });
-          if (creditErr) handlerOk = false;
-          const { error: topupErr } = await supabase.from("wallet_topups").update({ status: "completed", payment_id: paymentId, updated_at: new Date().toISOString() }).eq("razorpay_order_id", razorpayOrderId);
-          if (topupErr) handlerOk = false;
-        } else if (paymentType === "credit_repayment" && notes.customerId) {
-          const { data: account, error: acctErr } = await supabase.from("credit_accounts").select("id, outstanding").eq("user_id", notes.customerId).single();
-          if (acctErr || !account) handlerOk = false; else {
-            const newOutstanding = Math.max(0, Number((account as any).outstanding) - amount);
-            const { error: accountErr } = await supabase.from("credit_accounts").update({ outstanding: newOutstanding, updated_at: new Date().toISOString() }).eq("id", (account as any).id);
-            if (accountErr) handlerOk = false;
-            const { error: txErr } = await supabase.from("credit_transactions").insert({ account_id: (account as any).id, user_id: notes.customerId, type: "repayment", amount, status: "repaid", reference: paymentId, repaid_at: new Date().toISOString() });
-            if (txErr && txErr.code !== "23505") handlerOk = false;
+        } else if (paymentType === "wallet_topup" || paymentType === "credit_repayment") {
+          // AUDIT F-02: applied exactly once inside a single DB transaction. The RPC locks the
+          // payment_orders row, re-verifies type + amount, and derives the user from it.
+          const applyFn = paymentType === "wallet_topup" ? "apply_wallet_topup_payment" : "apply_credit_repayment_payment";
+          const { data: applied, error: applyErr } = await rpc(supabase, applyFn, { p_razorpay_order_id: razorpayOrderId, p_payment_id: paymentId, p_amount: amount });
+          if (applyErr || !(applied as any)?.success) {
+            console.error(`[webhook] ${applyFn} did not apply`, applyErr ?? applied);
+            handlerOk = false;
           }
         } else console.warn(`[webhook] Unhandled payment type: ${paymentType}`);
         break;

@@ -285,6 +285,22 @@ serve(async (req) => {
       )
     }
 
+    // AUDIT K-03: the requestId must be the one OUR generate-otp step issued to THIS user.
+    // Previously any requestId + OTP pair was accepted for any authenticated caller, so a user
+    // could verify their own profile with someone else's Aadhaar OTP session (identity lending).
+    const { data: pendingKyc } = await supabase
+      .from("kyc_records")
+      .select("meta")
+      .eq("user_id", userId)
+      .eq("type", "aadhaar")
+      .maybeSingle()
+    if (!pendingKyc || (pendingKyc as any)?.meta?.request_id !== requestId) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Verification session not found. Please request a new OTP." }),
+        { status: 422, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      )
+    }
+
     // Call SurePass OTP submission
     let spResp: any
     try {

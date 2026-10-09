@@ -121,10 +121,21 @@ jobs:
 
       - name: Apply production overlay
         if: steps.check.outputs.has_kubeconfig == 'true'
+        env:
+          KUBE_CONFIG_PRODUCTION: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
         run: |
           mkdir -p "$HOME/.kube"
-          echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > "$HOME/.kube/config"
-          kubectl kustomize k8s/overlays/production | kubectl apply -f -
+          echo "$KUBE_CONFIG_PRODUCTION" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+          # AUDIT D-01: the manifests reference ":latest". Applying them unchanged is a no-op for the
+          # Deployment spec (no rollout), and IfNotPresent nodes would reuse a cached image anyway.
+          # Pin every setu-realtime reference to the immutable SHA tag this run just built and pushed.
+          IMAGE_REF="${{ needs.build-and-push.outputs.image_tag }}"
+          kubectl kustomize k8s/overlays/production \
+            | sed "s#ghcr.io/satyam-devx/setu-realtime:latest#${IMAGE_REF}#g" > /tmp/production-pinned.yaml
+          grep -q "${IMAGE_REF}" /tmp/production-pinned.yaml || { echo "::error::image pin substitution failed"; exit 1; }
+          if grep -q "setu-realtime:latest" /tmp/production-pinned.yaml; then echo "::error::unpinned :latest image remains"; exit 1; fi
+          kubectl apply -f /tmp/production-pinned.yaml
           kubectl -n setu rollout status deployment/setu-realtime --timeout=180s
           kubectl -n setu rollout status deployment/setu-kafka-worker --timeout=180s
           kubectl -n setu rollout status deployment/setu-domain-workers --timeout=180s
