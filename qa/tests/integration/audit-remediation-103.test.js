@@ -21,6 +21,7 @@ const m105 = read('supabase/migrations/20240101000105_fcm_token_single_owner.sql
 const authCtx = read('src/lib/AuthContext.jsx');
 const m107 = read('supabase/migrations/20240101000107_kyc_anchor_visibility.sql');
 const apiSrc = read('src/lib/api.js');
+const m108 = read('supabase/migrations/20240101000108_anon_lockdown_rpcs_and_views.sql');
 const m106 = read('supabase/migrations/20240101000106_outbox_retention.sql');
 const kafkaWorker = read('server/realtime/kafka-worker.mjs');
 const domainConsumers = read('server/realtime/domain-consumers.mjs');
@@ -192,5 +193,36 @@ describe('K-04: anchors can actually see and review their village\'s KYC records
     assert.match(fn, /rpc\('get_village_kyc_queue'\)/);
     assert.match(fn, /profiles: \{ id: r\.user_id, name: r\.user_name/);
     assert.doesNotMatch(fn, /profiles!kyc_records_user_id_fkey/);
+  });
+});
+
+describe('A-01/V-01: unauthenticated callers cannot reach definer RPCs or admin views', () => {
+  it('revokes PUBLIC and anon, preserving authenticated only where it already had EXECUTE', () => {
+    assert.match(m108, /revoke execute on function %s from public, anon/);
+    assert.match(m108, /has_function_privilege\('authenticated', p\.oid, 'execute'\) as auth_had/);
+    assert.match(m108, /if r\.auth_had then\s+execute format\('grant execute on function %s to authenticated'/);
+    assert.match(m108, /has_function_privilege\('anon', p\.oid, 'execute'\)/);
+  });
+  it('keeps the RLS helpers and pre-login functions callable by anon', () => {
+    for (const fn of ['is_admin', 'get_my_role', 'get_my_village_id', 'has_permission', 'get_my_profile',
+      'get_public_settings', 'my_feature_flags', 'log_client_error']) {
+      assert.ok(m108.includes(`'${fn}'`), `${fn} must stay in the anon allow-list`);
+    }
+    for (const dangerous of ['pay_from_wallet', 'update_order_status', 'cancel_order_with_refund', 'set_default_address']) {
+      assert.ok(!m108.split('v_anon_allow')[1].split(']')[0].includes(`'${dangerous}'`), `${dangerous} must not be allow-listed`);
+    }
+  });
+  it('locks the analytics / reconciliation relations and makes category_previews security_invoker', () => {
+    for (const v of ['analytics_daily_financial_metrics', 'reconciliation_dashboard', 'admin_dashboard_stats']) {
+      assert.ok(m108.includes(`'${v}'`));
+    }
+    assert.match(m108, /revoke all on public\.%I from public, anon, authenticated/);
+    assert.match(m108, /security_invoker = true/);
+  });
+  it('no code reads the locked views directly', () => {
+    const files = ['src/lib/api.js', 'server/realtime/index.mjs'];
+    for (const f of files) {
+      assert.doesNotMatch(read(f), /from\(\s*['"](analytics_daily_[a-z_]+|reconciliation_dashboard|admin_dashboard_stats)['"]/);
+    }
   });
 });

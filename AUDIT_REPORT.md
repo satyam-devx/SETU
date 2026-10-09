@@ -37,6 +37,27 @@ successfully, deployed the edge functions and frontend, and post-deploy validati
 
 D1–D3 now pass **for the right reason** (RLS, not the privilege layer) and D2 passes. D4 failed — "same-village anchor could not review (rows=0)" — which exposed K-04 above, a defect older than this patch. The Security-suite and Dependency-audit jobs fail on `npm audit`: **4 high-severity advisories in production dependencies** (package names not in the log; not caused by this patch, which changes no dependency). All 29 other security-suite checks pass, including the secret scan.
 
+## 1c. Live production verification (read-only, via the connected Supabase project)
+
+After the owner connected the production project (`SETU`, ap-south-1) I ran read-only checks. Any
+probe that executed a function ran **inside a transaction that was rolled back, with random UUIDs**,
+so nothing was written. Production currently holds test-stage data only (9 profiles, 0 wallets,
+7 orders, 1 vendor, 0 KYC rows, empty outbox).
+
+| Check | Result |
+|---|---|
+| Migrations 103–107 applied | yes |
+| Grants: service-only RPCs (F-03) closed to `anon` / `authenticated`; `anchor_manages_user` / `get_village_kyc_queue` open to `authenticated` only | confirmed |
+| `credit_transactions.reference`, repayment unique index, FCM trigger, outbox index, both cron jobs | present |
+| KYC policies use `anchor_manages_user`; own-insert check forbids `verified` | confirmed |
+| SECURITY DEFINER functions without `search_path` | 0 |
+| **Supabase security advisors** | **109 definer functions executable by `anon`, 121 by `authenticated`; 6 SECURITY DEFINER views; 1 materialized view exposed → led to A-01 and V-01** |
+
+**My earlier static pass was wrong about this.** I counted ~118 PUBLIC-executable definer functions and
+judged them "self-guarded" because their bodies mention `auth.uid()` / `is_admin()`. A guard token is not
+a guard: several functions use `auth.uid() IS NULL` to mean *trusted backend*, and an unauthenticated
+request has exactly that value.
+
 ## 2. Findings
 
 Severity: C = critical, H = high, M = medium, L = low. "Fixed" = changed in this patch, unexecuted.
@@ -47,6 +68,8 @@ Severity: C = critical, H = high, M = medium, L = low. "Fixed" = changed in this
 | F-02 | H | webhook wallet top-up / credit repayment | Not idempotent (retry double-credits wallet; repayment re-reduces `outstanding` per retry and its insert hit the missing column, so it retried 5×). Beneficiary and type taken from payment notes. `wallet_topups` never written. | mig. 103 RPCs `apply_wallet_topup_payment` / `apply_credit_repayment_payment` (lock `payment_orders`, verify type+amount, exactly-once); webhook rewired; `create-razorpay-order` fails closed if `payment_orders` insert fails | Fixed, NOT VERIFIED |
 | F-03 | H | RPC grants | "Service-only" RPCs revoked from `authenticated, anon` only (no-op while PUBLIC has EXECUTE — see mig. 035). `check_rate_limit` was explicitly granted to `anon` with caller-chosen key/limit → anyone could exhaust another user's or the global (`ai-assistant:global:<day>`) bucket. `dispatch_ready_order` / `process_dispatch_timeouts` open to anyone (notification + offer spam). `prune_*`, `refresh_admin_dashboard_stats` never revoked. | mig. 103 revokes PUBLIC/anon/authenticated, grants `service_role` | Fixed, NOT VERIFIED |
 | F-04 | M | `get_live_admin_analytics()` | SECURITY DEFINER, no admin check, PUBLIC-executable. Currently errors (missing columns) so no live leak. | locked to service_role; client already falls back to the gated wrapper | Fixed |
+| A-01 | **C** | ~96 SECURITY DEFINER RPCs executable by `anon` | `pay_from_wallet`: `if auth.uid() is not null and p_user_id <> auth.uid() then raise` — skipped when unauthenticated, so anyone holding the public anon key can debit another user's wallet (needs the victim's UUID). `update_order_status` / `cancel_order_with_refund`: `v_is_backend := (auth.uid() is null)` — anon treated as backend, can change any order's status or cancel + refund it. `set_default_address`: same pattern. **Confirmed live** (each probe reached the function body past the identity check). Earlier migrations used `REVOKE … FROM authenticated, anon`, a no-op while PUBLIC holds EXECUTE. | mig. 108: revoke PUBLIC + anon on every definer function except an allow-list (pre-login functions + RLS helpers); `authenticated` / `service_role` grants preserved exactly (already-service-only functions are not re-opened); default function privileges no longer grant anon | Fixed in repo; **NOT YET DEPLOYED / NOT VERIFIED** |
+| V-01 | H | analytics / reconciliation views | `analytics_daily_{order,payment,delivery,financial}_metrics`, `reconciliation_dashboard` (SECURITY DEFINER views) and `admin_dashboard_stats` (materialized view) were SELECT-able by `anon` and `authenticated`; two held live rows. Migration 072 had locked them, but later migrations recreated them with default grants. No code reads them directly. | mig. 108: service_role only; `category_previews` (public by design) becomes `security_invoker` | Fixed in repo; NOT YET DEPLOYED |
 | K-01 | H | `kyc_records` RLS | Owner insert/update only checked `user_id = auth.uid()` → a user could set their own record `verified`. | mig. 104 | Fixed, NOT VERIFIED |
 | K-02 | H | KYC review wiring | No policy ever let anchors/admins UPDATE `kyc_records`; `approveKycRecord` / `rejectKycRecord` / `reviewKYC` are plain client UPDATEs → review could not work. | mig. 104 reviewer policy (admin, or same-village anchor; never own record) | Fixed, NOT VERIFIED |
 | K-04 | H | anchor KYC visibility | Found by CI (test D4 on real Postgres). The anchor read policy (mig. 014) and my reviewer policy (mig. 104) decided "same village?" with a subquery on `profiles` under the caller's RLS; `profiles` has no anchor-read policy, so it always evaluated to no rows — anchors have never been able to see or review any KYC record. The client's embedded `profiles` join returned null names for the same reason. | mig. 107: `anchor_manages_user()` SECURITY DEFINER predicate, policies recreated on it, `get_village_kyc_queue()` RPC (name/role only, caller's village only), `getVillageKycRecords` rewired to it | Fixed, NOT VERIFIED until CI D4/D7–D9 pass |
@@ -84,6 +107,10 @@ Severity: C = critical, H = high, M = medium, L = low. "Fixed" = changed in this
 | P-15 | L | A bare CI Supabase stack grants `authenticated` only SELECT (migration 039) while production has project default privileges (ALL), so RLS *write* policies cannot be exercised in CI without mirroring production's grants, and a CI "permission denied" is indistinguishable from an RLS denial unless the message is checked. | Keep the explicit `grant` + message assertion pattern used in `audit_remediation_test.sql` for any new write-policy tests. |
 | P-16 | M | Anchors cannot open the KYC document image either: the `kyc-documents` storage policy allows only the owner or an admin. If anchors are meant to review documents, add a read policy (or signed-URL RPC) scoped with `anchor_manages_user()`; this is a privacy decision (Aadhaar documents), so it was not changed. | Decide, then implement. |
 | P-17 | H (gate) / none (runtime) | `npm audit`: 4 high advisories — one chain `@grpc/grpc-js` ≤1.13.5 (GHSA-m9gg-hp2v-232j unauthorised certs from `getAuthContext`; GHSA-f596-whhp-79r4 error-message leak) → `@firebase/firestore` → `@firebase/firestore-compat` → `firebase`. **Not reachable by SETU:** the app imports only `firebase/app` and `firebase/messaging` (never Firestore) and grpc-js is a Node-only library, so nothing from it enters the browser bundle or any SETU server. The CI gate is still correct to block. `npm audit fix --force` proposes `firebase@9.14.0`, a downgrade from the installed 12.14.0 that would break FCM — **do not run it.** | `overrides: {"@grpc/grpc-js": "^1.14.0"}` in `package.json` (firebase pins `~1.9.0`, which has no patched release), then `npm install` to refresh the lockfile and re-audit. Two moderates (react-router open-redirect-via-backslash, protobufjs DoS) are fixed non-breakingly by `npm audit fix`. |
+| P-18 | M | Supabase Auth "leaked password protection" is disabled (advisor). Only matters if email/password login is enabled; OTP/Google login is the documented path. | Enable it in Auth → Passwords if password login is on. (Dashboard setting — not changeable from SQL.) |
+| P-19 | L | `pg_trgm` is installed in `public` (advisor). | Move to the `extensions` schema in a maintenance window. |
+| P-20 | I | Five tables have RLS enabled with no policy (`delivery_attempts`, `delivery_financial_finalizations`, `delivery_otps`, `delivery_proofs`, `rate_limit_hits`). This is the intended deny-all for service-only tables, not a hole. | None. |
+| P-21 | M | The `auth.uid() IS NULL ⇒ backend` convention remains in many definer functions. After migration 108 only `service_role` / the DB owner can reach it, but a future `GRANT … TO anon` or a new function with default privileges would reopen it. | Replace with an explicit `auth.role() = 'service_role'` check when each function is next touched. |
 | P-10 | I | Production overlay still contains `YOUR_*` placeholders (Redis, Kafka, origins). | Fill in before first deploy. |
 
 ## 3. What looked sound (static, approximate)
@@ -105,7 +132,7 @@ load behaviour, migration ordering on a fresh database.
 
 ## 5. Rollout order
 
-1. Apply migrations `103`–`107` (before deploying functions — the webhook now calls the new RPCs).
+1. Apply migrations `103`–`108` (before deploying functions — the webhook now calls the new RPCs).
 2. Deploy `razorpay-webhook`, `create-razorpay-order`, `verify-aadhaar`; rebuild the realtime image (new `event-sanitizer.mjs`).
 3. Run `qa/sql/audit_remediation_test.sql` against a local Supabase first; fix any schema detail I could not see.
 4. Set `REALTIME_ALLOWED_ORIGINS` (+ `https://localhost` if the Android app uses the gateway) and `REALTIME_TRUSTED_PROXY_HOPS`.

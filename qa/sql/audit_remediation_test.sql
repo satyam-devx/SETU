@@ -18,6 +18,7 @@
 --       surplus goes to the wallet, replay is a no-op
 --   C1  service-only RPCs are NOT executable by anon / authenticated
 --       (PUBLIC revoked), but ARE executable by service_role
+--   G1-G7 anon cannot execute user/backend RPCs or read admin views; allow-list + RLS helpers intact
 --   F1-F4 outbox retention prunes only old published rows (service-only)
 --   E1-E2 fcm_token is single-owner and clearable
 --   D1-D9 kyc_records (incl. anchor queue RPC + cross-village isolation): no self-approval, same-village anchor can review,
@@ -310,6 +311,108 @@ begin
   end if;
   raise notice 'PASS F1-F4: outbox prune removes only old published rows and is service-only';
 end $$;
+
+-- ── G : unauthenticated lockdown (migration 108) ────────────────
+do $$
+declare
+  fn text; n int;
+begin
+  -- G1/G2: RPCs that treat `auth.uid() is null` as "trusted backend" are not callable by anon,
+  -- yet logged-in users and the service role keep EXECUTE.
+  foreach fn in array array[
+    'public.pay_from_wallet(uuid,numeric,uuid)',
+    'public.update_order_status(uuid,text,uuid,jsonb)',
+    'public.cancel_order_with_refund(uuid,uuid,text,text)',
+    'public.set_default_address(uuid,uuid)',
+    'public.pay_order_from_wallet(uuid)',
+    'public.create_order(uuid,jsonb,text,text,text,text,boolean,text,text,uuid)'
+  ] loop
+    if has_function_privilege('anon', fn, 'execute') then
+      raise exception 'FAIL G1: anon can still execute %', fn;
+    end if;
+    if not has_function_privilege('authenticated', fn, 'execute') then
+      raise exception 'FAIL G2: authenticated lost EXECUTE on %', fn;
+    end if;
+    if not has_function_privilege('service_role', fn, 'execute') then
+      raise exception 'FAIL G2: service_role lost EXECUTE on %', fn;
+    end if;
+  end loop;
+  raise notice 'PASS G1/G2: anon cannot execute user/backend RPCs; authenticated + service_role unchanged';
+
+  -- G3: pre-login functions and the RLS helpers stay callable by anon (policies evaluate them).
+  foreach fn in array array[
+    'public.get_public_settings()', 'public.my_feature_flags()', 'public.is_admin()',
+    'public.get_my_role()', 'public.get_my_village_id()', 'public.has_permission(text)',
+    'public.get_fee_config()'
+  ] loop
+    if not has_function_privilege('anon', fn, 'execute') then
+      raise exception 'FAIL G3: allow-listed % is no longer anon-executable (RLS/pre-login would break)', fn;
+    end if;
+  end loop;
+  raise notice 'PASS G3: allow-listed pre-login / RLS-helper functions remain anon-executable';
+
+  -- G4: the lockdown did not re-open functions that were service-only before it.
+  select count(*) into n from pg_proc
+   where pronamespace = 'public'::regnamespace
+     and proname in ('topup_wallet', 'credit_wallet', 'apply_wallet_topup_payment',
+                     'apply_credit_repayment_payment', 'check_rate_limit', 'process_dispatch_timeouts')
+     and has_function_privilege('authenticated', oid, 'execute');
+  if n <> 0 then raise exception 'FAIL G4: % service-only function(s) are executable by authenticated', n; end if;
+  raise notice 'PASS G4: service-only functions stay closed to authenticated';
+
+  -- G5: analytics / reconciliation relations are service-role only; category_previews stays public.
+  foreach fn in array array[
+    'public.analytics_daily_order_metrics', 'public.analytics_daily_payment_metrics',
+    'public.analytics_daily_delivery_metrics', 'public.analytics_daily_financial_metrics',
+    'public.reconciliation_dashboard', 'public.admin_dashboard_stats'
+  ] loop
+    if to_regclass(fn) is null then continue; end if;
+    if has_table_privilege('anon', fn, 'select') or has_table_privilege('authenticated', fn, 'select') then
+      raise exception 'FAIL G5: % is readable by anon/authenticated', fn;
+    end if;
+    if not has_table_privilege('service_role', fn, 'select') then
+      raise exception 'FAIL G5: service_role cannot read %', fn;
+    end if;
+  end loop;
+  if not has_table_privilege('anon', 'public.category_previews', 'select') then
+    raise exception 'FAIL G5: category_previews (public catalog) is no longer readable';
+  end if;
+  raise notice 'PASS G5: admin analytics views closed; public catalog view still readable';
+end $$;
+
+-- G6: the actual exploit — an unauthenticated caller can no longer drain a wallet.
+set local role anon;
+do $$
+begin
+  begin
+    perform pay_from_wallet(gen_random_uuid(), 1, null);
+    raise exception 'FAIL G6: anon executed pay_from_wallet';
+  exception when insufficient_privilege then
+    raise notice 'PASS G6: anon is refused at the privilege layer (permission denied)';
+  end;
+  begin
+    perform update_order_status(gen_random_uuid(), 'cancelled', null, '{}'::jsonb);
+    raise exception 'FAIL G6: anon executed update_order_status';
+  exception when insufficient_privilege then
+    raise notice 'PASS G6: anon cannot drive order status';
+  end;
+end $$;
+reset role;
+
+-- G7: a logged-in user still cannot debit someone else's wallet (the identity guard holds).
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"a1111111-1111-1111-1111-111111111111","role":"authenticated"}';
+do $$
+begin
+  begin
+    perform pay_from_wallet('a2222222-2222-2222-2222-222222222222', 1, null);
+    raise exception 'FAIL G7: authenticated user debited another user''s wallet';
+  exception when raise_exception then
+    if sqlerrm not ilike '%cannot debit another user%' then raise; end if;
+    raise notice 'PASS G7: cross-user wallet debit refused for authenticated callers';
+  end;
+end $$;
+reset role;
 
 do $$ begin raise notice 'ALL AUDIT-REMEDIATION TESTS PASSED'; end $$;
 
