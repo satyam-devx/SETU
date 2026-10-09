@@ -19,6 +19,20 @@ areas were not inspected deeply enough to score honestly.
 | Crude bracket balance of the 3 edited JSX files | pass (**not** a real JSX/ESLint run) |
 | Migrations applied to Postgres, `qa/sql/*.sql`, vitest, Playwright, build, lint, `kubectl kustomize` | **NOT VERIFIED — not run** |
 
+## 1b. CI run on commit `4590e7fb` (first real execution)
+
+The owner pushed v1 to `main`. `deploy.yml` (not gated on CI) applied migrations 103–106 to production
+successfully, deployed the edge functions and frontend, and post-deploy validation passed. CI results:
+
+| Result | Detail |
+|---|---|
+| **Verified on real Postgres** | `audit_remediation_test.sql` A1, A2, B1, B2, B3, B4, C1 passed: `credit_transactions.reference` exists; the finalizer no longer reads it (definition check only — `finalize_order_financial_capture` itself was not executed); wallet top-up and credit repayment apply exactly once across a replay with the surplus going to the wallet; amount-mismatch and payment-type checks reject; service-only RPCs are not executable by `anon` / `authenticated`. |
+| **Test bug (mine), fixed** | D1 "passed" for the wrong reason: a bare CI stack grants `authenticated` only SELECT (migration 039), so the insert was denied by the *table-privilege* layer (also SQLSTATE 42501), not by the new RLS policy; D2 then failed with `permission denied for table kyc_records`. The test now mirrors production's default privileges inside its rolled-back transaction and asserts that every denial message contains "row-level security". |
+| **My test tripped the secret scanner** | Literal `fcm_token = '…'` assignments; the device id is now passed through a variable. |
+| **Pre-existing (files this patch did not touch)** | `src/lib/googleAuth.js:309` secret-scan false positive (now logs `idTokenPresent: true` instead of a token-shaped literal); `pass5-remediation.test.js` DATA-01 expected the words "coming soon" but the page was reworded to "Coming to SETU" (assertion updated to accept the new wording **and** to require the "no referral code … active yet" text, so it is not weakened); Dependency Audit exit 1 (cause not visible in the log — needs the `npm audit` output). |
+| **Cascade** | The QA "Generate report" gate failed only because the unit suite failed. |
+| **Not run** | Playwright E2E, UI crawler and post-deploy E2E (skipped behind the failing jobs). |
+
 ## 2. Findings
 
 Severity: C = critical, H = high, M = medium, L = low. "Fixed" = changed in this patch, unexecuted.
@@ -61,6 +75,8 @@ Severity: C = critical, H = high, M = medium, L = low. "Fixed" = changed in this
 | P-11 | L | Kafka domain consumer claims a Redis dedupe key *before* running the handler; a pod killed mid-handler leaves the key set, so the redelivered event is skipped as a duplicate. Handlers are projection-only (no business state), so impact is a missed realtime hint. | Use a short "processing" lease that is promoted to the long TTL on success. |
 | P-12 | L | `payment.*`, `dispatch.*`, `inventory.*` realtime event types have no frontend consumer (grep of `src/`); the Kafka domain workers' output currently reaches no UI. | Wire a consumer or scale the workers down. |
 | P-13 | L | `rider_locations` writes go through Postgres → outbox → Kafka as well as WebSocket/Redis; high-volume telemetry through a transactional outbox is costly. | Keep location pings out of the outbox. |
+| P-14 | H | `deploy.yml` triggers on every push to `main` and runs `supabase db push` against production with no dependency on CI (CI and deploy ran in parallel; the deploy went green while CI was red). | Gate deploys on a green CI (`workflow_run` or a required-checks branch rule) and require reviewer approval on the `production` environment for the migrate job. |
+| P-15 | L | A bare CI Supabase stack grants `authenticated` only SELECT (migration 039) while production has project default privileges (ALL), so RLS *write* policies cannot be exercised in CI without mirroring production's grants, and a CI "permission denied" is indistinguishable from an RLS denial unless the message is checked. | Keep the explicit `grant` + message assertion pattern used in `audit_remediation_test.sql` for any new write-policy tests. |
 | P-10 | I | Production overlay still contains `YOUR_*` placeholders (Redis, Kafka, origins). | Fill in before first deploy. |
 
 ## 3. What looked sound (static, approximate)

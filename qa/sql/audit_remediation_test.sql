@@ -153,6 +153,11 @@ begin
   update profiles set role='anchor',   village_id=v_village, name='AuditAnchor' where id='a2222222-2222-2222-2222-222222222222';
 end $$;
 
+-- Production has Supabase's project default privileges (ALL on public tables for `authenticated`);
+-- a bare CI stack grants SELECT only (see migration 039). Mirror production inside this rolled-back
+-- transaction so the RLS policies — not the table-privilege layer — are what is under test.
+grant insert, update on kyc_records to authenticated;
+
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"a1111111-1111-1111-1111-111111111111","role":"authenticated"}';
 
@@ -163,7 +168,10 @@ begin
     values ('a1111111-1111-1111-1111-111111111111', 'aadhaar', 'verified', now());
     raise exception 'FAIL D1: user inserted a pre-verified KYC record';
   exception when insufficient_privilege then
-    raise notice 'PASS D1: self-insert of status=verified denied';
+    if sqlerrm not ilike '%row-level security%' then
+      raise exception 'FAIL D1: denied for the wrong reason (privilege layer, not RLS): %', sqlerrm;
+    end if;
+    raise notice 'PASS D1: self-insert of status=verified denied by RLS';
   end;
 
   insert into kyc_records (user_id, type, status, doc_url)
@@ -175,7 +183,10 @@ begin
      where user_id='a1111111-1111-1111-1111-111111111111' and type='aadhaar';
     raise exception 'FAIL D3: user self-approved their KYC record';
   exception when insufficient_privilege then
-    raise notice 'PASS D3: self-approval denied';
+    if sqlerrm not ilike '%row-level security%' then
+      raise exception 'FAIL D3: denied for the wrong reason (privilege layer, not RLS): %', sqlerrm;
+    end if;
+    raise notice 'PASS D3: self-approval denied by RLS';
   end;
 end $$;
 
@@ -197,7 +208,10 @@ begin
      where user_id='a2222222-2222-2222-2222-222222222222' and type='pan';
     raise exception 'FAIL D6: anchor approved their own KYC';
   exception when insufficient_privilege then
-    raise notice 'PASS D6: anchor cannot self-approve';
+    if sqlerrm not ilike '%row-level security%' then
+      raise exception 'FAIL D6: denied for the wrong reason (privilege layer, not RLS): %', sqlerrm;
+    end if;
+    raise notice 'PASS D6: anchor cannot self-approve (RLS)';
   end;
 end $$;
 
@@ -216,18 +230,22 @@ reset role;
 
 -- ── E : FCM token single-owner (migration 105) ──────────────────
 do $$
-declare t1 text; t2 text;
+declare
+  v_device text := 'audit-device-1';
+  v_a1 constant uuid := 'a1111111-1111-1111-1111-111111111111';
+  v_a2 constant uuid := 'a2222222-2222-2222-2222-222222222222';
+  t1 text; t2 text;
 begin
-  update profiles set fcm_token = 'tok_audit_device'  where id = 'a1111111-1111-1111-1111-111111111111';
-  update profiles set fcm_token = 'tok_audit_device'  where id = 'a2222222-2222-2222-2222-222222222222';  -- same device, new user
-  select fcm_token into t1 from profiles where id = 'a1111111-1111-1111-1111-111111111111';
-  select fcm_token into t2 from profiles where id = 'a2222222-2222-2222-2222-222222222222';
+  update profiles set fcm_token = v_device where id = v_a1;
+  update profiles set fcm_token = v_device where id = v_a2;   -- same device, new user
+  select fcm_token into t1 from profiles where id = v_a1;
+  select fcm_token into t2 from profiles where id = v_a2;
   if t1 is not null then raise exception 'FAIL E1: previous owner still holds the device token (%)', t1; end if;
-  if t2 is distinct from 'tok_audit_device' then raise exception 'FAIL E1: new owner lost the token (%)', t2; end if;
+  if t2 is distinct from v_device then raise exception 'FAIL E1: new owner lost the token (%)', t2; end if;
   raise notice 'PASS E1: device token moved to the newest owner only';
 
-  update profiles set fcm_token = null where id = 'a2222222-2222-2222-2222-222222222222';
-  select fcm_token into t2 from profiles where id = 'a2222222-2222-2222-2222-222222222222';
+  update profiles set fcm_token = null where id = v_a2;
+  select fcm_token into t2 from profiles where id = v_a2;
   if t2 is not null then raise exception 'FAIL E2: token could not be cleared'; end if;
   raise notice 'PASS E2: token can be cleared (sign-out)';
 end $$;

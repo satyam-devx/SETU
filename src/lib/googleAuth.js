@@ -306,7 +306,7 @@ export async function signInWithGoogleNative() {
     record('sign_in_completed', {
       attemptId,
       durationMs: Math.round(performance.now() - startedAt),
-      idToken: '[REDACTED_PRESENT]',
+      idTokenPresent: true, // never log the token itself
     });
 
     return { idToken, nonce: rawNonce };

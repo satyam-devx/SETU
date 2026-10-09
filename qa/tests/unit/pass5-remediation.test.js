@@ -152,6 +152,9 @@ describe('DATA-01 — Referral no longer shows fabricated financial data', () =>
   });
 
   it('renders a truthful unavailable/coming-soon state', () => {
-    expect(source).toMatch(/coming soon/i);
+    // The copy was reworded from "coming soon" to "Coming to SETU" + "not active yet"; the intent
+    // (a truthful unavailable state, no fabricated figures) is unchanged and enforced by the tests above.
+    expect(source).toMatch(/coming (soon|to setu)/i);
+    expect(source).toMatch(/no referral code or reward balance is active yet/i);
   });
 });
