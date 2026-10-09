@@ -20,7 +20,7 @@
 --       (PUBLIC revoked), but ARE executable by service_role
 --   F1-F4 outbox retention prunes only old published rows (service-only)
 --   E1-E2 fcm_token is single-owner and clearable
---   D1-D6 kyc_records: no self-approval, same-village anchor can review,
+--   D1-D9 kyc_records (incl. anchor queue RPC + cross-village isolation): no self-approval, same-village anchor can review,
 --       nobody approves their own record, verified rows immutable to owner
 -- ═══════════════════════════════════════════════════════════════
 
@@ -145,12 +145,20 @@ values
   ('00000000-0000-0000-0000-000000000000','a2222222-2222-2222-2222-222222222222','authenticated','authenticated','audit_anchor@test.local','{}','{}', now(), now(), now());
 
 do $$
-declare v_village text;
+declare v_village text; v_village2 text;
 begin
   select id into v_village from villages limit 1;
   if v_village is null then raise exception 'FAIL D0: no village seeded (migration 040)'; end if;
   update profiles set role='customer', village_id=v_village where id='a1111111-1111-1111-1111-111111111111';
   update profiles set role='anchor',   village_id=v_village, name='AuditAnchor' where id='a2222222-2222-2222-2222-222222222222';
+
+  -- an anchor of a DIFFERENT village (only when the seed has a second village)
+  select id into v_village2 from villages where id <> v_village limit 1;
+  if v_village2 is not null then
+    insert into auth.users (instance_id, id, aud, role, email, raw_user_meta_data, raw_app_meta_data, created_at, updated_at, email_confirmed_at)
+    values ('00000000-0000-0000-0000-000000000000','a3333333-3333-3333-3333-333333333333','authenticated','authenticated','audit_anchor2@test.local','{}','{}', now(), now(), now());
+    update profiles set role='anchor', village_id=v_village2, name='OtherAnchor' where id='a3333333-3333-3333-3333-333333333333';
+  end if;
 end $$;
 
 -- Production has Supabase's project default privileges (ALL on public tables for `authenticated`);
@@ -201,6 +209,11 @@ begin
   if n <> 1 then raise exception 'FAIL D4: same-village anchor could not review (rows=%)', n; end if;
   raise notice 'PASS D4: same-village anchor can approve';
 
+  select count(*) into n from get_village_kyc_queue()
+   where user_id = 'a1111111-1111-1111-1111-111111111111' and user_name is not null;
+  if n <> 1 then raise exception 'FAIL D7: anchor KYC queue does not list the village record (%)', n; end if;
+  raise notice 'PASS D7: anchor KYC queue lists same-village records via RPC';
+
   -- anchor may not approve their own record
   insert into kyc_records (user_id, type, status) values ('a2222222-2222-2222-2222-222222222222','pan','submitted');
   begin
@@ -225,6 +238,31 @@ begin
   get diagnostics n = row_count;
   if n <> 0 then raise exception 'FAIL D5: owner modified a verified record (rows=%)', n; end if;
   raise notice 'PASS D5: verified record immutable to owner';
+end $$;
+-- A customer gets an empty anchor queue.
+do $$
+declare n int;
+begin
+  select count(*) into n from get_village_kyc_queue();
+  if n <> 0 then raise exception 'FAIL D8: non-anchor received % KYC queue rows', n; end if;
+  raise notice 'PASS D8: non-anchors get an empty KYC queue';
+end $$;
+
+-- An anchor of another village can neither see nor review the record.
+set local request.jwt.claims = '{"sub":"a3333333-3333-3333-3333-333333333333","role":"authenticated"}';
+do $$
+declare n int;
+begin
+  if not exists (select 1 from profiles where id = 'a3333333-3333-3333-3333-333333333333') then
+    raise notice 'SKIP D9: seed has only one village';
+    return;
+  end if;
+  select count(*) into n from kyc_records where user_id = 'a1111111-1111-1111-1111-111111111111';
+  if n <> 0 then raise exception 'FAIL D9: other-village anchor can read % KYC rows', n; end if;
+  update kyc_records set status = 'rejected' where user_id = 'a1111111-1111-1111-1111-111111111111';
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'FAIL D9: other-village anchor modified % KYC rows', n; end if;
+  raise notice 'PASS D9: other-village anchor has no read or review access';
 end $$;
 reset role;
 

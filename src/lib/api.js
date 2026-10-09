@@ -1702,16 +1702,23 @@ export const SevaAPI = {
 /** Fetch all kyc_records for users in the anchor's village.
  *  Joins profiles so we get name + role alongside each record. */
 export async function getVillageKycRecords(villageId) {
+  // AUDIT K-04: anchors cannot read other users' `profiles` rows (RLS), so the old embedded join
+  // returned null names — and the kyc_records policy itself never matched. The RPC resolves the
+  // anchor's own village server-side; `villageId` is kept for call-site compatibility only.
+  void villageId;
   return safeQuery(
-    () =>
-      supabase
-        .from('kyc_records')
-        .select(`
-          id, type, status, doc_url, failure_reason, created_at, updated_at,
-          profiles!kyc_records_user_id_fkey(id, name, role, village_id)
-        `)
-        .eq('profiles.village_id', villageId)
-        .order('created_at', { ascending: false }),
+    async () => {
+      const { data, error } = await supabase.rpc('get_village_kyc_queue');
+      if (error) return { data: null, error };
+      return {
+        data: (data ?? []).map(r => ({
+          id: r.id, user_id: r.user_id, type: r.type, status: r.status, doc_url: r.doc_url,
+          failure_reason: r.failure_reason, created_at: r.created_at, updated_at: r.updated_at,
+          profiles: { id: r.user_id, name: r.user_name, role: r.user_role, village_id: r.village_id },
+        })),
+        error: null,
+      };
+    },
     [],
     'getVillageKycRecords'
   );

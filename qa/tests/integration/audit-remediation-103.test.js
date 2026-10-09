@@ -19,6 +19,8 @@ const m104 = read('supabase/migrations/20240101000104_kyc_records_rls_hardening.
 const aadhaar = read('supabase/functions/verify-aadhaar/index.ts');
 const m105 = read('supabase/migrations/20240101000105_fcm_token_single_owner.sql');
 const authCtx = read('src/lib/AuthContext.jsx');
+const m107 = read('supabase/migrations/20240101000107_kyc_anchor_visibility.sql');
+const apiSrc = read('src/lib/api.js');
 const m106 = read('supabase/migrations/20240101000106_outbox_retention.sql');
 const kafkaWorker = read('server/realtime/kafka-worker.mjs');
 const domainConsumers = read('server/realtime/domain-consumers.mjs');
@@ -166,5 +168,29 @@ describe('KC-01/KC-02: realtime fan-out never leaks payment/dispatch internals t
   });
   it('the gateway image actually ships the sanitizer module', () => {
     assert.match(gatewayDockerfile, /event-sanitizer\.mjs/);
+  });
+});
+
+describe('K-04: anchors can actually see and review their village\'s KYC records', () => {
+  it('policies use a SECURITY DEFINER predicate instead of a subquery under the caller\'s profiles RLS', () => {
+    assert.match(m107, /function anchor_manages_user\(p_user_id uuid\)[\s\S]*security definer/i);
+    const policies = m107.split('create policy');
+    assert.ok(policies.length >= 3);
+    for (const p of policies.slice(1)) {
+      assert.match(p, /anchor_manages_user\(user_id\)/);
+      assert.doesNotMatch(p, /from profiles target/i);
+      assert.match(p, /to authenticated/);
+    }
+  });
+  it('the anchor queue RPC scopes to the caller\'s own village and is not callable by anon', () => {
+    assert.match(m107, /me\.id = auth\.uid\(\) and me\.role = 'anchor'/);
+    assert.match(m107, /revoke execute on function get_village_kyc_queue\(\) from public, anon/);
+    assert.doesNotMatch(m107.split('create or replace function get_village_kyc_queue')[1].split('$$;')[0], /\bphone\b/);
+  });
+  it('the client reads the queue through the RPC and preserves the shape the Anchor page expects', () => {
+    const fn = apiSrc.split('export async function getVillageKycRecords')[1].split('/** Anchor approves')[0];
+    assert.match(fn, /rpc\('get_village_kyc_queue'\)/);
+    assert.match(fn, /profiles: \{ id: r\.user_id, name: r\.user_name/);
+    assert.doesNotMatch(fn, /profiles!kyc_records_user_id_fkey/);
   });
 });

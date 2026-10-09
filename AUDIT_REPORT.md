@@ -33,6 +33,10 @@ successfully, deployed the edge functions and frontend, and post-deploy validati
 | **Cascade** | The QA "Generate report" gate failed only because the unit suite failed. |
 | **Not run** | Playwright E2E, UI crawler and post-deploy E2E (skipped behind the failing jobs). |
 
+### CI run 2 (after v2)
+
+D1–D3 now pass **for the right reason** (RLS, not the privilege layer) and D2 passes. D4 failed — "same-village anchor could not review (rows=0)" — which exposed K-04 above, a defect older than this patch. The Security-suite and Dependency-audit jobs fail on `npm audit`: **4 high-severity advisories in production dependencies** (package names not in the log; not caused by this patch, which changes no dependency). All 29 other security-suite checks pass, including the secret scan.
+
 ## 2. Findings
 
 Severity: C = critical, H = high, M = medium, L = low. "Fixed" = changed in this patch, unexecuted.
@@ -45,6 +49,7 @@ Severity: C = critical, H = high, M = medium, L = low. "Fixed" = changed in this
 | F-04 | M | `get_live_admin_analytics()` | SECURITY DEFINER, no admin check, PUBLIC-executable. Currently errors (missing columns) so no live leak. | locked to service_role; client already falls back to the gated wrapper | Fixed |
 | K-01 | H | `kyc_records` RLS | Owner insert/update only checked `user_id = auth.uid()` → a user could set their own record `verified`. | mig. 104 | Fixed, NOT VERIFIED |
 | K-02 | H | KYC review wiring | No policy ever let anchors/admins UPDATE `kyc_records`; `approveKycRecord` / `rejectKycRecord` / `reviewKYC` are plain client UPDATEs → review could not work. | mig. 104 reviewer policy (admin, or same-village anchor; never own record) | Fixed, NOT VERIFIED |
+| K-04 | H | anchor KYC visibility | Found by CI (test D4 on real Postgres). The anchor read policy (mig. 014) and my reviewer policy (mig. 104) decided "same village?" with a subquery on `profiles` under the caller's RLS; `profiles` has no anchor-read policy, so it always evaluated to no rows — anchors have never been able to see or review any KYC record. The client's embedded `profiles` join returned null names for the same reason. | mig. 107: `anchor_manages_user()` SECURITY DEFINER predicate, policies recreated on it, `get_village_kyc_queue()` RPC (name/role only, caller's village only), `getVillageKycRecords` rewired to it | Fixed, NOT VERIFIED until CI D4/D7–D9 pass |
 | K-03 | M | `verify-aadhaar` verify-otp | `requestId` not bound to the caller → OTP session could be lent to another account. | requires `kyc_records.meta.request_id` match for the caller | Fixed |
 | R-01 | M | realtime WS | Re-auth kept rooms of the previous identity/role; no JWT-expiry enforcement on live sockets. | leave all rooms on (re)auth; close at `exp`+30s | Fixed |
 | R-03 | M | realtime config | Wildcard origins allowed by default; production overlay still has `YOUR_SETU_DOMAIN`; Android WebView origin `https://localhost` not allow-listed. | exits in production on `*`; warns on placeholders; documented | Partially fixed — **you must set the origin list** |
@@ -77,6 +82,8 @@ Severity: C = critical, H = high, M = medium, L = low. "Fixed" = changed in this
 | P-13 | L | `rider_locations` writes go through Postgres → outbox → Kafka as well as WebSocket/Redis; high-volume telemetry through a transactional outbox is costly. | Keep location pings out of the outbox. |
 | P-14 | H | `deploy.yml` triggers on every push to `main` and runs `supabase db push` against production with no dependency on CI (CI and deploy ran in parallel; the deploy went green while CI was red). | Gate deploys on a green CI (`workflow_run` or a required-checks branch rule) and require reviewer approval on the `production` environment for the migrate job. |
 | P-15 | L | A bare CI Supabase stack grants `authenticated` only SELECT (migration 039) while production has project default privileges (ALL), so RLS *write* policies cannot be exercised in CI without mirroring production's grants, and a CI "permission denied" is indistinguishable from an RLS denial unless the message is checked. | Keep the explicit `grant` + message assertion pattern used in `audit_remediation_test.sql` for any new write-policy tests. |
+| P-16 | M | Anchors cannot open the KYC document image either: the `kyc-documents` storage policy allows only the owner or an admin. If anchors are meant to review documents, add a read policy (or signed-URL RPC) scoped with `anchor_manages_user()`; this is a privacy decision (Aadhaar documents), so it was not changed. | Decide, then implement. |
+| P-17 | H | `npm audit`: 4 high advisories in production dependencies (CI "Dependency Audit" and the security suite). | Needs `npm audit --omit=dev` output; upgrade the affected packages, don't mute the check. |
 | P-10 | I | Production overlay still contains `YOUR_*` placeholders (Redis, Kafka, origins). | Fill in before first deploy. |
 
 ## 3. What looked sound (static, approximate)
@@ -98,7 +105,7 @@ load behaviour, migration ordering on a fresh database.
 
 ## 5. Rollout order
 
-1. Apply migrations `103`–`106` (before deploying functions — the webhook now calls the new RPCs).
+1. Apply migrations `103`–`107` (before deploying functions — the webhook now calls the new RPCs).
 2. Deploy `razorpay-webhook`, `create-razorpay-order`, `verify-aadhaar`; rebuild the realtime image (new `event-sanitizer.mjs`).
 3. Run `qa/sql/audit_remediation_test.sql` against a local Supabase first; fix any schema detail I could not see.
 4. Set `REALTIME_ALLOWED_ORIGINS` (+ `https://localhost` if the Android app uses the gateway) and `REALTIME_TRUSTED_PROXY_HOPS`.
