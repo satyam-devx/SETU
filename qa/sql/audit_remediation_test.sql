@@ -18,6 +18,7 @@
 --       surplus goes to the wallet, replay is a no-op
 --   C1  service-only RPCs are NOT executable by anon / authenticated
 --       (PUBLIC revoked), but ARE executable by service_role
+--   H1-H4 NULL-safe admin guards + service-only outbox claim
 --   G1-G7 anon cannot execute user/backend RPCs or read admin views; allow-list + RLS helpers intact
 --   F1-F4 outbox retention prunes only old published rows (service-only)
 --   E1-E2 fcm_token is single-owner and clearable
@@ -413,6 +414,48 @@ begin
   end;
 end $$;
 reset role;
+
+-- ── H : NULL-safe admin guards (migration 109) ──────────────────
+-- An authenticated identity with NO profile row (get_my_role() is NULL) must be refused by the
+-- `if not is_admin()` / `if not (has_permission(..) or is_admin())` guards, not waved through by IF NULL.
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"a9999999-9999-9999-9999-999999999999","role":"authenticated"}', true);
+do $$
+begin
+  if public.is_admin() is distinct from false then
+    raise exception 'FAIL H1: is_admin() returned % for a profile-less identity (must be false, never NULL)', public.is_admin();
+  end if;
+  raise notice 'PASS H1: is_admin() is false (not NULL) when the caller has no profile';
+
+  begin
+    perform public.get_finance_overview();
+    raise exception 'FAIL H2: profile-less identity read the finance overview';
+  exception when raise_exception then
+    if sqlerrm not ilike '%unauthorized%' then raise; end if;
+    raise notice 'PASS H2: get_finance_overview refuses a profile-less identity';
+  end;
+
+  begin
+    perform public.get_village_dashboard_stats('x');
+    raise exception 'FAIL H3: profile-less identity read village stats';
+  exception when raise_exception then
+    if sqlerrm not ilike '%unauthorized%' then raise; end if;
+    raise notice 'PASS H3: get_village_dashboard_stats refuses a profile-less identity';
+  end;
+end $$;
+reset role;
+
+do $$
+begin
+  if has_function_privilege('authenticated', 'public.setu_claim_outbox_batch(integer,text,integer,integer)', 'execute')
+     or has_function_privilege('anon', 'public.setu_claim_outbox_batch(integer,text,integer,integer)', 'execute') then
+    raise exception 'FAIL H4: setu_claim_outbox_batch is executable by a non-service role';
+  end if;
+  if not has_function_privilege('service_role', 'public.setu_claim_outbox_batch(integer,text,integer,integer)', 'execute') then
+    raise exception 'FAIL H4: the outbox worker (service_role) lost EXECUTE';
+  end if;
+  raise notice 'PASS H4: outbox claim is service-role only';
+end $$;
 
 do $$ begin raise notice 'ALL AUDIT-REMEDIATION TESTS PASSED'; end $$;
 

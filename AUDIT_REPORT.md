@@ -53,6 +53,20 @@ so nothing was written. Production currently holds test-stage data only (9 profi
 | SECURITY DEFINER functions without `search_path` | 0 |
 | **Supabase security advisors** | **109 definer functions executable by `anon`, 121 by `authenticated`; 6 SECURITY DEFINER views; 1 materialized view exposed → led to A-01 and V-01** |
 
+**Post-deploy verification of migration 108 (live, rolled-back probes):** `pay_from_wallet`, `update_order_status`,
+`cancel_order_with_refund` and `set_default_address` now fail for `anon` with "permission denied for function";
+the analytics / reconciliation views are unreadable by `anon`; the pre-login functions (`get_public_settings`,
+`my_feature_flags`), the public catalog (`category_previews`, `vendors`, `products`) and every `authenticated`
+EXECUTE grant on user-facing RPCs are intact; anon-executable definer functions dropped from 109 to exactly the
+12 on the allow-list.
+
+**Authenticated-user sweep (live, rolled back).** 70 admin-style definer functions were called as a logged-in user.
+First with a random identity that has *no profile* — 22 ran without an authorization error and eighteen returned
+platform data (GMV, revenue, order/rider counts, security counters). Re-running as a **real customer account**
+showed that was largely a NULL-logic artefact: 15 of 20 sampled admin RPCs refused correctly and the SQL helpers
+return empty results. What a real customer *could* do was call `setu_claim_outbox_batch` (the Kafka queue claim).
+I initially over-stated this finding by counting scalar rows in my probe; the corrected picture is A-02 / A-03 below.
+
 **My earlier static pass was wrong about this.** I counted ~118 PUBLIC-executable definer functions and
 judged them "self-guarded" because their bodies mention `auth.uid()` / `is_admin()`. A guard token is not
 a guard: several functions use `auth.uid() IS NULL` to mean *trusted backend*, and an unauthenticated
@@ -68,6 +82,8 @@ Severity: C = critical, H = high, M = medium, L = low. "Fixed" = changed in this
 | F-02 | H | webhook wallet top-up / credit repayment | Not idempotent (retry double-credits wallet; repayment re-reduces `outstanding` per retry and its insert hit the missing column, so it retried 5×). Beneficiary and type taken from payment notes. `wallet_topups` never written. | mig. 103 RPCs `apply_wallet_topup_payment` / `apply_credit_repayment_payment` (lock `payment_orders`, verify type+amount, exactly-once); webhook rewired; `create-razorpay-order` fails closed if `payment_orders` insert fails | Fixed, NOT VERIFIED |
 | F-03 | H | RPC grants | "Service-only" RPCs revoked from `authenticated, anon` only (no-op while PUBLIC has EXECUTE — see mig. 035). `check_rate_limit` was explicitly granted to `anon` with caller-chosen key/limit → anyone could exhaust another user's or the global (`ai-assistant:global:<day>`) bucket. `dispatch_ready_order` / `process_dispatch_timeouts` open to anyone (notification + offer spam). `prune_*`, `refresh_admin_dashboard_stats` never revoked. | mig. 103 revokes PUBLIC/anon/authenticated, grants `service_role` | Fixed, NOT VERIFIED |
 | F-04 | M | `get_live_admin_analytics()` | SECURITY DEFINER, no admin check, PUBLIC-executable. Currently errors (missing columns) so no live leak. | locked to service_role; client already falls back to the gated wrapper | Fixed |
+| A-02 | M-H | `is_admin()` NULL logic | `is_admin()` = `get_my_role() in ('admin','super_admin')` returns NULL for an identity with no profile row, so guards written `if not is_admin()` / `if not (has_permission(..) or is_admin())` evaluate `IF NULL` and do not raise. Live: a profile-less identity received finance/revenue/security/dashboard data from ~18 admin RPCs; real customers were refused. One legacy auth user without a profile exists (created before the signup trigger); the trigger `on_auth_user_created` is present for new users. | mig. 109: `is_admin()` returns `coalesce(..., false)` (fixes all 30 callers); `get_village_dashboard_stats` guard coalesced | Fixed in repo; NOT YET DEPLOYED |
+| A-03 | H | `setu_claim_outbox_batch` | The Kafka worker's queue claim (returns full-row event snapshots and leases them) was executable by every logged-in user — confirmed with a real customer account. Outbox is empty today, so nothing leaked yet. | mig. 109: service_role only | Fixed in repo; NOT YET DEPLOYED |
 | A-01 | **C** | ~96 SECURITY DEFINER RPCs executable by `anon` | `pay_from_wallet`: `if auth.uid() is not null and p_user_id <> auth.uid() then raise` — skipped when unauthenticated, so anyone holding the public anon key can debit another user's wallet (needs the victim's UUID). `update_order_status` / `cancel_order_with_refund`: `v_is_backend := (auth.uid() is null)` — anon treated as backend, can change any order's status or cancel + refund it. `set_default_address`: same pattern. **Confirmed live** (each probe reached the function body past the identity check). Earlier migrations used `REVOKE … FROM authenticated, anon`, a no-op while PUBLIC holds EXECUTE. | mig. 108: revoke PUBLIC + anon on every definer function except an allow-list (pre-login functions + RLS helpers); `authenticated` / `service_role` grants preserved exactly (already-service-only functions are not re-opened); default function privileges no longer grant anon | Fixed in repo; **NOT YET DEPLOYED / NOT VERIFIED** |
 | V-01 | H | analytics / reconciliation views | `analytics_daily_{order,payment,delivery,financial}_metrics`, `reconciliation_dashboard` (SECURITY DEFINER views) and `admin_dashboard_stats` (materialized view) were SELECT-able by `anon` and `authenticated`; two held live rows. Migration 072 had locked them, but later migrations recreated them with default grants. No code reads them directly. | mig. 108: service_role only; `category_previews` (public by design) becomes `security_invoker` | Fixed in repo; NOT YET DEPLOYED |
 | K-01 | H | `kyc_records` RLS | Owner insert/update only checked `user_id = auth.uid()` → a user could set their own record `verified`. | mig. 104 | Fixed, NOT VERIFIED |
@@ -111,6 +127,8 @@ Severity: C = critical, H = high, M = medium, L = low. "Fixed" = changed in this
 | P-19 | L | `pg_trgm` is installed in `public` (advisor). | Move to the `extensions` schema in a maintenance window. |
 | P-20 | I | Five tables have RLS enabled with no policy (`delivery_attempts`, `delivery_financial_finalizations`, `delivery_otps`, `delivery_proofs`, `rate_limit_hits`). This is the intended deny-all for service-only tables, not a hole. | None. |
 | P-21 | M | The `auth.uid() IS NULL ⇒ backend` convention remains in many definer functions. After migration 108 only `service_role` / the DB owner can reach it, but a future `GRANT … TO anon` or a new function with default privileges would reopen it. | Replace with an explicit `auth.role() = 'service_role'` check when each function is next touched. |
+| P-22 | M | Authenticated user-facing RPCs (`get_vendor_orders`, `generate_invoice`, `get_delivery_otp`, `complete_delivery`, `claim_order`, `respond_to_rider_offer`, `rate_order`, `reply_to_vendor_review`, …) have not been tested for cross-user access (BOLA) with two real accounts. The anon and admin layers are now verified; this layer is not. | Run a two-user probe (as customer A against customer B's / vendor B's ids) in rolled-back transactions. |
+| P-23 | L | One legacy auth user has no `profiles` row (created 2026-06-07, before the signup trigger). | Delete it or let it sign in once; with 109 it is harmless to the admin guards. |
 | P-10 | I | Production overlay still contains `YOUR_*` placeholders (Redis, Kafka, origins). | Fill in before first deploy. |
 
 ## 3. What looked sound (static, approximate)
@@ -132,7 +150,7 @@ load behaviour, migration ordering on a fresh database.
 
 ## 5. Rollout order
 
-1. Apply migrations `103`–`108` (before deploying functions — the webhook now calls the new RPCs).
+1. Apply migrations `103`–`109` (before deploying functions — the webhook now calls the new RPCs).
 2. Deploy `razorpay-webhook`, `create-razorpay-order`, `verify-aadhaar`; rebuild the realtime image (new `event-sanitizer.mjs`).
 3. Run `qa/sql/audit_remediation_test.sql` against a local Supabase first; fix any schema detail I could not see.
 4. Set `REALTIME_ALLOWED_ORIGINS` (+ `https://localhost` if the Android app uses the gateway) and `REALTIME_TRUSTED_PROXY_HOPS`.

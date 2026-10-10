@@ -21,6 +21,7 @@ const m105 = read('supabase/migrations/20240101000105_fcm_token_single_owner.sql
 const authCtx = read('src/lib/AuthContext.jsx');
 const m107 = read('supabase/migrations/20240101000107_kyc_anchor_visibility.sql');
 const apiSrc = read('src/lib/api.js');
+const m109 = read('supabase/migrations/20240101000109_null_safe_admin_guards.sql');
 const m108 = read('supabase/migrations/20240101000108_anon_lockdown_rpcs_and_views.sql');
 const m106 = read('supabase/migrations/20240101000106_outbox_retention.sql');
 const kafkaWorker = read('server/realtime/kafka-worker.mjs');
@@ -224,5 +225,23 @@ describe('A-01/V-01: unauthenticated callers cannot reach definer RPCs or admin 
     for (const f of files) {
       assert.doesNotMatch(read(f), /from\(\s*['"](analytics_daily_[a-z_]+|reconciliation_dashboard|admin_dashboard_stats)['"]/);
     }
+  });
+});
+
+describe('A-02/A-03: admin guards are NULL-safe and the outbox claim is service-only', () => {
+  it('is_admin() can never return NULL', () => {
+    const body = m109.split('create or replace function public.is_admin()')[1].split('$$;')[0];
+    assert.match(body, /coalesce\(get_my_role\(\) in \('admin', 'super_admin'\), false\)/);
+  });
+  it('the inline role comparison in get_village_dashboard_stats is coalesced', () => {
+    const body = m109.split('create or replace function public.get_village_dashboard_stats')[1].split('$$;')[0];
+    assert.match(body, /if not coalesce\(/);
+    assert.match(body, /get_my_role\(\) = 'anchor' and get_my_village_id\(\) = p_village_id/);
+    assert.match(body, /false\s*\)\s*then\s+raise exception 'Unauthorized'/);
+  });
+  it('setu_claim_outbox_batch is revoked from every non-service role', () => {
+    assert.match(m109, /p\.proname = 'setu_claim_outbox_batch'/);
+    assert.match(m109, /revoke execute on function %s from public, anon, authenticated/);
+    assert.match(m109, /grant execute on function %s to service_role/);
   });
 });
