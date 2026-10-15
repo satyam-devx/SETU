@@ -54,7 +54,7 @@ jobs:
       # job (PRs from forks won't have secrets either) — the image must
       # build regardless, same as that job.
       - name: Build production image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
