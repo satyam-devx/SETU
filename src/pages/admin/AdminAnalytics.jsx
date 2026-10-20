@@ -20,7 +20,7 @@ import AppHeader from '@/components/shared/AppHeader';
 import StatCard from '@/components/shared/StatCard';
 import { AdminAPI } from '@/lib/api';
 
-const COLORS = ['#f97316', '#16a34a', '#2563eb', '#7c3aed', '#dc2626'];
+const COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))'];
 
 function fmt(n) { return Number(n ?? 0).toLocaleString('en-IN'); }
 function fmtK(n) {

@@ -32,8 +32,8 @@ const HOUR_LABELS = [
 ];
 
 const PIE_COLORS = [
-  'hsl(24, 80%, 50%)', 'hsl(45, 80%, 55%)', 'hsl(220, 60%, 50%)',
-  'hsl(160, 60%, 45%)', 'hsl(290, 50%, 55%)',
+  'hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))',
+  'hsl(var(--chart-4))', 'hsl(var(--chart-5))',
 ];
 
 
@@ -259,7 +259,7 @@ export default function VendorAnalytics() {
                     formatter={v => [v, 'Orders']}
                     contentStyle={{ fontSize: 11 }}
                   />
-                  <Bar dataKey="orders" fill="hsl(24, 80%, 50%)" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="orders" fill="hsl(var(--chart-1))" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -382,8 +382,8 @@ export default function VendorAnalytics() {
                   <XAxis dataKey="week" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                   <Tooltip contentStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="new"    fill="hsl(220, 60%, 60%)" radius={[3, 3, 0, 0]} name="New"    />
-                  <Bar dataKey="repeat" fill="hsl(24, 80%, 50%)"  radius={[3, 3, 0, 0]} name="Repeat" />
+                  <Bar dataKey="new"    fill="hsl(var(--chart-3))" radius={[3, 3, 0, 0]} name="New"    />
+                  <Bar dataKey="repeat" fill="hsl(var(--chart-1))"  radius={[3, 3, 0, 0]} name="Repeat" />
                 </BarChart>
               </ResponsiveContainer>
             </div>

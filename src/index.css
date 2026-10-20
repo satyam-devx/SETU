@@ -110,7 +110,11 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-family: var(--setu-font-body, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif);
+    font-size: var(--setu-base-font-size, 16px);
+    font-weight: var(--setu-body-weight, 400);
+    line-height: var(--setu-line-height, 1.5);
+    letter-spacing: var(--setu-letter-spacing, 0);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     /* Prevent horizontal scroll on mobile */
@@ -137,6 +141,9 @@
 
   h1, h2, h3, h4, h5, h6 {
     @apply font-semibold tracking-tight;
+    font-family: var(--setu-font-heading, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif);
+    font-weight: var(--setu-heading-weight, 600);
+    letter-spacing: var(--setu-letter-spacing, 0);
   }
 }
 
@@ -426,4 +433,71 @@
   .line-clamp-1 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; }
   .line-clamp-2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   .line-clamp-3 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+}
+
+
+/* Design System Studio runtime tokens. Existing components keep their current
+   defaults; shared components/utilities can opt into these centrally managed tokens. */
+:root {
+  --setu-font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --setu-font-heading: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --setu-font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --setu-base-font-size: 16px;
+  --setu-shadow-card: 0 2px 8px 0 rgb(0 0 0 / 0.08);
+  --setu-content-width: 64rem;
+  --setu-motion-duration: 180ms;
+  --setu-icon-size: 20px;
+  --setu-icon-stroke: 2;
+  --setu-heading-scale: 1;
+  --setu-body-weight: 400;
+  --setu-heading-weight: 600;
+  --setu-line-height: 1.5;
+  --setu-letter-spacing: 0;
+  --setu-spacing-scale: 1;
+  --setu-button-height: 2.75rem;
+  --setu-input-height: 3rem;
+  --setu-card-padding: 1rem;
+  --setu-grid-gap: 1rem;
+  --setu-nav-density: 1rem;
+  --setu-breakpoint-md: 768px;
+  --chart-1: 20 90% 40%;
+  --chart-2: 180 55% 35%;
+  --chart-3: 142 45% 42%;
+  --chart-4: 35 45% 45%;
+  --chart-5: 215 16% 47%;
+}
+[data-setu-motion='off'] *,
+[data-setu-motion='off'] *::before,
+[data-setu-motion='off'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+}
+:root[data-setu-motion='on'] .setu-transition { transition-duration: var(--setu-motion-duration); }
+:root[data-setu-hover-effects='off'] .setu-hover-effect:hover { transform: none !important; box-shadow: inherit !important; }
+:root[data-setu-page-animations='off'] .setu-page-animation { animation: none !important; }
+:root[data-setu-loading-shimmer='off'] .shimmer { animation: none !important; background-image: none !important; }
+:root[data-setu-card-interactions='off'] .setu-card-interactive { transform: none !important; box-shadow: inherit; }
+.setu-design-shadow { box-shadow: var(--setu-shadow-card); }
+.setu-design-container { width: 100%; max-width: var(--setu-content-width); margin-inline: auto; }
+.setu-design-button { min-height: var(--setu-button-height); transition-duration: var(--setu-motion-duration); }
+.setu-design-input { min-height: var(--setu-input-height); }
+.setu-design-card { padding: var(--setu-card-padding); border-radius: var(--radius); box-shadow: var(--setu-shadow-card); }
+.setu-design-grid { gap: var(--setu-grid-gap); }
+.setu-design-stack { gap: var(--setu-spacing-scale); }
+.setu-design-nav-item { padding-block: calc(var(--setu-nav-density) * 0.5); }
+.setu-design-heading-1 { font-size: calc(2.25rem * var(--setu-heading-scale)); }
+.setu-design-heading-2 { font-size: calc(1.875rem * var(--setu-heading-scale)); }
+.setu-design-heading-3 { font-size: calc(1.5rem * var(--setu-heading-scale)); }
+.setu-design-mono { font-family: var(--setu-font-mono); }
+.setu-design-icon { width: var(--setu-icon-size); height: var(--setu-icon-size); stroke-width: var(--setu-icon-stroke); flex: 0 0 auto; }
+/* Lucide icons without an explicit component size inherit the Design System defaults.
+   Icons with explicit width or height utility classes keep their intentional per-component dimensions. */
+svg.lucide:not([class*='w-']):not([class*='h-']) { width: var(--setu-icon-size); height: var(--setu-icon-size); stroke-width: var(--setu-icon-stroke); }
+.setu-design-surface { border-radius: var(--radius); box-shadow: var(--setu-shadow-card); }
+@media (prefers-reduced-motion: reduce) {
+  [data-setu-motion='on'] *, [data-setu-motion='on'] *::before, [data-setu-motion='on'] *::after {
+    animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: 0.01ms !important;
+  }
 }

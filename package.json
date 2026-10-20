@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.2.3",
   "type": "module",
-  "description": "SETU — Rural Commerce Operating System for Madhepur–Laxmipur–Parsad, Madhubani District, Bihar.",
+  "description": "SETU \u2014 Rural Commerce Operating System for Madhepur\u2013Laxmipur\u2013Parsad, Madhubani District, Bihar.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -27,7 +27,9 @@
     "k8s:render:local": "kubectl kustomize k8s/overlays/local",
     "k8s:validate": "kubectl kustomize k8s/overlays/production >/dev/null",
     "k8s:keda:render": "kubectl kustomize k8s/overlays/production | grep -A3 -B2 'kind: ScaledObject'",
-    "qa:business": "npm run --prefix qa test:business"
+    "qa:business": "npm run --prefix qa test:business",
+    "audit:design-system": "node scripts/audit-design-system.mjs src DESIGN_SYSTEM_INVENTORY.md",
+    "test:design-system": "node scripts/test-design-system.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",

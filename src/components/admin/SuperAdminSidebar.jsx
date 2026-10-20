@@ -14,7 +14,7 @@ import {
   ShoppingBag, Store, Bike, IndianRupee, HeadphonesIcon,
   Settings, MapPin, AlertTriangle, Wrench, Users, Activity,
   Tag, Package, Bell, Image, FileCheck, Megaphone, TrendingUp,
-  ClipboardList, Scale, ShieldCheck, X,
+  ClipboardList, Scale, ShieldCheck, X, Palette as SAPalette,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
@@ -35,6 +35,7 @@ const SUPERADMIN_MENU = [
   { label: 'Fraud & Security',    icon: ShieldAlert, path: '/superadmin/security'      },
   { label: 'SA Audit Log',        icon: FileText,    path: '/superadmin/audit'         },
   { label: 'Configuration',       icon: SASettings,  path: '/superadmin/config'        },
+  { label: 'Design System Studio', icon: SAPalette,   path: '/superadmin/design-system' },
   { label: 'Expansion',           icon: Zap,         path: '/superadmin/expansion'     },
   { label: 'Compliance',          icon: CheckSquare, path: '/superadmin/compliance'    },
   { label: 'Platform Health',     icon: Heart,       path: '/superadmin/health'        },

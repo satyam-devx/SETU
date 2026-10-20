@@ -16,7 +16,7 @@ import AppHeader from '@/components/shared/AppHeader';
 import { AdminAPI } from '@/lib/api';
 import { IndianRupee, ShoppingBag, Store, Bike } from 'lucide-react';
 
-const COLORS = ['hsl(24, 80%, 50%)', 'hsl(150, 40%, 40%)', 'hsl(220, 60%, 50%)', 'hsl(280, 60%, 50%)'];
+const COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))'];
 
 function fmtK(n) {
   n = Number(n ?? 0);

@@ -191,21 +191,21 @@ export default function SuperAdminCredit() {
                       <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}   />
                     </linearGradient>
                     <linearGradient id="repaidGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor="hsl(150, 40%, 40%)" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="hsl(150, 40%, 40%)" stopOpacity={0}   />
+                      <stop offset="5%"  stopColor="hsl(var(--chart-2))" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="hsl(var(--chart-2))" stopOpacity={0}   />
                     </linearGradient>
                   </defs>
                   <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                   <YAxis hide />
                   <Tooltip formatter={(v, k) => [fmtK(v), k === 'disbursed' ? 'Disbursed' : 'Repaid']} />
                   <Area type="monotone" dataKey="disbursed" stroke="hsl(var(--primary))"  strokeWidth={2} fill="url(#disbGrad)"  />
-                  <Area type="monotone" dataKey="repaid"    stroke="hsl(150, 40%, 40%)"  strokeWidth={2} fill="url(#repaidGrad)" />
+                  <Area type="monotone" dataKey="repaid"    stroke="hsl(var(--chart-2))"  strokeWidth={2} fill="url(#repaidGrad)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
             <div className="flex gap-4 text-xs mt-1">
               <span className="flex items-center gap-1"><div className="w-3 h-1.5 rounded bg-primary" /> Disbursed</span>
-              <span className="flex items-center gap-1"><div className="w-3 h-1.5 rounded" style={{background:'hsl(150,40%,40%)'}} /> Repaid</span>
+              <span className="flex items-center gap-1"><div className="w-3 h-1.5 rounded" style={{background:'hsl(var(--chart-2))'}} /> Repaid</span>
             </div>
           </Card>
         )}

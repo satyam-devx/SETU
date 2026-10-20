@@ -71,9 +71,9 @@ export default {
         '2xl':'calc(var(--radius) + 8px)',
       },
       fontFamily: {
-        sans:    ['-apple-system', 'BlinkMacSystemFont', "'Segoe UI'", 'system-ui', 'sans-serif'],
-        heading: ["'Segoe UI'", 'system-ui', 'sans-serif'],
-        mono:    ["'SF Mono'", "'Fira Code'", 'monospace'],
+        sans:    ['var(--setu-font-body, -apple-system, BlinkMacSystemFont, Segoe UI, system-ui, sans-serif)'],
+        heading: ['var(--setu-font-heading, -apple-system, BlinkMacSystemFont, Segoe UI, system-ui, sans-serif)'],
+        mono:    ['var(--setu-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)'],
       },
       boxShadow: {
         'sm':    '0 1px 2px 0 rgb(0 0 0 / 0.04)',

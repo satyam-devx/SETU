@@ -26,6 +26,7 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { PermissionsProvider } from '@/lib/permissions';
 import { FeatureFlagsProvider } from '@/lib/featureFlags';
 import { SettingsProvider } from '@/lib/settings';
+import { DesignSystemProvider } from '@/lib/design-system-provider';
 import { VillageProvider } from '@/lib/village';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ErrorBoundary from '@/components/shared/ErrorBoundary';
@@ -172,6 +173,7 @@ const SuperAdminBlocks     = lazy(() => import('@/pages/superadmin/SuperAdminBlo
 const SuperAdminSecurity   = lazy(() => import('@/pages/superadmin/SuperAdminSecurity'));
 const SuperAdminAuditLog   = lazy(() => import('@/pages/superadmin/SuperAdminAuditLog'));
 const SuperAdminConfig     = lazy(() => import('@/pages/superadmin/SuperAdminConfig'));
+const SuperAdminDesignSystem = lazy(() => import('@/pages/superadmin/SuperAdminDesignSystem'));
 const SuperAdminExpansion  = lazy(() => import('@/pages/superadmin/SuperAdminExpansion'));
 const SuperAdminCompliance = lazy(() => import('@/pages/superadmin/SuperAdminCompliance'));
 const SuperAdminHealth     = lazy(() => import('@/pages/superadmin/SuperAdminHealth'));
@@ -326,6 +328,7 @@ function App() {
         <PermissionsProvider>
         <FeatureFlagsProvider>
         <SettingsProvider>
+        <DesignSystemProvider>
         <SetuStoreProvider>
           <AuthStoreBridge />
           <CartProvider>
@@ -521,6 +524,7 @@ function App() {
                 <Route path="security"       element={<Suspense fallback={<PortalFallback />}><SuperAdminSecurity /></Suspense>} />
                 <Route path="audit"          element={<Suspense fallback={<PortalFallback />}><SuperAdminAuditLog /></Suspense>} />
                 <Route path="config"         element={<Suspense fallback={<PortalFallback />}><SuperAdminConfig /></Suspense>} />
+                <Route path="design-system" element={<Suspense fallback={<PortalFallback />}><SuperAdminDesignSystem /></Suspense>} />
                 <Route path="expansion"      element={<Suspense fallback={<PortalFallback />}><SuperAdminExpansion /></Suspense>} />
                 <Route path="compliance"     element={<Suspense fallback={<PortalFallback />}><SuperAdminCompliance /></Suspense>} />
                 <Route path="health"         element={<Suspense fallback={<PortalFallback />}><SuperAdminHealth /></Suspense>} />
@@ -541,6 +545,7 @@ function App() {
             <Toaster />
           </CartProvider>
         </SetuStoreProvider>
+        </DesignSystemProvider>
         </SettingsProvider>
         </FeatureFlagsProvider>
         </PermissionsProvider>
