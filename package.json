@@ -29,7 +29,8 @@
     "k8s:keda:render": "kubectl kustomize k8s/overlays/production | grep -A3 -B2 'kind: ScaledObject'",
     "qa:business": "npm run --prefix qa test:business",
     "audit:design-system": "node scripts/audit-design-system.mjs src DESIGN_SYSTEM_INVENTORY.md",
-    "test:design-system": "node scripts/test-design-system.mjs"
+    "sync:design-defaults": "node scripts/sync-design-defaults.mjs",
+    "test:design-system": "node scripts/test-design-system.mjs && node --test scripts/test-design-engine.mjs && node --import ./scripts/design-harness/register.mjs --test scripts/test-design-studio.mjs && node scripts/sync-design-defaults.mjs --check"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",

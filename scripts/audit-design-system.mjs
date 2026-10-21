@@ -12,6 +12,8 @@ function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (['node_modules', 'dist', 'build', '.git'].includes(entry.name)) continue;
     const full = path.join(dir, entry.name);
+    // src/lib/design is the token source of truth: hex values belong there, so they are not "hard-coded" findings.
+    if (entry.isDirectory() && full.split(path.sep).join('/').endsWith('src/lib/design')) continue;
     if (entry.isDirectory()) walk(full);
     else if (extensions.has(path.extname(entry.name))) files.push(full);
   }

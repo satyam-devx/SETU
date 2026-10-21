@@ -1,11 +1,6 @@
 import React from 'react';
-import * as LucideIcons from 'lucide-react';
 import { useDesignSystem } from '@/lib/design-system-provider';
-
-const ALLOWED_ICON_NAMES = new Set([
-  'House','Search','Package','UserRound','ShoppingCart','MapPin','Settings','CircleHelp',
-  'LayoutDashboard','Heart','Bell','Store','Bike','Map','ShieldCheck','Palette','History',
-]);
+import { resolveDesignIcon } from '@/components/shared/designIconResolver';
 
 /**
  * Central icon wrapper. Pass a Lucide component for fixed icons, or a semantic
@@ -17,7 +12,7 @@ export default function DesignIcon({ icon, className = '', size, strokeWidth, ..
   const { design } = useDesignSystem();
   const mappedName = typeof icon === 'string' ? (design?.icons?.mappings?.[icon] || icon) : null;
   const Icon = typeof icon === 'string'
-    ? (ALLOWED_ICON_NAMES.has(mappedName) ? LucideIcons[mappedName] : LucideIcons.CircleHelp)
+    ? (resolveDesignIcon(mappedName) || resolveDesignIcon('CircleHelp'))
     : icon;
   if (!Icon) return null;
   return (

@@ -86,6 +86,11 @@ jobs:
       - name: Install deps
         run: npm install
 
+      # Design System: token engine, SQL<->JS parity, Studio state machine, CSS baseline sync.
+      # Pure Node tests, so they fail fast before the (slower) build.
+      - name: Design System tests
+        run: npm run test:design-system
+
       # Build with real secrets if available (PRs from forks won't have them)
       # Falls back gracefully to placeholder values — the build itself
       # must succeed regardless (see supabase.js safe fallback).

@@ -1,119 +1,165 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { DEFAULT_DESIGN, mergeDesign, DesignSystemAPI } from '@/lib/design-system';
+import { Eye, X } from 'lucide-react';
+import { DesignSystemAPI } from '@/lib/design-system';
+import { compileDesign } from '@/lib/design/css';
+import { DEFAULT_DESIGN, mergeDesign, sanitizeConfig, scopeFromPath } from '@/lib/design/schema';
+import {
+  clearCache, clearPreview, readCachedConfig, readPreview, safeStorage, writeCache, writePreview,
+} from '@/lib/design/cache';
 
-const DesignSystemContext = createContext({ design: DEFAULT_DESIGN, loading: true, reload: async () => {} });
-const CSS_COLOR_MAP = {
-  background: '--background', foreground: '--foreground', card: '--card', cardForeground: '--card-foreground', popover: '--popover', popoverForeground: '--popover-foreground',
-  primary: '--primary', primaryForeground: '--primary-foreground', secondary: '--secondary', secondaryForeground: '--secondary-foreground',
-  accent: '--accent', accentForeground: '--accent-foreground', muted: '--muted', mutedForeground: '--muted-foreground',
-  border: '--border', input: '--input', ring: '--ring', destructive: '--destructive', destructiveForeground: '--destructive-foreground',
-  setuSaffron: '--setu-saffron', setuTeal: '--setu-teal', setuEarth: '--setu-earth', setuSuccess: '--setu-success', setuWarning: '--setu-warning',
-  sidebar: '--sidebar', sidebarForeground: '--sidebar-foreground', sidebarBorder: '--sidebar-border', sidebarAccent: '--sidebar-accent', sidebarPrimary: '--sidebar-primary',
-  chart1: '--chart-1', chart2: '--chart-2', chart3: '--chart-3', chart4: '--chart-4', chart5: '--chart-5',
+const REFRESH_AFTER_MS = 5 * 60 * 1000;
+
+// Probe browser storage once per page load, not once per render.
+const memo = {};
+const getStorage = (kind) => {
+  if (!(kind in memo)) memo[kind] = safeStorage(kind);
+  return memo[kind];
 };
-const HEX_RE = /^#[0-9a-f]{6}$/i;
-function hexToHsl(hex) {
-  const n = hex.slice(1);
-  const r = parseInt(n.slice(0, 2), 16) / 255;
-  const g = parseInt(n.slice(2, 4), 16) / 255;
-  const b = parseInt(n.slice(4, 6), 16) / 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  let h = 0, s = 0;
-  const l = (max + min) / 2;
-  if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    switch (max) {
-      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-      case g: h = (b - r) / d + 2; break;
-      default: h = (r - g) / d + 4;
-    }
-    h /= 6;
+
+const DesignSystemContext = createContext({
+  design: DEFAULT_DESIGN, publishedDesign: DEFAULT_DESIGN, status: 'loading', loading: true, scope: 'global',
+  reload: async () => {}, preview: null, startPreview: () => {}, stopPreview: () => {},
+});
+
+/** Write compiled variables onto an element. Skips values that are already current. */
+function applyCompiled(root, compiled, mode) {
+  const vars = { ...compiled.common, ...(mode === 'dark' ? compiled.dark : compiled.light) };
+  for (const [name, value] of Object.entries(vars)) {
+    if (root.style.getPropertyValue(name) !== value) root.style.setProperty(name, value);
   }
-  return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
+  for (const [name, value] of Object.entries(compiled.dataset)) {
+    if (root.dataset[name] !== value) root.dataset[name] = value;
+  }
 }
 
+/**
+ * Imperative helper kept for callers outside React. Prefer the provider.
+ * options.colorMode forces a palette ('light' | 'dark'); otherwise the current `.dark` class decides.
+ */
 export function applyDesignTokens(config, options = {}) {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
   const mode = options.colorMode === 'dark' || options.colorMode === 'light'
     ? options.colorMode
     : (root.classList.contains('dark') ? 'dark' : 'light');
-  const activeColors = mode === 'dark' ? (config?.darkColors || config?.colors) : config?.colors;
-  Object.entries(activeColors || {}).forEach(([key, value]) => {
-    const variable = CSS_COLOR_MAP[key];
-    if (variable && typeof value === 'string' && HEX_RE.test(value)) root.style.setProperty(variable, hexToHsl(value));
-  });
-  const fonts = { system: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif', inter: 'Inter, system-ui, sans-serif', roboto: 'Roboto, system-ui, sans-serif', nunito: '"Nunito Sans", system-ui, sans-serif', mono: 'ui-monospace, SFMono-Regular, Menlo, monospace' };
-  const typography = config?.typography || {};
-  root.style.setProperty('--setu-font-body', fonts[typography.bodyFont] || fonts.system);
-  root.style.setProperty('--setu-font-heading', fonts[typography.headingFont] || fonts.system);
-  root.style.setProperty('--setu-font-mono', fonts[typography.monoFont] || fonts.mono);
-  root.style.setProperty('--setu-base-font-size', `${Math.min(20, Math.max(14, Number(typography.baseFontSize) || 16))}px`);
-  const headingScale = { compact: 0.92, standard: 1, expressive: 1.12 }[typography.headingScale] || 1;
-  root.style.setProperty('--setu-heading-scale', String(headingScale));
-  root.style.setProperty('--setu-body-weight', ['400','500'].includes(String(typography.bodyWeight)) ? String(typography.bodyWeight) : '400');
-  root.style.setProperty('--setu-heading-weight', ['500','600','700','800'].includes(String(typography.headingWeight)) ? String(typography.headingWeight) : '600');
-  root.style.setProperty('--setu-line-height', ({ tight: '1.35', normal: '1.5', relaxed: '1.7' })[typography.lineHeight] || '1.5');
-  root.style.setProperty('--setu-letter-spacing', ({ tight: '-0.015em', normal: '0', wide: '0.025em' })[typography.letterSpacing] || '0');
-  const radius = ['8px', '10px', '12px', '16px', '20px'].includes(config?.layout?.radius) ? config.layout.radius : '12px';
-  root.style.setProperty('--radius', radius);
-  const shadows = { none: 'none', soft: '0 2px 8px 0 rgb(0 0 0 / 0.08)', elevated: '0 8px 24px 0 rgb(0 0 0 / 0.12)' };
-  root.style.setProperty('--setu-shadow-card', shadows[config?.layout?.shadow] || shadows.soft);
-  root.style.setProperty('--setu-content-width', config?.layout?.contentWidth === 'wide' ? '80rem' : config?.layout?.contentWidth === 'compact' ? '48rem' : '64rem');
-  const layout = config?.layout || {};
-  const scales = { compact: '0.85', standard: '1', spacious: '1.15' };
-  root.style.setProperty('--setu-spacing-scale', scales[layout.spacingScale] || '1');
-  root.style.setProperty('--setu-button-height', ({ compact: '2.25rem', standard: '2.75rem', large: '3.25rem' })[layout.buttonHeight] || '2.75rem');
-  root.style.setProperty('--setu-input-height', ({ compact: '2.5rem', standard: '3rem', large: '3.5rem' })[layout.inputHeight] || '3rem');
-  root.style.setProperty('--setu-card-padding', ({ compact: '0.75rem', standard: '1rem', spacious: '1.5rem' })[layout.cardPadding] || '1rem');
-  root.style.setProperty('--setu-grid-gap', ({ compact: '0.75rem', standard: '1rem', spacious: '1.5rem' })[layout.gridGap] || '1rem');
-  root.style.setProperty('--setu-nav-density', layout.navDensity === 'compact' ? '0.75rem' : layout.navDensity === 'spacious' ? '1.25rem' : '1rem');
-  root.style.setProperty('--setu-breakpoint-md', ({ compact: '640px', standard: '768px', wide: '900px' })[layout.breakpoint] || '768px');
-  const motion = config?.motion || {};
-  root.dataset.setuMotion = motion.enabled === false ? 'off' : 'on';
-  root.dataset.setuHoverEffects = motion.hoverEffects === false ? 'off' : 'on';
-  root.dataset.setuPageAnimations = motion.pageAnimations === false ? 'off' : 'on';
-  root.dataset.setuLoadingShimmer = motion.loadingShimmer === false ? 'off' : 'on';
-  root.dataset.setuCardInteractions = motion.cardInteractions === false ? 'off' : 'on';
-  root.style.setProperty('--setu-motion-duration', motion.duration === 'fast' ? '100ms' : motion.duration === 'slow' ? '350ms' : '180ms');
-  root.style.setProperty('--setu-shadow-card', shadows[config?.layout?.shadow] || shadows.soft);
-  root.style.setProperty('--setu-icon-size', `${Math.min(32, Math.max(14, Number(config?.icons?.size) || 20))}px`);
-  root.style.setProperty('--setu-icon-stroke', `${Math.min(3, Math.max(1, Number(config?.icons?.strokeWidth) || 2))}`);
-  root.style.setProperty('--setu-font-heading-size-factor', String(headingScale));
+  applyCompiled(root, compileDesign(config), mode);
   const themeMode = config?.theme?.defaultMode;
-  if (options.applyDefaultTheme && ['light','dark'].includes(themeMode)) root.classList.toggle('dark', themeMode === 'dark');
+  if (options.applyDefaultTheme && ['light', 'dark'].includes(themeMode)) root.classList.toggle('dark', themeMode === 'dark');
+}
+
+function PreviewBanner({ onExit }) {
+  return (
+    <div
+      role="status"
+      className="fixed inset-x-0 bottom-0 z-[100] flex justify-center px-3 pointer-events-none"
+      style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)' }}
+    >
+      <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-foreground py-2 pl-4 pr-2 text-sm text-background shadow-float">
+        <Eye className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <span className="font-medium">Previewing an unpublished design</span>
+        <button
+          type="button"
+          onClick={onExit}
+          className="inline-flex items-center gap-1 rounded-full bg-background/15 px-3 py-1.5 text-xs font-semibold hover:bg-background/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <X className="h-3.5 w-3.5" aria-hidden="true" /> Exit preview
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export function DesignSystemProvider({ children }) {
-  const location = useLocation();
-  const activeScope = location.pathname.startsWith('/customer') ? 'customer' : location.pathname.startsWith('/vendor') ? 'vendor' : location.pathname.startsWith('/rider') ? 'rider' : location.pathname.startsWith('/seva') ? 'seva' : location.pathname.startsWith('/anchor') ? 'anchor' : location.pathname.startsWith('/superadmin') ? 'superadmin' : location.pathname.startsWith('/admin') ? 'admin' : 'global';
-  const [design, setDesign] = useState(DEFAULT_DESIGN);
-  const [loading, setLoading] = useState(true);
+  const { pathname } = useLocation();
+  const scope = scopeFromPath(pathname);
+  const local = useRef(getStorage('localStorage'));
+  const session = useRef(getStorage('sessionStorage'));
+
+  const [published, setPublished] = useState(() => readCachedConfig(local.current, scope) || DEFAULT_DESIGN);
+  const [status, setStatus] = useState('loading'); // loading | ready | error
+  const [preview, setPreview] = useState(() => readPreview(session.current));
   const requestId = useRef(0);
+  const lastFetch = useRef(0);
+
   const reload = useCallback(async () => {
-    const currentRequest = ++requestId.current;
-    setLoading(true);
-    const { data } = await DesignSystemAPI.getPublished(activeScope);
-    if (currentRequest !== requestId.current) return;
-    setDesign(mergeDesign(DEFAULT_DESIGN, data?.config || {}));
-    setLoading(false);
-  }, [activeScope]);
-  useEffect(() => { reload(); }, [reload]);
+    const current = ++requestId.current;
+    const { data, error } = await DesignSystemAPI.getPublished(scope);
+    if (current !== requestId.current) return; // a newer request superseded this one
+    lastFetch.current = Date.now();
+    if (error) {
+      // Offline or RPC unavailable: keep the cached/default design rather than
+      // snapping to defaults and flashing.
+      setStatus('error');
+      return;
+    }
+    if (data?.config) {
+      const config = sanitizeConfig(mergeDesign(DEFAULT_DESIGN, data.config));
+      setPublished(config);
+      writeCache(local.current, scope, config, { version: data.version });
+    } else {
+      setPublished(DEFAULT_DESIGN);
+      clearCache(local.current, scope);
+    }
+    setStatus('ready');
+  }, [scope]);
+
+  // New route scope: show its cached design immediately, then revalidate.
+  useEffect(() => {
+    const cached = readCachedConfig(local.current, scope);
+    if (cached) setPublished(cached);
+    reload();
+  }, [scope, reload]);
+
+  // Revalidate when the tab regains focus or the device comes back online.
+  useEffect(() => {
+    const revalidate = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastFetch.current > REFRESH_AFTER_MS) reload();
+    };
+    const onOnline = () => reload();
+    document.addEventListener('visibilitychange', revalidate);
+    window.addEventListener('online', onOnline);
+    return () => {
+      document.removeEventListener('visibilitychange', revalidate);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [reload]);
+
+  const startPreview = useCallback((config) => {
+    const clean = sanitizeConfig(config);
+    writePreview(session.current, clean);
+    setPreview({ config: clean, at: Date.now() });
+  }, []);
+  const stopPreview = useCallback(() => {
+    clearPreview(session.current);
+    setPreview(null);
+  }, []);
+
+  const effective = preview?.config || published;
+
+  // Apply tokens, and re-apply when the app flips between light and dark.
   useEffect(() => {
     const root = document.documentElement;
-    const applyCurrent = () => {
-      const preview = typeof window !== 'undefined' ? window.__SETU_DESIGN_PREVIEW__ : null;
-      applyDesignTokens(preview?.config || design, preview ? { colorMode: preview.colorMode } : {});
-    };
-    applyCurrent();
-    const observer = new MutationObserver(applyCurrent);
+    const compiled = compileDesign(effective);
+    const apply = () => applyCompiled(root, compiled, root.classList.contains('dark') ? 'dark' : 'light');
+    apply();
+    const observer = new MutationObserver(apply);
     observer.observe(root, { attributes: true, attributeFilter: ['class'] });
     return () => observer.disconnect();
-  }, [design]);
-  const value = useMemo(() => ({ design, loading, reload }), [design, loading, reload]);
-  return <DesignSystemContext.Provider value={value}>{children}</DesignSystemContext.Provider>;
+  }, [effective]);
+
+  const value = useMemo(() => ({
+    design: effective, publishedDesign: published, status, loading: status === 'loading', scope,
+    reload, preview, startPreview, stopPreview,
+  }), [effective, published, status, scope, reload, preview, startPreview, stopPreview]);
+
+  return (
+    <DesignSystemContext.Provider value={value}>
+      {children}
+      {preview && <PreviewBanner onExit={stopPreview} />}
+    </DesignSystemContext.Provider>
+  );
 }
+
 export const useDesignSystem = () => useContext(DesignSystemContext);
 export { DEFAULT_DESIGN, mergeDesign };

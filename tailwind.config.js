@@ -87,6 +87,11 @@ export default {
         'sm':   '640px',
         'md':   '768px',
       },
+      // Motion speed token (Design System Studio). 150ms is Tailwind's own default,
+      // so nothing changes until an admin picks Fast/Slow.
+      transitionDuration: {
+        DEFAULT: 'var(--setu-motion-duration, 150ms)',
+      },
       keyframes: {
         'accordion-down': {
           from: { height: '0' },
